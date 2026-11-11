@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  
+  /* NCWM Institutional Navy & Royal Blue Scheme */
+  --brand-primary: #0a3461;
+  --brand-accent: #0072ce;
+  --brand-surface: #ffffff;
+  --brand-ice: #f0f5fa;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  html, body {
+    font-family: var(--font-sans);
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased selection:bg-sky-500/20 selection:text-sky-900;
+  }
+
+  .dark body {
+    @apply bg-slate-950 text-slate-100 selection:bg-sky-500/30 selection:text-sky-200;
+  }
+}
+
+/* Custom scrollbars for clean government accounting sheets */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-page-break {
+    page-break-before: always;
+  }
+}

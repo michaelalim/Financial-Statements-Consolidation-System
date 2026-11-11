@@ -1,0 +1,6 @@
+{
+  "name": "DepEd Region VI Financial Statement System",
+  "description": "Consolidated Detailed Statement of Financial Position and Divisional Financial Statements manager for DepEd Regional Office VI and its Schools Division Offices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
