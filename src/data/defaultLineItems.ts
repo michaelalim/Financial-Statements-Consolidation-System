@@ -1728,3 +1728,5 @@ export const DEFAULT_PERFORMANCE_LINE_ITEMS: LineItemDefinition[] = [
   { id: "perf-tr-sub-ou", name: "Subsidy from Operating Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1503 },
   { id: "perf-tr-lgu", name: "Assistance from Local Government Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1504 },
 ];
+
+export { DEFAULT_CASH_FLOWS_LINE_ITEMS } from './cashFlowsLineItems';

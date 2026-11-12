@@ -294,7 +294,7 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
             </select>
           </div>
 
-          {/* Year Range (2001 - 2099) */}
+          {/* Year Range (2024 - 2099) */}
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-slate-800 dark:text-slate-200">Year:</span>
             <div className="inline-flex items-center gap-1.5">
@@ -433,9 +433,21 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
           <div className="text-base font-bold">Department of Education</div>
           <div className="text-base font-bold">Regional Office No. VI</div>
           <div className="text-base font-bold">{currentDivision?.name}</div>
-          <div className="text-base font-bold">{isCondensed ? "Statement of Financial Position" : "Detailed Statement of Financial Position"}</div>
+          <div className="text-base font-bold">
+            {selectedStatement === 'cash_flows'
+              ? 'Statement of Cash Flows'
+              : selectedStatement === 'performance'
+              ? 'Statement of Financial Performance'
+              : isCondensed
+              ? 'Statement of Financial Position'
+              : 'Detailed Statement of Financial Position'}
+          </div>
           <div className="text-base font-bold">All Funds</div>
-          <div className="text-base font-bold">As at December 31, {selectedYear}</div>
+          <div className="text-base font-bold">
+            {selectedStatement === 'cash_flows' || selectedStatement === 'performance'
+              ? `For the Year Ended December 31, ${selectedYear}`
+              : `As at December 31, ${selectedYear}`}
+          </div>
         </div>
 
         {/* Statement Body Table */}

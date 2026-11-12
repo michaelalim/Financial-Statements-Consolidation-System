@@ -172,7 +172,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               </select>
             </div>
 
-            {/* Year Selector (2001 - 2099) */}
+            {/* Year Selector (2024 - 2099) */}
             <div className="flex items-center gap-2 text-sm">
               <span className="font-semibold text-slate-700 dark:text-slate-300">Fiscal Year:</span>
               <select

@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from './types/fs';
 import { INITIAL_DIVISIONS } from './data/defaultDivisions';
-import { DEFAULT_LINE_ITEMS, DEFAULT_PERFORMANCE_LINE_ITEMS } from './data/defaultLineItems';
+import { DEFAULT_LINE_ITEMS, DEFAULT_PERFORMANCE_LINE_ITEMS, DEFAULT_CASH_FLOWS_LINE_ITEMS } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
 import { calculateReport } from './utils/calculations';
 import { Navbar, ActiveTab } from './components/Navbar';
@@ -69,12 +69,14 @@ export default function App() {
         const parsed: LineItemDefinition[] = JSON.parse(saved);
         const existingIds = new Set(parsed.map((i) => i.id));
         const missingPerf = DEFAULT_PERFORMANCE_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
-        return missingPerf.length > 0 ? [...parsed, ...missingPerf] : parsed;
+        const missingCashFlows = DEFAULT_CASH_FLOWS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
+        const missing = [...missingPerf, ...missingCashFlows];
+        return missing.length > 0 ? [...parsed, ...missing] : parsed;
       }
     } catch {
       // fallback
     }
-    return [...DEFAULT_LINE_ITEMS, ...DEFAULT_PERFORMANCE_LINE_ITEMS];
+    return [...DEFAULT_LINE_ITEMS, ...DEFAULT_PERFORMANCE_LINE_ITEMS, ...DEFAULT_CASH_FLOWS_LINE_ITEMS];
   });
 
   // Financial Data Store with automatic migration of Iloilo Division 2024 -> Iloilo City Division 2024
@@ -254,7 +256,11 @@ export default function App() {
   };
 
   const handleResetLineItemsToDefault = () => {
-    setLineItems(DEFAULT_LINE_ITEMS);
+    setLineItems([
+      ...DEFAULT_LINE_ITEMS,
+      ...DEFAULT_PERFORMANCE_LINE_ITEMS,
+      ...DEFAULT_CASH_FLOWS_LINE_ITEMS,
+    ]);
   };
 
   // Transfer division data handler

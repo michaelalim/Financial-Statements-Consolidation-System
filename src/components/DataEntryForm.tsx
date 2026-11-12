@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar } from './FinancialStatementSidebar';
+import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
 
 export type FinancialStatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets';
 
@@ -62,8 +63,8 @@ const FINANCIAL_STATEMENTS: FinancialStatementOption[] = [
     id: 'cash_flows',
     title: 'Statement of Cash Flows',
     subtitle: 'Operating, Investing & Financing Activities',
-    isLocked: true,
-    lockNotice: 'Statement of Cash Flows is locked for now pending upcoming instructions.',
+    isLocked: false,
+    lockNotice: '',
   },
   {
     id: 'net_assets',
@@ -166,27 +167,31 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     validEntriesToSave: [],
   });
 
-  // Determines whether a staged entry's line item is invalid / not in the official line items database
+  const activeStatementLineItems = useMemo(() => {
+    return lineItems.filter((item) => (item.statementType || 'position') === selectedStatement);
+  }, [lineItems, selectedStatement]);
+
+  // Determines whether a staged entry's line item is invalid / not in the official line items database for the active statement
   const isRowLineItemInvalid = (row: StagedEntry): boolean => {
     const hasText = Boolean(row.rawText && row.rawText.trim());
     const hasItem = Boolean(row.lineItemId);
     const hasAmount = Boolean(row.amount && row.amount.trim() && parseNumberInput(row.amount) !== 0);
 
-    // If row has an explicit lineItemId, verify it really exists in database lineItems
+    // If row has an explicit lineItemId, verify it really exists in activeStatementLineItems
     if (hasItem) {
-      const exists = lineItems.some((item) => item.id === row.lineItemId);
+      const exists = activeStatementLineItems.some((item) => item.id === row.lineItemId);
       return !exists;
     }
 
     // If user wrote text or entered an amount, but no recognized lineItemId was matched:
     if (hasText || hasAmount) {
       if (hasText) {
-        const nameMatch = lineItems.some(
+        const nameMatch = activeStatementLineItems.some(
           (item) => item.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
         );
         if (nameMatch) return false;
       }
-      return true; // Not in the database of line items! Highlight red!
+      return true; // Not in the database of line items for active statement!
     }
 
     // Completely blank row (not yet edited)
@@ -196,7 +201,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   // Top account invalid check
   const isTopInvalid = Boolean(
     (topRawText.trim() || (topAmountInput.trim() && parseNumberInput(topAmountInput) !== 0)) &&
-    !lineItems.some((i) => i.id === topSelectedItemId || (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()))
+    !activeStatementLineItems.some((i) => i.id === topSelectedItemId || (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()))
   );
 
   // Staged rows for batch multiple entries (starts blank with 0 items on startup as requested)
@@ -232,14 +237,38 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   const currentDivision = divisions.find((d) => d.id === selectedDivisionId) || divisions[0];
   const comparativeYear = getComparativeYear(selectedYear);
 
-  const activeStatementLineItems = useMemo(() => {
-    return lineItems.filter((item) => (item.statementType || 'position') === selectedStatement);
-  }, [lineItems, selectedStatement]);
+  // Compute live Statement of Cash Flows summary and reconciliation balances
+  const cashFlowsSummary = useMemo(() => {
+    return calculateCashFlowsSummary(lineItems, dataStore, selectedYear, selectedDivisionId);
+  }, [lineItems, dataStore, selectedYear, selectedDivisionId]);
 
-  // Stored records in database for this division & year
+  // Stored records in database for this division & year with Cash Flows reconciliation rules applied
   const currentDbEntries = useMemo(() => {
-    return (dataStore[selectedYear] && dataStore[selectedYear][selectedDivisionId]) || {};
-  }, [dataStore, selectedYear, selectedDivisionId]);
+    const raw = (dataStore[selectedYear] && dataStore[selectedYear][selectedDivisionId]) || {};
+    if (selectedStatement === 'cash_flows') {
+      const merged = { ...raw };
+
+      // Rule 1: Cash and Cash Equivalents, January 1 should equal the balance of Cash and Cash Equivalents,
+      // December 31 of the previous period by default
+      if (merged['cf-sum-beg-cash'] === undefined && cashFlowsSummary.january1Cash !== 0) {
+        merged['cf-sum-beg-cash'] = cashFlowsSummary.january1Cash;
+      }
+
+      // Net Increase (Decrease) in Cash and Cash Equivalents
+      if (merged['cf-sum-net-inc-dec'] === undefined && cashFlowsSummary.netIncreaseDecrease !== 0) {
+        merged['cf-sum-net-inc-dec'] = cashFlowsSummary.netIncreaseDecrease;
+      }
+
+      // Rule 2: Cash and Cash Equivalents, December 31 of the current year should equal Increase(Decrease)
+      // in Cash and Cash Equivalents added to (subtracted to) Cash and Cash Equivalents, January 1
+      const effectiveJan1 = merged['cf-sum-beg-cash'] !== undefined ? merged['cf-sum-beg-cash'] : cashFlowsSummary.january1Cash;
+      const effectiveNet = merged['cf-sum-net-inc-dec'] !== undefined ? merged['cf-sum-net-inc-dec'] : cashFlowsSummary.netIncreaseDecrease;
+      merged['cf-sum-end-cash'] = effectiveJan1 + effectiveNet;
+
+      return merged;
+    }
+    return raw;
+  }, [dataStore, selectedYear, selectedDivisionId, selectedStatement, cashFlowsSummary]);
 
   // Master accounts list in database: Zero balance items removed by default, automatically added as amounts are encoded
   const ledgerAccountsList = useMemo(() => {
@@ -405,8 +434,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     if (e) e.preventDefault();
     if (!topSelectedItemId && !topRawText.trim()) return;
 
-    // Resolve if line item is in database
-    const resolvedItem = lineItems.find(
+    // Resolve if line item is in active statement database
+    const resolvedItem = activeStatementLineItems.find(
       (i) =>
         i.id === topSelectedItemId ||
         (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim())
@@ -471,20 +500,25 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
   // Pre-load primary key accounts (Cash, Receivables, PPE, Liabilities)
   const handlePreloadCommonAccounts = () => {
-    const commonAccountIds = [
-      'cash_collecting_officer',
-      'petty_cash_fund',
-      'cash_bank_current_acct',
-      'due_from_ngas',
-      'due_from_local_gov',
-      'school_buildings',
-      'accum_dep_school_buildings',
-      'office_equipment',
-      'accum_dep_office_equip',
-      'accounts_payable',
-      'due_to_bir',
-      'accumulated_surplus_deficit',
-    ];
+    const commonAccountIds =
+      selectedStatement === 'performance'
+        ? activeStatementLineItems.slice(0, 10).map((l) => l.id)
+        : selectedStatement === 'cash_flows'
+        ? activeStatementLineItems.slice(0, 10).map((l) => l.id)
+        : [
+            'cash_collecting_officer',
+            'petty_cash_fund',
+            'cash_bank_current_acct',
+            'due_from_ngas',
+            'due_from_local_gov',
+            'school_buildings',
+            'accum_dep_school_buildings',
+            'office_equipment',
+            'accum_dep_office_equip',
+            'accounts_payable',
+            'due_to_bir',
+            'accumulated_surplus_deficit',
+          ];
     const prefilledRows: StagedEntry[] = commonAccountIds.map((accId) => {
       const itm = lineItems.find((l) => l.id === accId);
       return {
@@ -524,7 +558,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       if (!isRowLineItemInvalid(row)) {
         let resolvedId = row.lineItemId;
         if (!resolvedId && row.rawText) {
-          const match = lineItems.find(
+          const match = activeStatementLineItems.find(
             (i) => i.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
           );
           if (match) resolvedId = match.id;
@@ -612,11 +646,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
   const validStagedCount = useMemo(() => {
     return stagedEntries.filter((r) => !isRowLineItemInvalid(r) && r.lineItemId && r.amount.trim() !== '').length;
-  }, [stagedEntries, lineItems]);
+  }, [stagedEntries, activeStatementLineItems]);
 
   const invalidStagedCount = useMemo(() => {
     return stagedEntries.filter((r) => isRowLineItemInvalid(r)).length;
-  }, [stagedEntries, lineItems]);
+  }, [stagedEntries, activeStatementLineItems]);
 
   const stagedBatchTotal = useMemo(() => {
     return stagedEntries.reduce((sum, row) => {
@@ -629,8 +663,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   }, [stagedEntries]);
 
   const topSelectedItemDetail = useMemo(() => {
-    return lineItems.find((i) => i.id === topSelectedItemId);
-  }, [lineItems, topSelectedItemId]);
+    return activeStatementLineItems.find((i) => i.id === topSelectedItemId);
+  }, [activeStatementLineItems, topSelectedItemId]);
 
   const handleClearEmptyStagedRows = () => {
     setStagedEntries((prev) => prev.filter((r) => (r.lineItemId || r.rawText?.trim()) && r.amount?.trim()));
@@ -689,7 +723,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </select>
         </div>
 
-        {/* Year Range (2001-2099) */}
+        {/* Year Range (2024-2099) */}
         <div className="w-full md:w-96">
           <div className="flex items-center justify-between mb-2">
             <label className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
@@ -1366,7 +1400,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               onClick={onNavigateToViewFS}
               className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-white bg-[#0a3461] hover:bg-[#072648] rounded-xl transition-colors border-2 border-[#0072ce]/40 cursor-pointer shadow-xs"
             >
-              <span>{selectedStatement === 'performance' ? 'View Statement of Financial Performance' : 'View Statement of Financial Position'}</span>
+              <span>
+                {selectedStatement === 'performance'
+                  ? 'View Statement of Financial Performance'
+                  : selectedStatement === 'cash_flows'
+                  ? 'View Statement of Cash Flows'
+                  : 'View Statement of Financial Position'}
+              </span>
               <ChevronRight className="w-4 h-4 text-[#38bdf8]" />
             </button>
           </div>
@@ -1390,6 +1430,65 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 Transfer / Reassign
               </button>
             )}
+          </div>
+        )}
+
+        {/* Cash Reconciliation Summary for Statement of Cash Flows */}
+        {selectedStatement === 'cash_flows' && (
+          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/40">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
+                <Calculator className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Cash Flows Reconciliation (FY {selectedYear})
+              </span>
+              <span className="text-xs text-sky-700 dark:text-sky-400 font-medium">
+                Comparative Prior: FY {comparativeYear}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 font-medium">Net Operating Activities</div>
+                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netOperating < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                  {formatAccounting(cashFlowsSummary.netOperating)}
+                </div>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 font-medium">Net Investing Activities</div>
+                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netInvesting < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                  {formatAccounting(cashFlowsSummary.netInvesting)}
+                </div>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 font-medium">Net Financing Activities</div>
+                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netFinancing < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                  {formatAccounting(cashFlowsSummary.netFinancing)}
+                </div>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
+                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold">Increase(Decrease) in Cash</div>
+                <div className={`text-base font-extrabold font-mono mt-0.5 ${cashFlowsSummary.netIncreaseDecrease < 0 ? 'text-red-600 dark:text-red-400' : 'text-sky-700 dark:text-sky-300'}`}>
+                  {formatAccounting(cashFlowsSummary.netIncreaseDecrease)}
+                </div>
+              </div>
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
+                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between">
+                  <span>Cash & Eq., January 1</span>
+                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">(Prior Dec 31)</span>
+                </div>
+                <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
+                  {formatAccounting(currentDbEntries['cf-sum-beg-cash'] !== undefined ? currentDbEntries['cf-sum-beg-cash'] : cashFlowsSummary.january1Cash)}
+                </div>
+              </div>
+              <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
+                <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
+                  <span>Cash & Eq., December 31</span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Jan 1 + Net Change</span>
+                </div>
+                <div className="text-base font-extrabold font-mono mt-0.5 text-emerald-900 dark:text-emerald-200">
+                  {formatAccounting(currentDbEntries['cf-sum-end-cash'] !== undefined ? currentDbEntries['cf-sum-end-cash'] : cashFlowsSummary.december31Cash)}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1495,6 +1594,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       <td className="py-3.5 px-6 font-medium text-slate-900 dark:text-slate-100">
                         <div className="flex items-center gap-2.5">
                           <span className="text-base font-bold text-slate-900 dark:text-slate-100">{item.name}</span>
+                          {item.id === 'cf-sum-beg-cash' && (
+                            <span className="text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
+                              Default: Prior Dec 31
+                            </span>
+                          )}
+                          {item.id === 'cf-sum-end-cash' && (
+                            <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
+                              Auto: Jan 1 + Net Change
+                            </span>
+                          )}
+                          {item.id === 'cf-sum-net-inc-dec' && (
+                            <span className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md font-bold border border-indigo-300 dark:border-indigo-700">
+                              Auto: Net Inflows - Outflows
+                            </span>
+                          )}
                           {item.isContra && (
                             <span className="text-xs text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md font-bold border border-slate-300 dark:border-slate-700">
                               Contra

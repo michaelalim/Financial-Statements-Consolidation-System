@@ -136,7 +136,7 @@ export const ReportsSidebar: React.FC<ReportsSidebarProps> = ({
           </select>
         </div>
 
-        {/* Year Picker (2001-2099) */}
+        {/* Year Picker (2024-2099) */}
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">

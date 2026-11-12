@@ -285,7 +285,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             <span>Consolidating {divisionsReportingCount} of {divisions.length} Divisions</span>
           </div>
 
-          {/* Year Select (2001 - 2099) */}
+          {/* Year Select (2024 - 2099) */}
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-slate-800 dark:text-slate-200">Year:</span>
             <div className="inline-flex items-center gap-1.5">
@@ -423,9 +423,21 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
         <div className="text-center mb-8">
           <div className="text-base font-bold">Department of Education</div>
           <div className="text-base font-bold">Regional Office No. VI</div>
-          <div className="text-base font-bold">{isCondensed ? "Consolidated Statement of Financial Position" : "Consolidated Detailed Statement of Financial Position"}</div>
+          <div className="text-base font-bold">
+            {selectedStatement === 'cash_flows'
+              ? 'Consolidated Statement of Cash Flows'
+              : selectedStatement === 'performance'
+              ? 'Consolidated Statement of Financial Performance'
+              : isCondensed
+              ? 'Consolidated Statement of Financial Position'
+              : 'Consolidated Detailed Statement of Financial Position'}
+          </div>
           <div className="text-base font-bold">All Funds</div>
-          <div className="text-base font-bold">As at December 31, {selectedYear}</div>
+          <div className="text-base font-bold">
+            {selectedStatement === 'cash_flows' || selectedStatement === 'performance'
+              ? `For the Year Ended December 31, ${selectedYear}`
+              : `As at December 31, ${selectedYear}`}
+          </div>
         </div>
 
         {/* Statement Body Table */}

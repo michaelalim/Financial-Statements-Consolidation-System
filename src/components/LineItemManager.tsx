@@ -38,7 +38,13 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const defaultSubsectionOptions: SubsectionType[] =
-    selectedStatement === 'performance'
+    selectedStatement === 'cash_flows'
+      ? [
+          'Cash Flows from Operating Activities',
+          'Cash Flows from Investing Activities',
+          'Cash Flows from Financing Activities',
+        ]
+      : selectedStatement === 'performance'
       ? ['Revenue', 'Current Operating Expenses', 'Transfers, Assistance and Subsidy']
       : [
           'Current Assets',
@@ -58,6 +64,9 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     'Revenue': ['Tax Revenue', 'Service and Business Income', 'Shares, Grants and Donations'],
     'Current Operating Expenses': ['Personnel Services', 'Maintenance and Other Operating Expenses', 'Financial Expenses', 'Non-Cash Expenses'],
     'Transfers, Assistance and Subsidy': ['Assistance and Subsidy', 'Transfers'],
+    'Cash Flows from Operating Activities': ['Cash Inflows', 'Cash Outflows'],
+    'Cash Flows from Investing Activities': ['Cash Inflows', 'Cash Outflows'],
+    'Cash Flows from Financing Activities': ['Cash Inflows', 'Cash Outflows'],
     'Non-Current Assets': [
       'Property, Plant and Equipment',
       'Heritage Assets',
@@ -115,11 +124,16 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   const handleSelectStatement = (stmt: FinancialStatementType) => {
     setSelectedStatement(stmt);
     setSelectedSubsectionFilter('all');
-    const defaultSub: SubsectionType = stmt === 'performance' ? 'Revenue' : 'Current Assets';
+    const defaultSub: SubsectionType =
+      stmt === 'cash_flows'
+        ? 'Cash Flows from Operating Activities'
+        : stmt === 'performance'
+        ? 'Revenue'
+        : 'Current Assets';
     setSubsection(defaultSub);
     setIsCustomSubsection(false);
     setCustomSubsection('');
-    setGroup(groupSuggestionsBySubsection[defaultSub][0] || 'General');
+    setGroup(groupSuggestionsBySubsection[defaultSub]?.[0] || 'General');
     setIsCustomGroup(false);
     setCustomGroup('');
   };
@@ -137,12 +151,20 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     const finalGroup = (isCustomGroup ? customGroup.trim() : group.trim()) || 'General';
 
     const section =
-      finalSubsection === 'Revenue'
+      finalSubsection.includes('Operating Activities')
+        ? 'CASH_OPERATING'
+        : finalSubsection.includes('Investing Activities')
+        ? 'CASH_INVESTING'
+        : finalSubsection.includes('Financing Activities')
+        ? 'CASH_FINANCING'
+        : finalSubsection === 'Revenue'
         ? 'REVENUE'
         : finalSubsection === 'Current Operating Expenses'
         ? 'EXPENSES'
         : finalSubsection === 'Transfers, Assistance and Subsidy'
         ? 'TRANSFERS'
+        : selectedStatement === 'cash_flows'
+        ? 'CASH_FLOWS'
         : selectedStatement === 'performance'
         ? 'REVENUE'
         : finalSubsection.includes('Assets')
@@ -153,7 +175,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
 
     onAddLineItem({
       name: name.trim(),
-      statementType: selectedStatement === 'performance' ? 'performance' : 'position',
+      statementType: selectedStatement,
       section,
       subsection: finalSubsection,
       group: finalGroup,

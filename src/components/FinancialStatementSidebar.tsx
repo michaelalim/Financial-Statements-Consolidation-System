@@ -30,8 +30,8 @@ const STATEMENTS: {
   {
     id: 'cash_flows',
     title: 'Statement of Cash Flows',
-    isLocked: true,
-    lockNotice: 'Statement of Cash Flows is locked for now pending upcoming instructions.',
+    isLocked: false,
+    lockNotice: '',
   },
   {
     id: 'net_assets',
