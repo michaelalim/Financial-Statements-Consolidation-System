@@ -69,8 +69,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const [rows, setRows] = useState<ExtractedPositionRow[]>([]);
   const [rememberAliasMap, setRememberAliasMap] = useState<Record<string, boolean>>({});
   const [filterMode, setFilterMode] = useState<'all' | 'attention'>('all');
-  const [hideSummaryRows, setHideSummaryRows] = useState<boolean>(true);
   const [activeDropdownRowId, setActiveDropdownRowId] = useState<string | null>(null);
+  const [isLumpedDepPromptOpen, setIsLumpedDepPromptOpen] = useState<boolean>(false);
+  const [dismissedLumpedKey, setDismissedLumpedKey] = useState<string>('');
 
   const comparativeYear = getComparativeYear(selectedYear);
 
@@ -81,8 +82,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     const bestSheet = pickBestPositionSheetName(workbook);
     setSelectedSheetName(bestSheet);
     setFilterMode('all');
-    setHideSummaryRows(true);
     setRememberAliasMap({});
+    setDismissedLumpedKey('');
+    setIsLumpedDepPromptOpen(false);
   }, [isOpen, workbook]);
 
   // Inspect selected sheet whenever sheet or workbook changes
@@ -153,16 +155,29 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       savedAliases
     );
     setRows(extracted);
+
+    const detectedLumped = extracted.filter((r) => r.isLumpedDepreciation);
+    const lumpedKey = `${fileName}::${selectedSheetName}::${detectedLumped.map((r) => r.excelRowNumber).join(',')}`;
+    if (detectedLumped.length > 0 && dismissedLumpedKey !== lumpedKey) {
+      setIsLumpedDepPromptOpen(true);
+    }
   }, [
     isOpen,
     workbook,
+    fileName,
     selectedSheetName,
     yearTargets,
     startRow1Based,
     lineItemColOverride,
     encodableItems,
     savedAliases,
+    dismissedLumpedKey,
   ]);
+
+  const lumpedDepRows = useMemo(
+    () => rows.filter((r) => r.isLumpedDepreciation),
+    [rows]
+  );
 
   const enabledTargets = useMemo(() => yearTargets.filter((t) => t.enabled), [yearTargets]);
 
@@ -191,14 +206,10 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     let exactOrAlias = 0;
     let suggested = 0;
     let unmatched = 0;
-    let summarySkipped = 0;
     let includedCount = 0;
 
     rows.forEach((r) => {
-      if (r.isSummaryRow) {
-        if (!r.included) summarySkipped++;
-      }
-      if (!r.included) return;
+      if (r.isSummaryRow || !r.included) return;
       includedCount++;
       if (!r.selectedLineItemId) {
         unmatched++;
@@ -215,12 +226,11 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     });
 
     return {
-      total: rows.length,
+      total: rows.filter((r) => !r.isSummaryRow).length,
       includedCount,
       exactOrAlias,
       suggested,
       unmatched,
-      summarySkipped,
       attentionCount: suggested + unmatched,
     };
   }, [rows]);
@@ -264,7 +274,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
   const visibleRows = useMemo(() => {
     return rows.filter((r) => {
-      if (hideSummaryRows && r.isSummaryRow && !r.included) return false;
+      if (r.isSummaryRow) return false;
       if (filterMode === 'attention') {
         if (!r.included) return false;
         const isNeedsAttention =
@@ -277,7 +287,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       }
       return true;
     });
-  }, [rows, hideSummaryRows, filterMode, duplicateLineItemIds]);
+  }, [rows, filterMode, duplicateLineItemIds]);
 
   const handleToggleRowInclude = (rowId: string) => {
     setRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, included: !r.included } : r)));
@@ -376,10 +386,11 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       const amt = r.amountsByTargetId[target.id];
       if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
       const itemDef = r.selectedLineItemId ? itemById.get(r.selectedLineItemId) : undefined;
+      const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
       stagedPayload.push({
         lineItemId: itemDef ? itemDef.id : '',
         rawText: itemDef ? itemDef.name : r.rawName,
-        amount: formatAccounting(amt),
+        amount: formatAccounting(normalizedAmt),
       });
     });
 
@@ -406,7 +417,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
 
         if (r.selectedLineItemId) {
-          yearMap.set(r.selectedLineItemId, amt);
+          const itemDef = itemById.get(r.selectedLineItemId);
+          const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
+          yearMap.set(r.selectedLineItemId, normalizedAmt);
         } else if (target.targetYear === selectedYear) {
           unmatchedForActiveYear.push({
             lineItemId: '',
@@ -630,16 +643,6 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
               <Filter className="w-3.5 h-3.5" />
               <span>Needs Review / Misspelled ({stats.attentionCount})</span>
             </button>
-
-            <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-th-muted cursor-pointer ml-1">
-              <input
-                type="checkbox"
-                checked={hideSummaryRows}
-                onChange={(e) => setHideSummaryRows(e.target.checked)}
-                className="w-3.5 h-3.5 cursor-pointer"
-              />
-              <span>Hide skipped Total/Subtotal rows ({stats.summarySkipped})</span>
-            </label>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs font-bold">
@@ -659,6 +662,33 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
             )}
           </div>
         </div>
+
+        {/* Lumped Accumulated Depreciation Warning Banner */}
+        {lumpedDepRows.length > 0 && (
+          <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/60 border-b border-amber-300 dark:border-amber-800 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm shrink-0">
+            <div className="flex items-start sm:items-center gap-2.5 text-amber-950 dark:text-amber-100">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <span className="font-bold">Lumped Accumulated Depreciation detected</span>{' '}
+                (
+                {lumpedDepRows
+                  .map((r) => `Row ${r.excelRowNumber}: "${r.rawName}"`)
+                  .join(', ')}
+                ) — auto-skipped because it combines all PPE.{' '}
+                <span className="font-semibold">
+                  Please request a breakdown of Accumulated Depreciation per PPE account.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsLumpedDepPromptOpen(true)}
+              className="px-3 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/60 hover:bg-amber-200 dark:hover:bg-amber-900 text-amber-950 dark:text-amber-100 font-bold text-xs border border-amber-300 dark:border-amber-700 cursor-pointer shrink-0"
+            >
+              View Details
+            </button>
+          </div>
+        )}
 
         {/* Excel Total Assets Cross-Check (when Excel file includes a Total Assets row) */}
         {assetsVerificationByTarget.some((v) => v.excelAssetsVal !== null) && (
@@ -698,8 +728,8 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
             </div>
           ) : visibleRows.length === 0 ? (
             <div className="py-12 text-center text-th-muted font-medium">
-              {rows.length === 0
-                ? 'No data rows with balances were found under the selected year columns. Try adjusting the Start Row or Year Columns above.'
+              {stats.total === 0
+                ? 'No leaf-level data rows with balances were found under the selected year columns. Try adjusting the Start Row or Year Columns above.'
                 : 'No rows match the current filter.'}
             </div>
           ) : (
@@ -767,9 +797,14 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                           <span className="font-mono font-semibold">
                             Row {row.excelRowNumber} · Col {row.sourceColLetter}
                           </span>
+                          {row.accountCode && (
+                            <span className="font-mono font-semibold px-1.5 py-0.5 rounded bg-th-subtle border border-th-border text-th-text">
+                              {row.accountCode}
+                            </span>
+                          )}
                           {row.isSummaryRow && (
                             <span className="px-2 py-0.5 rounded bg-th-subtle border border-th-border-strong text-th-text font-bold">
-                              Total / Subtotal row (skipped)
+                              {row.summaryReason || 'Higher-level / Total row (skipped)'}
                             </span>
                           )}
                           {!row.isSummaryRow && row.included && !row.selectedLineItemId && (
@@ -946,6 +981,71 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
           </div>
         </div>
       </div>
+
+      {/* Prompt Dialog for Lumped Accumulated Depreciation */}
+      {isLumpedDepPromptOpen && lumpedDepRows.length > 0 && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-th-surface border-2 border-amber-400 dark:border-amber-700 rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-th-text">
+                  Breakdown Recommended: Accumulated Depreciation
+                </h4>
+                <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                  This spreadsheet reports Accumulated Depreciation as a combined line item across all PPE instead of separating it by specific asset class:
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-th-subtle border border-th-border-strong rounded-xl p-3.5 space-y-2">
+              {lumpedDepRows.map((r) => (
+                <div key={r.rowId} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-bold text-th-text">
+                    Row {r.excelRowNumber}: &quot;{r.rawName}&quot;
+                  </span>
+                  <span className="font-mono font-bold text-th-muted">
+                    {enabledTargets
+                      .map((t) => {
+                        const v = r.amountsByTargetId[t.id];
+                        return v !== null && v !== undefined
+                          ? `FY ${t.targetYear}: ₱${formatAccounting(v)}`
+                          : null;
+                      })
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-sm text-amber-950 dark:text-amber-100 leading-relaxed">
+              <strong>Suggestion:</strong> Please request a <strong>breakdown of Accumulated Depreciation per PPE line item</strong> (e.g., School Buildings, Office Equipment, ICT Equipment, Motor Vehicles) from the division so each PPE category&apos;s carrying value and the consolidated Statement of Financial Position remain accurate.
+              <div className="mt-1.5 text-xs text-amber-800 dark:text-amber-300">
+                For safety, this lumped row has been automatically excluded so it is not assigned to the wrong PPE account.
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const lumpedKey = `${fileName}::${selectedSheetName}::${lumpedDepRows
+                    .map((r) => r.excelRowNumber)
+                    .join(',')}`;
+                  setDismissedLumpedKey(lumpedKey);
+                  setIsLumpedDepPromptOpen(false);
+                }}
+                className="px-5 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm cursor-pointer transition-colors"
+              >
+                Understood, Continue Review
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
