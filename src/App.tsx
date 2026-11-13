@@ -14,7 +14,7 @@ import {
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
 import { calculateReport } from './utils/calculations';
-import { YEAR_RANGE, getDefaultFiscalYear } from './utils/yearUtils';
+import { YEAR_RANGE, getComparativeYear, getDefaultFiscalYear } from './utils/yearUtils';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { AccountingAuditDrawer } from './components/AccountingAuditDrawer';
 import { DataEntryForm } from './components/DataEntryForm';
@@ -23,7 +23,7 @@ import { ConsolidatedFSView } from './components/ConsolidatedFSView';
 import { ConsolidatedMatrixView } from './components/ConsolidatedMatrixView';
 import { OptionsView, OptionsSubTab } from './components/OptionsView';
 import { ConfirmModal } from './components/ConfirmModal';
-import { X } from 'lucide-react';
+import { X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY_DATA = 'deped_ro6_fs_data_v1';
 const LOCAL_STORAGE_KEY_DIVISIONS = 'deped_ro6_divisions_v1';
@@ -141,12 +141,12 @@ export default function App() {
   });
 
   // Transfer notification toast state
-  const [transferToastMessage, setTransferToastMessage] = useState<string | null>(
-    'FY 2024 financial details from Iloilo Division have been transferred to Iloilo City Division.'
-  );
+  const [transferToastMessage, setTransferToastMessage] = useState<string | null>(null);
 
   // Global Confirmation Modals for Cross-Component Prompting
   const [isResetBenchmarkModalOpen, setIsResetBenchmarkModalOpen] = useState(false);
+  const [isQuickAddDivOpen, setIsQuickAddDivOpen] = useState(false);
+  const [newDivName, setNewDivName] = useState('');
   const [pendingAddDivName, setPendingAddDivName] = useState<string | null>(null);
   const [pendingAddLineItem, setPendingAddLineItem] = useState<{ name: string; group: string } | null>(null);
   const [pendingDeleteLineItem, setPendingDeleteLineItem] = useState<LineItemDefinition | null>(null);
@@ -374,16 +374,85 @@ export default function App() {
         <div className="max-w-[1780px] mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="font-bold text-th-muted">Entity:</span>
-            <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
-              {currentEntityName}
-            </span>
+            {activeTab === 'consolidated' || activeTab === 'matrix' ? (
+              <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
+                {currentEntityName}
+              </span>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 flex-wrap">
+                <select
+                  value={selectedDivisionId}
+                  onChange={(e) => setSelectedDivisionId(e.target.value)}
+                  aria-label="Reporting Office / Schools Division"
+                  className="font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 py-1.5 rounded-lg border border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors"
+                >
+                  {divisions.map((div) => (
+                    <option key={div.id} value={div.id}>
+                      {div.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddDivOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-th-text hover:text-th-accent-text bg-th-subtle hover:bg-th-subtle-hover px-2.5 py-1.5 rounded-lg border border-th-border-strong transition-colors cursor-pointer"
+                  title="Add New Division"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Division</span>
+                </button>
+              </div>
+            )}
+
             <span className="text-th-muted">·</span>
+
             <span className="font-bold text-th-muted">Fiscal Year:</span>
-            <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
-              FY {selectedYear}
+            <div className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const prevYr = String(Number(selectedYear) - 1);
+                  if (YEAR_RANGE.includes(prevYr)) setSelectedYear(prevYr);
+                }}
+                disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
+                className="p-1.5 rounded-lg bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border border-th-border-strong text-th-text transition-colors cursor-pointer"
+                title="Previous Fiscal Year"
+                aria-label="Previous Fiscal Year"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                aria-label="Fiscal Year"
+                className="font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 py-1.5 rounded-lg border border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors"
+              >
+                {YEAR_RANGE.map((yr) => (
+                  <option key={yr} value={yr}>
+                    FY {yr}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextYr = String(Number(selectedYear) + 1);
+                  if (YEAR_RANGE.includes(nextYr)) setSelectedYear(nextYr);
+                }}
+                disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
+                className="p-1.5 rounded-lg bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border border-th-border-strong text-th-text transition-colors cursor-pointer"
+                title="Next Fiscal Year"
+                aria-label="Next Fiscal Year"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <span className="text-xs font-mono font-semibold text-th-muted bg-th-subtle px-2 py-1 rounded-md border border-th-border">
+              Comp: {getComparativeYear(selectedYear)}
             </span>
-            <span className="text-th-muted">·</span>
-            <span className="text-th-muted font-medium">COA Government Accounting Manual (GAM) for NGAs</span>
+
+            <span className="hidden xl:inline text-th-muted">·</span>
+            <span className="hidden xl:inline text-th-muted font-medium">COA Government Accounting Manual (GAM) for NGAs</span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -431,15 +500,12 @@ export default function App() {
                 divisions={divisions}
                 lineItems={lineItems}
                 selectedDivisionId={selectedDivisionId}
-                onSelectDivision={setSelectedDivisionId}
                 selectedYear={selectedYear}
-                onSelectYear={setSelectedYear}
                 dataStore={dataStore}
                 onSaveBatchAmounts={handleSaveBatchAmounts}
                 onDeleteAmount={handleDeleteAmount}
                 onDeleteAllDivisionAmounts={handleDeleteAllDivisionAmounts}
                 onNavigateToViewFS={() => setActiveTab('divisional')}
-                onAddDivisionPrompt={(name) => setPendingAddDivName(name)}
                 onAddLineItemPrompt={(name, group) => setPendingAddLineItem({ name, group })}
                 onDeleteLineItemPrompt={(item) => setPendingDeleteLineItem(item)}
               />
@@ -542,6 +608,52 @@ export default function App() {
         onConfirm={handleResetBenchmark}
         onCancel={() => setIsResetBenchmarkModalOpen(false)}
       />
+
+      {/* Quick Add Division Text Input Dialog */}
+      {isQuickAddDivOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-th-surface rounded-2xl shadow-2xl border-2 border-th-border-strong p-6">
+            <h3 className="text-lg font-bold text-th-text mb-1">Add New Division</h3>
+            <p className="text-sm font-medium text-th-muted mb-4">
+              Enter the division office name. You will be prompted for confirmation before it is created.
+            </p>
+            <input
+              type="text"
+              placeholder="Enter division office name"
+              value={newDivName}
+              onChange={(e) => setNewDivName(e.target.value)}
+              className="w-full px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-bold focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickAddDivOpen(false);
+                  setNewDivName('');
+                }}
+                className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!newDivName.trim()}
+                onClick={() => {
+                  if (newDivName.trim()) {
+                    setPendingAddDivName(newDivName.trim());
+                    setNewDivName('');
+                    setIsQuickAddDivOpen(false);
+                  }
+                }}
+                className="px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Prompt for Adding Division */}
       <ConfirmModal

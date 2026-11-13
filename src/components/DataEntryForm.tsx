@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
-import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
+import { getComparativeYear } from '../utils/yearUtils';
 import { SearchableLineItemSelect, normalizeAlphanumeric } from './SearchableLineItemSelect';
 import * as XLSX from 'xlsx';
 import { 
@@ -10,11 +10,9 @@ import {
   Calendar, 
   Check, 
   FileText, 
-  ChevronLeft,
   ChevronRight, 
   Layers, 
   RotateCcw,
-  Building,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -31,6 +29,7 @@ import {
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar } from './FinancialStatementSidebar';
+import { ExcelPositionImportModal } from './ExcelPositionImportModal';
 import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
 
@@ -159,15 +158,12 @@ interface DataEntryFormProps {
   divisions: Division[];
   lineItems: LineItemDefinition[];
   selectedDivisionId: string;
-  onSelectDivision: (id: string) => void;
   selectedYear: string;
-  onSelectYear: (year: string) => void;
   dataStore: FinancialDataStore;
   onSaveBatchAmounts: (year: string, divisionId: string, entries: { lineItemId: string; amount: number }[]) => void;
   onDeleteAmount: (year: string, divisionId: string, lineItemId: string) => void;
   onDeleteAllDivisionAmounts: (year: string, divisionId: string) => void;
   onNavigateToViewFS: () => void;
-  onAddDivisionPrompt: (name: string) => void;
   onAddLineItemPrompt: (name: string, group: string) => void;
   onDeleteLineItemPrompt: (item: LineItemDefinition) => void;
 }
@@ -176,15 +172,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   divisions,
   lineItems,
   selectedDivisionId,
-  onSelectDivision,
   selectedYear,
-  onSelectYear,
   dataStore,
   onSaveBatchAmounts,
   onDeleteAmount,
   onDeleteAllDivisionAmounts,
   onNavigateToViewFS,
-  onAddDivisionPrompt,
   onAddLineItemPrompt,
   onDeleteLineItemPrompt,
 }) => {
@@ -227,6 +220,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   const topAmountInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadFeedback, setUploadFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
+  const [positionImportModal, setPositionImportModal] = useState<{
+    isOpen: boolean;
+    workbook: XLSX.WorkBook | null;
+    fileName: string;
+  }>({
+    isOpen: false,
+    workbook: null,
+    fileName: '',
+  });
 
   useEffect(() => {
     setTopSelectedItemId('');
@@ -332,10 +334,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       setRowToFocusAfterRender(null);
     }
   }, [rowToFocusAfterRender, stagedEntries]);
-
-  // Quick Add Division Prompt Modal
-  const [isQuickAddDivOpen, setIsQuickAddDivOpen] = useState(false);
-  const [newDivName, setNewDivName] = useState('');
 
   // Confirmation for discarding staged entries
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
@@ -497,6 +495,16 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       const firstSheetName = workbook.SheetNames[0];
       if (!firstSheetName) {
         setUploadFeedback({ message: 'The uploaded file has no sheets.', isError: true });
+        return;
+      }
+
+      // Statement of Financial Position uses the smart Year-Header & Misspelling-Tolerant Import Modal
+      if (selectedStatement === 'position') {
+        setPositionImportModal({
+          isOpen: true,
+          workbook,
+          fileName: file.name,
+        });
         return;
       }
 
@@ -841,96 +849,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           onLockedClick={(title, message) => setLockedStatementModal({ title, message })}
         />
         <div className="flex-1 min-w-0 w-full space-y-6">
-      {/* 1. Entity & Year Control Strip */}
-      <div className="bg-th-surface border-2 border-th-border rounded-xl p-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 transition-colors">
-        {/* Division Picker */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-bold text-th-text flex items-center gap-2">
-              <Building className="w-4 h-4 text-th-muted" />
-              <span>Reporting Office / Schools Division</span>
-            </label>
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setIsQuickAddDivOpen(true)}
-                className="text-sm text-th-text hover:text-th-accent-text inline-flex items-center gap-1 font-bold underline cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                Add Division
-              </button>
-            </div>
-          </div>
-          <select
-            value={selectedDivisionId}
-            onChange={(e) => onSelectDivision(e.target.value)}
-            className="w-full px-4 py-3 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer shadow-2xs"
-          >
-            {divisions.map((div) => (
-              <option key={div.id} value={div.id}>
-                {div.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Year Range (2024-2099) */}
-        <div className="w-full md:w-96">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-bold text-th-text flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-th-muted" />
-              <span>Fiscal Year</span>
-              <span className="px-2.5 py-0.5 rounded-md bg-th-primary text-th-primary-fg border border-th-border-strong text-xs font-extrabold tracking-wide">
-                FY {selectedYear}
-              </span>
-            </label>
-            <span className="text-sm font-mono font-semibold text-th-muted">
-              Comparative: {comparativeYear}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                const prevYr = String(Number(selectedYear) - 1);
-                if (YEAR_RANGE.includes(prevYr)) onSelectYear(prevYr);
-              }}
-              disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-              className="px-3 py-3 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text font-bold text-sm flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
-              title="Previous Fiscal Year"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Prev</span>
-            </button>
-            <select
-              value={selectedYear}
-              onChange={(e) => onSelectYear(e.target.value)}
-              className="w-full px-4 py-3 text-base font-extrabold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer shadow-2xs"
-            >
-              {YEAR_RANGE.map((yr) => (
-                <option key={yr} value={yr}>
-                  Fiscal Year {yr}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                const nextYr = String(Number(selectedYear) + 1);
-                if (YEAR_RANGE.includes(nextYr)) onSelectYear(nextYr);
-              }}
-              disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-              className="px-3 py-3 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text font-bold text-xs flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
-              title="Next Fiscal Year"
-            >
-              <span className="hidden sm:inline">Next</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Batch Multiple Entries Form */}
+      {/* Batch Multiple Entries Form */}
       <div className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors">
         {/* Header with Title and Presets */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-th-border gap-3 mb-5">
@@ -961,7 +880,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 px-3.5 py-2 rounded-lg border border-th-primary dark:border-th-border-strong transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-              title="Upload an Excel (.xlsx, .xls) or CSV file with Line Item Account in Column A and Amount in Column B"
+              title={
+                selectedStatement === 'position'
+                  ? 'Upload any Statement of Financial Position Excel (.xlsx, .xls) or CSV file with Year headers (e.g. 2025, 2024) and line items before amounts'
+                  : 'Upload an Excel (.xlsx, .xls) or CSV file with Line Item Account in Column A and Amount in Column B'
+              }
             >
               <Upload className="w-4 h-4" />
               <span>Upload Excel / CSV</span>
@@ -2086,24 +2009,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         onCancel={() => setIsDeleteAllConfirmOpen(false)}
       />
 
-      {/* Confirmation Modal: Quick Add Division */}
-      <ConfirmModal
-        isOpen={isQuickAddDivOpen}
-        title="Add Division Confirmation"
-        message={`Are you sure you want to add the division "${newDivName.trim()}"? It will become available immediately for data input and financial reporting.`}
-        confirmLabel="Yes, Add Division"
-        cancelLabel="Cancel"
-        variant="primary"
-        onConfirm={() => {
-          if (newDivName.trim()) {
-            onAddDivisionPrompt(newDivName.trim());
-            setNewDivName('');
-          }
-          setIsQuickAddDivOpen(false);
-        }}
-        onCancel={() => setIsQuickAddDivOpen(false)}
-      />
-
       {/* Confirmation Modal: Discard Staging */}
       <ConfirmModal
         isOpen={isDiscardConfirmOpen}
@@ -2118,49 +2023,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         }}
         onCancel={() => setIsDiscardConfirmOpen(false)}
       />
-
-      {/* Quick Add Division Text Input Prompt Dialog */}
-      {isQuickAddDivOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-th-surface rounded-2xl shadow-2xl border-2 border-th-border-strong p-6">
-            <h3 className="text-lg font-bold text-th-text mb-1">Add New Division</h3>
-            <p className="text-sm font-medium text-th-muted mb-4">
-              Enter the division office name. You will be prompted for confirmation before it is created.
-            </p>
-            <input
-              type="text"
-              placeholder="Enter division office name"
-              value={newDivName}
-              onChange={(e) => setNewDivName(e.target.value)}
-              className="w-full px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-bold focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 mb-4"
-              autoFocus
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsQuickAddDivOpen(false)}
-                className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!newDivName.trim()}
-                onClick={() => {
-                  if (newDivName.trim()) {
-                    onAddDivisionPrompt(newDivName.trim());
-                    setNewDivName('');
-                    setIsQuickAddDivOpen(false);
-                  }
-                }}
-                className="px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer"
-              >
-                Confirm & Add Division
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Notice Modal for Locked Statements */}
       <ConfirmModal
@@ -2326,6 +2188,77 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           }
         }}
         onCancel={() => setPendingConfirmJan1_2024(null)}
+      />
+
+      {/* Smart Statement of Financial Position Excel/CSV Preview & Mapping Modal */}
+      <ExcelPositionImportModal
+        isOpen={positionImportModal.isOpen}
+        workbook={positionImportModal.workbook}
+        fileName={positionImportModal.fileName}
+        divisionName={currentDivision?.name || 'Selected Division'}
+        selectedYear={selectedYear}
+        encodableItems={encodableStatementLineItems}
+        onClose={() =>
+          setPositionImportModal({ isOpen: false, workbook: null, fileName: '' })
+        }
+        onStageToBatch={(targetYear, entries) => {
+          const importedEntries: StagedEntry[] = entries.map((entry, idx) => ({
+            id: `import-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+            lineItemId: entry.lineItemId,
+            rawText: entry.rawText,
+            amount: entry.amount,
+          }));
+          setStagedEntries((prev) => {
+            const nonBlankPrev = prev.filter((r) => r.lineItemId || r.rawText?.trim() || r.amount?.trim());
+            return [...nonBlankPrev, ...importedEntries];
+          });
+          const matchedCount = importedEntries.filter((e) => Boolean(e.lineItemId)).length;
+          const unmatchedCount = importedEntries.length - matchedCount;
+          const yearNote =
+            targetYear !== selectedYear
+              ? ` (Note: extracted from FY ${targetYear} column — active workspace is FY ${selectedYear})`
+              : '';
+          setUploadFeedback({
+            message: `Loaded ${importedEntries.length} row${importedEntries.length === 1 ? '' : 's'} into Batch Table (${matchedCount} matched, ${unmatchedCount} need review)${yearNote}.`,
+            isError: false,
+          });
+          setTimeout(() => setUploadFeedback(null), 8000);
+        }}
+        onSaveYearsDirectly={(savesByYear, unmatchedToStage) => {
+          let totalSaved = 0;
+          const yearSummaries: string[] = [];
+          savesByYear.forEach(({ year, entries }) => {
+            if (entries.length > 0) {
+              onSaveBatchAmounts(year, selectedDivisionId, entries);
+              totalSaved += entries.length;
+              yearSummaries.push(`FY ${year} (${entries.length})`);
+            }
+          });
+
+          if (unmatchedToStage && unmatchedToStage.length > 0) {
+            const stagedUnmatched: StagedEntry[] = unmatchedToStage.map((entry, idx) => ({
+              id: `import-unmatched-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+              lineItemId: '',
+              rawText: entry.rawText,
+              amount: entry.amount,
+            }));
+            setStagedEntries((prev) => {
+              const nonBlankPrev = prev.filter((r) => r.lineItemId || r.rawText?.trim() || r.amount?.trim());
+              return [...nonBlankPrev, ...stagedUnmatched];
+            });
+          }
+
+          if (totalSaved > 0) {
+            const extraUnmatched =
+              unmatchedToStage && unmatchedToStage.length > 0
+                ? ` ${unmatchedToStage.length} unmatched item(s) loaded into Batch Table for manual selection.`
+                : '';
+            setSaveSuccessMsg(
+              `Imported & saved for ${currentDivision?.name}: ${yearSummaries.join(', ')}.${extraUnmatched}`
+            );
+            setTimeout(() => setSaveSuccessMsg(null), 6000);
+          }
+        }}
       />
         </div>
       </div>

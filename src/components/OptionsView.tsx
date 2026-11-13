@@ -221,82 +221,115 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             </div>
 
             {/* Color Theme Presets */}
-            <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h4 className="text-base font-bold text-th-text">
-                  Color Theme
-                </h4>
-                <span className="text-sm font-semibold text-th-muted">
-                  Applies across both Light &amp; Dark modes
-                </span>
-              </div>
+            {(() => {
+              const recommendedThemes = COLOR_THEMES.filter((t) => t.recommended);
+              const additionalThemes = COLOR_THEMES.filter((t) => !t.recommended);
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {COLOR_THEMES.map((preset) => {
-                  const isSelected = themeId === preset.id;
-                  const displayedThirdColor = useContrastAccent
-                    ? preset.colors.accent
-                    : isDark
-                    ? preset.tonalAccent.dark
-                    : preset.tonalAccent.light;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => setThemeId(preset.id)}
-                      className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                        isSelected
-                          ? 'bg-th-surface border-th-primary dark:border-th-border-strong ring-2 ring-th-border-strong shadow-sm'
-                          : 'bg-th-surface border-th-border hover:border-th-border-strong'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-bold text-th-text flex items-center gap-2">
-                            <span>{preset.name}</span>
-                          </div>
-                          <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                            {preset.description}
-                          </p>
+              const renderThemeCard = (preset: (typeof COLOR_THEMES)[number]) => {
+                const isSelected = themeId === preset.id;
+                const displayedThirdColor = useContrastAccent
+                  ? preset.colors.accent
+                  : isDark
+                  ? preset.tonalAccent.dark
+                  : preset.tonalAccent.light;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setThemeId(preset.id)}
+                    className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                      isSelected
+                        ? 'bg-th-surface border-th-primary dark:border-th-border-strong ring-2 ring-th-border-strong shadow-sm'
+                        : 'bg-th-surface border-th-border hover:border-th-border-strong'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base font-bold text-th-text flex items-center gap-2">
+                          <span>{preset.name}</span>
                         </div>
-                        {isSelected && (
-                          <span className="w-6 h-6 rounded-full bg-th-primary text-th-primary-fg flex items-center justify-center shrink-0 border border-th-border-strong">
-                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                          </span>
-                        )}
+                        <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                          {preset.description}
+                        </p>
                       </div>
+                      {isSelected && (
+                        <span className="w-6 h-6 rounded-full bg-th-primary text-th-primary-fg flex items-center justify-center shrink-0 border border-th-border-strong">
+                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        </span>
+                      )}
+                    </div>
 
-                      <div className="flex items-center justify-between pt-2.5 border-t border-th-border">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
-                            style={{ backgroundColor: preset.colors.primary }}
-                            title={`Primary: ${preset.colors.primary}`}
-                          />
-                          <span
-                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
-                            style={{ backgroundColor: preset.colors.light }}
-                            title={`Surface / Light: ${preset.colors.light}`}
-                          />
-                          <span
-                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
-                            style={{ backgroundColor: displayedThirdColor }}
-                            title={
-                              useContrastAccent
-                                ? `Contrasting Accent: ${displayedThirdColor}`
-                                : `Primary Shade Accent: ${displayedThirdColor}`
-                            }
-                          />
-                        </div>
-                        <span className="text-xs font-mono font-semibold text-th-muted">
-                          {preset.colors.primary} · {preset.colors.light} · {displayedThirdColor}
+                    <div className="flex items-center justify-between pt-2.5 border-t border-th-border">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                          style={{ backgroundColor: preset.colors.primary }}
+                          title={`Primary: ${preset.colors.primary}`}
+                        />
+                        <span
+                          className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                          style={{ backgroundColor: preset.colors.light }}
+                          title={`Surface / Light: ${preset.colors.light}`}
+                        />
+                        <span
+                          className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                          style={{ backgroundColor: displayedThirdColor }}
+                          title={
+                            useContrastAccent
+                              ? `Contrasting Accent: ${displayedThirdColor}`
+                              : `Primary Shade Accent: ${displayedThirdColor}`
+                          }
+                        />
+                      </div>
+                      <span className="text-xs font-mono font-semibold text-th-muted">
+                        {preset.colors.primary} · {preset.colors.light} · {displayedThirdColor}
+                      </span>
+                    </div>
+                  </button>
+                );
+              };
+
+              return (
+                <div className="space-y-5">
+                  {/* Recommended Themes */}
+                  <div className="p-6 bg-th-subtle border-2 border-th-border-strong rounded-xl space-y-4">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5">
+                        <h4 className="text-base font-bold text-th-text">
+                          Recommended Themes
+                        </h4>
+                        <span className="px-2.5 py-0.5 rounded-md bg-th-primary text-th-primary-fg text-xs font-bold border border-th-border-strong">
+                          {recommendedThemes.length} Presets
                         </span>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                      <span className="text-sm font-semibold text-th-muted">
+                        Applies across both Light &amp; Dark modes
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {recommendedThemes.map(renderThemeCard)}
+                    </div>
+                  </div>
+
+                  {/* Additional Color Themes */}
+                  <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="text-base font-bold text-th-text">
+                        More Color Themes
+                      </h4>
+                      <span className="text-sm font-semibold text-th-muted">
+                        {additionalThemes.length} Classic &amp; Calm Presets
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {additionalThemes.map(renderThemeCard)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Accent Color Mode Selection */}
             <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">

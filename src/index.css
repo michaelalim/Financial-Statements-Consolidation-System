@@ -492,6 +492,312 @@
   --t-hero-to: #2B2926;
 }
 
+/* Muted Social — Muted Facebook (#344E7A, #F0F2F5, #446FA8) */
+[data-theme="muted-social"] {
+  --t-canvas: #F0F2F5;
+  --t-surface: #FFFFFF;
+  --t-subtle: #E4E7EC;
+  --t-subtle-hover: #D8DCE3;
+  --t-input: #FFFFFF;
+  --t-border: #CDD3DC;
+  --t-border-strong: #AEB7C4;
+  --t-text: #1C2430;
+  --t-muted: #465264;
+  --t-primary: #344E7A;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #344E7A;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #446FA8;
+  --t-accent-hover: #385E91;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #2C4D7D;
+  --t-accent-soft: #EDF2F8;
+  --t-accent-soft-hover: #DFE8F3;
+  --t-hero-from: #E8EDF4;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F0F2F5;
+}
+
+.dark[data-theme="muted-social"] {
+  --t-canvas: #181A1F;
+  --t-surface: #22252C;
+  --t-subtle: #2D313B;
+  --t-subtle-hover: #383D4A;
+  --t-input: #181A1F;
+  --t-border: #383D48;
+  --t-border-strong: #4B5261;
+  --t-text: #F0F2F5;
+  --t-muted: #C5CBD6;
+  --t-primary: #2D4369;
+  --t-primary-fg: #F0F2F5;
+  --t-table-head: #293B59;
+  --t-table-head-fg: #F0F2F5;
+  --t-accent: #6B95CE;
+  --t-accent-hover: #7EA3D6;
+  --t-accent-fg: #12161F;
+  --t-accent-text: #8EB3E6;
+  --t-accent-soft: #262E3D;
+  --t-accent-soft-hover: #303A4D;
+  --t-hero-from: #22252C;
+  --t-hero-via: #2D313B;
+  --t-hero-to: #22252C;
+}
+
+/* X / Twitter (#0F1419, #F7F9F9, #1D9BF0) */
+[data-theme="x-twitter"] {
+  --t-canvas: #F7F9F9;
+  --t-surface: #FFFFFF;
+  --t-subtle: #EFF3F4;
+  --t-subtle-hover: #E2E8EA;
+  --t-input: #FFFFFF;
+  --t-border: #CFD9DE;
+  --t-border-strong: #B0BEC5;
+  --t-text: #0F1419;
+  --t-muted: #45525E;
+  --t-primary: #0F1419;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #0F1419;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #1683CC;
+  --t-accent-hover: #1270B0;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #0E67A3;
+  --t-accent-soft: #EBF5FD;
+  --t-accent-soft-hover: #DCEEFB;
+  --t-hero-from: #EFF3F4;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F7F9F9;
+}
+
+.dark[data-theme="x-twitter"] {
+  --t-canvas: #0B0F14;
+  --t-surface: #15181C;
+  --t-subtle: #1E2329;
+  --t-subtle-hover: #272D35;
+  --t-input: #0B0F14;
+  --t-border: #2F3336;
+  --t-border-strong: #42484D;
+  --t-text: #E7E9EA;
+  --t-muted: #B8C0C7;
+  --t-primary: #1D2229;
+  --t-primary-fg: #E7E9EA;
+  --t-table-head: #1E2329;
+  --t-table-head-fg: #E7E9EA;
+  --t-accent: #1D9BF0;
+  --t-accent-hover: #3BA8F2;
+  --t-accent-fg: #081118;
+  --t-accent-text: #5BB7F5;
+  --t-accent-soft: #162533;
+  --t-accent-soft-hover: #1D3145;
+  --t-hero-from: #15181C;
+  --t-hero-via: #1E2329;
+  --t-hero-to: #15181C;
+}
+
+/* Instagram (#5D2E7A, #FAFAFA, #C7246D) */
+[data-theme="instagram"] {
+  --t-canvas: #FAFAFA;
+  --t-surface: #FFFFFF;
+  --t-subtle: #F2EFF5;
+  --t-subtle-hover: #E7E1EE;
+  --t-input: #FFFFFF;
+  --t-border: #DDD4E6;
+  --t-border-strong: #C2B3D1;
+  --t-text: #261B30;
+  --t-muted: #564566;
+  --t-primary: #5D2E7A;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #5D2E7A;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #C7246D;
+  --t-accent-hover: #AD1B5D;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #9E1854;
+  --t-accent-soft: #FCF0F5;
+  --t-accent-soft-hover: #F7DFEA;
+  --t-hero-from: #F5EFF9;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #FAFAFA;
+}
+
+.dark[data-theme="instagram"] {
+  --t-canvas: #141118;
+  --t-surface: #1F1A24;
+  --t-subtle: #2A2332;
+  --t-subtle-hover: #362D40;
+  --t-input: #141118;
+  --t-border: #3B3047;
+  --t-border-strong: #514261;
+  --t-text: #F7F4FA;
+  --t-muted: #D4CBE0;
+  --t-primary: #4A2761;
+  --t-primary-fg: #F7F4FA;
+  --t-table-head: #3B204D;
+  --t-table-head-fg: #F7F4FA;
+  --t-accent: #E65595;
+  --t-accent-hover: #EF6FA7;
+  --t-accent-fg: #1F0A15;
+  --t-accent-text: #F594BF;
+  --t-accent-soft: #2E1F2A;
+  --t-accent-soft-hover: #3B2736;
+  --t-hero-from: #1F1A24;
+  --t-hero-via: #2A2332;
+  --t-hero-to: #1F1A24;
+}
+
+/* Reddit (#1F2C33, #F2F4F5, #D93A00) */
+[data-theme="reddit"] {
+  --t-canvas: #F2F4F5;
+  --t-surface: #FFFFFF;
+  --t-subtle: #EAEDEF;
+  --t-subtle-hover: #DCE1E5;
+  --t-input: #FFFFFF;
+  --t-border: #CFD6DC;
+  --t-border-strong: #B0BAC3;
+  --t-text: #1A2228;
+  --t-muted: #45525C;
+  --t-primary: #1F2C33;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #1F2C33;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #D93A00;
+  --t-accent-hover: #B83100;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #B53000;
+  --t-accent-soft: #FDF1EC;
+  --t-accent-soft-hover: #FAE1D7;
+  --t-hero-from: #ECEFF1;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F2F4F5;
+}
+
+.dark[data-theme="reddit"] {
+  --t-canvas: #0E1518;
+  --t-surface: #161F24;
+  --t-subtle: #1E2A30;
+  --t-subtle-hover: #27353D;
+  --t-input: #0E1518;
+  --t-border: #2C3B43;
+  --t-border-strong: #3D505A;
+  --t-text: #EEF2F5;
+  --t-muted: #C2CDD4;
+  --t-primary: #223038;
+  --t-primary-fg: #EEF2F5;
+  --t-table-head: #1E2A30;
+  --t-table-head-fg: #EEF2F5;
+  --t-accent: #FF6126;
+  --t-accent-hover: #FF7B4A;
+  --t-accent-fg: #1A0B05;
+  --t-accent-text: #FF8E63;
+  --t-accent-soft: #2C211D;
+  --t-accent-soft-hover: #3B2B25;
+  --t-hero-from: #161F24;
+  --t-hero-via: #1E2A30;
+  --t-hero-to: #161F24;
+}
+
+/* YouTube (#212121, #F9F9F9, #CC0000) */
+[data-theme="youtube"] {
+  --t-canvas: #F9F9F9;
+  --t-surface: #FFFFFF;
+  --t-subtle: #F0F0F0;
+  --t-subtle-hover: #E5E5E5;
+  --t-input: #FFFFFF;
+  --t-border: #D6D6D6;
+  --t-border-strong: #B8B8B8;
+  --t-text: #0F0F0F;
+  --t-muted: #4A4A4A;
+  --t-primary: #212121;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #212121;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #CC0000;
+  --t-accent-hover: #A80000;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #B00000;
+  --t-accent-soft: #FDF0F0;
+  --t-accent-soft-hover: #FADEDE;
+  --t-hero-from: #F2F2F2;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F9F9F9;
+}
+
+.dark[data-theme="youtube"] {
+  --t-canvas: #0F0F0F;
+  --t-surface: #1A1A1A;
+  --t-subtle: #272727;
+  --t-subtle-hover: #333333;
+  --t-input: #0F0F0F;
+  --t-border: #333333;
+  --t-border-strong: #4A4A4A;
+  --t-text: #F1F1F1;
+  --t-muted: #C7C7C7;
+  --t-primary: #262626;
+  --t-primary-fg: #F1F1F1;
+  --t-table-head: #242424;
+  --t-table-head-fg: #F1F1F1;
+  --t-accent: #F04848;
+  --t-accent-hover: #F56464;
+  --t-accent-fg: #1A0505;
+  --t-accent-text: #FF8080;
+  --t-accent-soft: #2E1D1D;
+  --t-accent-soft-hover: #3D2525;
+  --t-hero-from: #1A1A1A;
+  --t-hero-via: #272727;
+  --t-hero-to: #1A1A1A;
+}
+
+/* Telegram (#1F4568, #EFF5F9, #229ED9) */
+[data-theme="telegram"] {
+  --t-canvas: #EFF5F9;
+  --t-surface: #FFFFFF;
+  --t-subtle: #E3EDF5;
+  --t-subtle-hover: #D4E4F0;
+  --t-input: #FFFFFF;
+  --t-border: #C6D8E6;
+  --t-border-strong: #A3BFD6;
+  --t-text: #142638;
+  --t-muted: #3E566E;
+  --t-primary: #1F4568;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #1F4568;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #1B82B5;
+  --t-accent-hover: #166E9A;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #136894;
+  --t-accent-soft: #ECF6FB;
+  --t-accent-soft-hover: #DAEEF8;
+  --t-hero-from: #E8F1F8;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #EFF5F9;
+}
+
+.dark[data-theme="telegram"] {
+  --t-canvas: #0E1621;
+  --t-surface: #17212B;
+  --t-subtle: #202B38;
+  --t-subtle-hover: #293848;
+  --t-input: #0E1621;
+  --t-border: #2B3B4C;
+  --t-border-strong: #3C5269;
+  --t-text: #F2F6FA;
+  --t-muted: #C2D0DE;
+  --t-primary: #1F354D;
+  --t-primary-fg: #F2F6FA;
+  --t-table-head: #1C2E42;
+  --t-table-head-fg: #F2F6FA;
+  --t-accent: #38B2EB;
+  --t-accent-hover: #56C1F2;
+  --t-accent-fg: #061521;
+  --t-accent-text: #6EC9F5;
+  --t-accent-soft: #192D3E;
+  --t-accent-soft-hover: #213B52;
+  --t-hero-from: #17212B;
+  --t-hero-via: #202B38;
+  --t-hero-to: #17212B;
+}
+
 /* ============================================================================
    Tonal Primary-Shade Mode (data-contrast-accent="false")
    Replaces each theme's 3rd contrasting accent color with a shade of the 1st color
@@ -687,6 +993,132 @@
   --t-accent-soft: #373430;
   --t-accent-soft-hover: #433F3A;
   --t-hero-from: #2F2D29;
+}
+
+/* Muted Social — Tonal Shade of #344E7A */
+[data-theme="muted-social"][data-contrast-accent="false"] {
+  --t-accent: #3F5E91;
+  --t-accent-hover: #334D78;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #273D61;
+  --t-accent-soft: #E8EDF5;
+  --t-accent-soft-hover: #D8E1EF;
+  --t-hero-from: #EBF0F7;
+}
+
+.dark[data-theme="muted-social"][data-contrast-accent="false"] {
+  --t-accent: #7694C7;
+  --t-accent-hover: #8BA6D4;
+  --t-accent-fg: #141923;
+  --t-accent-text: #A2BAE0;
+  --t-accent-soft: #283347;
+  --t-accent-soft-hover: #324059;
+  --t-hero-from: #232B3B;
+}
+
+/* X / Twitter — Tonal Shade of #0F1419 */
+[data-theme="x-twitter"][data-contrast-accent="false"] {
+  --t-accent: #27303A;
+  --t-accent-hover: #181E24;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #0F1419;
+  --t-accent-soft: #E9ECEF;
+  --t-accent-soft-hover: #DCE1E6;
+  --t-hero-from: #EFF3F4;
+}
+
+.dark[data-theme="x-twitter"][data-contrast-accent="false"] {
+  --t-accent: #9AA4AE;
+  --t-accent-hover: #B1BAC2;
+  --t-accent-fg: #0B0F14;
+  --t-accent-text: #CFD6DC;
+  --t-accent-soft: #22272D;
+  --t-accent-soft-hover: #2C333B;
+  --t-hero-from: #1A1E24;
+}
+
+/* Instagram — Tonal Shade of #5D2E7A */
+[data-theme="instagram"][data-contrast-accent="false"] {
+  --t-accent: #723B94;
+  --t-accent-hover: #5D2E7A;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #4F2569;
+  --t-accent-soft: #F2EBF7;
+  --t-accent-soft-hover: #E5D9F0;
+  --t-hero-from: #F4EFF8;
+}
+
+.dark[data-theme="instagram"][data-contrast-accent="false"] {
+  --t-accent: #B68CD4;
+  --t-accent-hover: #C8A5E0;
+  --t-accent-fg: #141118;
+  --t-accent-text: #D6BBE8;
+  --t-accent-soft: #2D2238;
+  --t-accent-soft-hover: #3A2B47;
+  --t-hero-from: #251C2E;
+}
+
+/* Reddit — Tonal Shade of #1F2C33 */
+[data-theme="reddit"][data-contrast-accent="false"] {
+  --t-accent: #314550;
+  --t-accent-hover: #1F2C33;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #1F2C33;
+  --t-accent-soft: #E9EEF0;
+  --t-accent-soft-hover: #DCE3E7;
+  --t-hero-from: #EDF1F3;
+}
+
+.dark[data-theme="reddit"][data-contrast-accent="false"] {
+  --t-accent: #8EA5B3;
+  --t-accent-hover: #A6B9C4;
+  --t-accent-fg: #0E1518;
+  --t-accent-text: #C2D2DB;
+  --t-accent-soft: #212D34;
+  --t-accent-soft-hover: #2B3B44;
+  --t-hero-from: #1B252B;
+}
+
+/* YouTube — Tonal Shade of #212121 */
+[data-theme="youtube"][data-contrast-accent="false"] {
+  --t-accent: #3B3B3B;
+  --t-accent-hover: #212121;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #212121;
+  --t-accent-soft: #EBEBEB;
+  --t-accent-soft-hover: #DEDEDE;
+  --t-hero-from: #F0F0F0;
+}
+
+.dark[data-theme="youtube"][data-contrast-accent="false"] {
+  --t-accent: #A3A3A3;
+  --t-accent-hover: #B8B8B8;
+  --t-accent-fg: #0F0F0F;
+  --t-accent-text: #CFCFCF;
+  --t-accent-soft: #262626;
+  --t-accent-soft-hover: #333333;
+  --t-hero-from: #1F1F1F;
+}
+
+/* Telegram — Tonal Shade of #1F4568 */
+[data-theme="telegram"][data-contrast-accent="false"] {
+  --t-accent: #2C5D8A;
+  --t-accent-hover: #1F4568;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #1B3D5C;
+  --t-accent-soft: #E6EFF6;
+  --t-accent-soft-hover: #D5E4F0;
+  --t-hero-from: #EBF2F8;
+}
+
+.dark[data-theme="telegram"][data-contrast-accent="false"] {
+  --t-accent: #78A7D6;
+  --t-accent-hover: #90B8E0;
+  --t-accent-fg: #0E1621;
+  --t-accent-text: #A8C8E8;
+  --t-accent-soft: #1F3145;
+  --t-accent-soft-hover: #283F59;
+  --t-hero-from: #1B293A;
 }
 
 @layer base {

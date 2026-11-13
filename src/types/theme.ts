@@ -9,12 +9,19 @@ export type ColorThemeId =
   | 'sage-linen'
   | 'slate-breeze'
   | 'plum-parchment'
-  | 'soft-stone';
+  | 'soft-stone'
+  | 'muted-social'
+  | 'x-twitter'
+  | 'instagram'
+  | 'reddit'
+  | 'youtube'
+  | 'telegram';
 
 export interface ColorThemeDefinition {
   id: ColorThemeId;
   name: string;
   description: string;
+  recommended?: boolean;
   colors: {
     primary: string;
     light: string;
@@ -151,6 +158,96 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
     tonalAccent: {
       light: '#5C5851',
       dark: '#9D978E',
+    },
+  },
+  {
+    id: 'muted-social',
+    name: 'Muted Social (Facebook)',
+    description: 'Muted Facebook-inspired steel blue, soft feed gray-white, and gentle cobalt.',
+    recommended: true,
+    colors: {
+      primary: '#344E7A',
+      light: '#F0F2F5',
+      accent: '#446FA8',
+    },
+    tonalAccent: {
+      light: '#3F5E91',
+      dark: '#7694C7',
+    },
+  },
+  {
+    id: 'x-twitter',
+    name: 'X / Twitter',
+    description: 'Obsidian ink, crisp timeline white, and classic X / Twitter blue.',
+    recommended: true,
+    colors: {
+      primary: '#0F1419',
+      light: '#F7F9F9',
+      accent: '#1D9BF0',
+    },
+    tonalAccent: {
+      light: '#27303A',
+      dark: '#9AA4AE',
+    },
+  },
+  {
+    id: 'instagram',
+    name: 'Instagram',
+    description: 'Royal plum purple, clean gallery white, and signature rose-magenta.',
+    recommended: true,
+    colors: {
+      primary: '#5D2E7A',
+      light: '#FAFAFA',
+      accent: '#C7246D',
+    },
+    tonalAccent: {
+      light: '#723B94',
+      dark: '#B68CD4',
+    },
+  },
+  {
+    id: 'reddit',
+    name: 'Reddit',
+    description: 'Deep charcoal-slate, light community gray, and classic Reddit orangered.',
+    recommended: true,
+    colors: {
+      primary: '#1F2C33',
+      light: '#F2F4F5',
+      accent: '#D93A00',
+    },
+    tonalAccent: {
+      light: '#314550',
+      dark: '#8EA5B3',
+    },
+  },
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    description: 'Studio dark charcoal, crisp paper white, and classic YouTube crimson red.',
+    recommended: true,
+    colors: {
+      primary: '#212121',
+      light: '#F9F9F9',
+      accent: '#CC0000',
+    },
+    tonalAccent: {
+      light: '#3B3B3B',
+      dark: '#A3A3A3',
+    },
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    description: 'Deep azure-navy, airy cloud white, and signature Telegram sky blue.',
+    recommended: true,
+    colors: {
+      primary: '#1F4568',
+      light: '#EFF5F9',
+      accent: '#229ED9',
+    },
+    tonalAccent: {
+      light: '#2C5D8A',
+      dark: '#78A7D6',
     },
   },
 ];
