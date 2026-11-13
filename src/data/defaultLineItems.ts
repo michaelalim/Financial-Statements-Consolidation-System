@@ -1730,3 +1730,4 @@ export const DEFAULT_PERFORMANCE_LINE_ITEMS: LineItemDefinition[] = [
 ];
 
 export { DEFAULT_CASH_FLOWS_LINE_ITEMS } from './cashFlowsLineItems';
+export { DEFAULT_NET_ASSETS_LINE_ITEMS } from './netAssetsLineItems';

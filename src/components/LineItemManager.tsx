@@ -46,6 +46,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         ]
       : selectedStatement === 'performance'
       ? ['Revenue', 'Current Operating Expenses', 'Transfers, Assistance and Subsidy']
+      : selectedStatement === 'net_assets'
+      ? ['Changes in Net Assets/Equity']
       : [
           'Current Assets',
           'Non-Current Assets',
@@ -67,6 +69,13 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     'Cash Flows from Operating Activities': ['Cash Inflows', 'Cash Outflows'],
     'Cash Flows from Investing Activities': ['Cash Inflows', 'Cash Outflows'],
     'Cash Flows from Financing Activities': ['Cash Inflows', 'Cash Outflows'],
+    'Changes in Net Assets/Equity': [
+      'Balance at Beginning of Period',
+      'Adjustments to Beginning Balance',
+      'Restated Balance',
+      'Changes in Net Assets/Equity for the Calendar Year',
+      'Balance at End of Period',
+    ],
     'Non-Current Assets': [
       'Property, Plant and Equipment',
       'Heritage Assets',
@@ -129,6 +138,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         ? 'Cash Flows from Operating Activities'
         : stmt === 'performance'
         ? 'Revenue'
+        : stmt === 'net_assets'
+        ? 'Changes in Net Assets/Equity'
         : 'Current Assets';
     setSubsection(defaultSub);
     setIsCustomSubsection(false);
@@ -167,6 +178,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         ? 'CASH_FLOWS'
         : selectedStatement === 'performance'
         ? 'REVENUE'
+        : selectedStatement === 'net_assets'
+        ? 'CHANGES_IN_NET_ASSETS'
         : finalSubsection.includes('Assets')
         ? 'ASSETS'
         : finalSubsection.includes('Liabilities')

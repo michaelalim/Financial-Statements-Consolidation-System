@@ -1,4 +1,4 @@
-export type StatementType = 'position' | 'performance' | 'cash_flows' | (string & {});
+export type StatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets' | (string & {});
 
 export type SectionType = 
   | 'ASSETS' 
@@ -11,6 +11,7 @@ export type SectionType =
   | 'CASH_INVESTING' 
   | 'CASH_FINANCING' 
   | 'CASH_FLOWS' 
+  | 'CHANGES_IN_NET_ASSETS'
   | (string & {});
 
 export type SubsectionType = 
@@ -25,6 +26,7 @@ export type SubsectionType =
   | 'Cash Flows from Operating Activities'
   | 'Cash Flows from Investing Activities'
   | 'Cash Flows from Financing Activities'
+  | 'Changes in Net Assets/Equity'
   | (string & {});
 
 export interface LineItemDefinition {

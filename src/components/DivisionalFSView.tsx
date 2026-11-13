@@ -438,13 +438,17 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
               ? 'Statement of Cash Flows'
               : selectedStatement === 'performance'
               ? 'Statement of Financial Performance'
+              : selectedStatement === 'net_assets'
+              ? 'Statement of Changes in Net Assets/Equity'
               : isCondensed
               ? 'Statement of Financial Position'
               : 'Detailed Statement of Financial Position'}
           </div>
           <div className="text-base font-bold">All Funds</div>
           <div className="text-base font-bold">
-            {selectedStatement === 'cash_flows' || selectedStatement === 'performance'
+            {selectedStatement === 'cash_flows' ||
+            selectedStatement === 'performance' ||
+            selectedStatement === 'net_assets'
               ? `For the Year Ended December 31, ${selectedYear}`
               : `As at December 31, ${selectedYear}`}
           </div>

@@ -36,8 +36,8 @@ const STATEMENTS: {
   {
     id: 'net_assets',
     title: 'Statement of Changes in Net Assets/Equity',
-    isLocked: true,
-    lockNotice: 'Statement of Changes in Net Assets/Equity is locked for now pending upcoming instructions.',
+    isLocked: false,
+    lockNotice: '',
   },
 ];
 

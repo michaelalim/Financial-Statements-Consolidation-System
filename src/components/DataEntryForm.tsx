@@ -29,10 +29,12 @@ import {
   Calculator,
   ArrowLeftRight,
   Upload,
+  X,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar } from './FinancialStatementSidebar';
 import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
+import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
 
 export type FinancialStatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets';
 
@@ -70,8 +72,8 @@ const FINANCIAL_STATEMENTS: FinancialStatementOption[] = [
     id: 'net_assets',
     title: 'Statement of Changes in Net Assets/Equity',
     subtitle: 'Accumulated Surplus/Deficit & Equity Reserves',
-    isLocked: true,
-    lockNotice: 'Statement of Changes in Net Assets/Equity is locked for now pending upcoming instructions.',
+    isLocked: false,
+    lockNotice: '',
   },
 ];
 
@@ -131,11 +133,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   >([]);
   const [pendingDeleteRecordedItem, setPendingDeleteRecordedItem] = useState<LineItemDefinition | null>(null);
   const [pendingDeleteSelectedRecorded, setPendingDeleteSelectedRecorded] = useState(false);
+  const [isEditingJan1_2024, setIsEditingJan1_2024] = useState(false);
+  const [jan1_2024Input, setJan1_2024Input] = useState('');
+  const [pendingConfirmJan1_2024, setPendingConfirmJan1_2024] = useState<{
+    lineItemId: 'cf-sum-beg-cash' | 'na-beg-balance';
+    accountName: string;
+    previousAmount: number;
+    newAmount: number;
+  } | null>(null);
 
   useEffect(() => {
     setSelectedRecordedIds([]);
     setIsSelectMultipleMode(false);
-  }, [selectedYear, selectedDivisionId]);
+    setIsEditingJan1_2024(false);
+    setPendingConfirmJan1_2024(null);
+  }, [selectedYear, selectedDivisionId, selectedStatement]);
 
   // Top Quick Account Selector state (allows freely picking or typing on top)
   const [topSelectedItemId, setTopSelectedItemId] = useState<string>('');
@@ -171,22 +183,41 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     return lineItems.filter((item) => (item.statementType || 'position') === selectedStatement);
   }, [lineItems, selectedStatement]);
 
+  const NON_ENCODABLE_CASH_FLOW_IDS = useMemo(
+    () => new Set(['cf-sum-beg-cash', 'cf-sum-end-cash', 'cf-sum-net-inc-dec']),
+    []
+  );
+
+  const NON_ENCODABLE_NET_ASSETS_IDS = useMemo(
+    () => new Set(['na-beg-balance', 'na-restated-balance', 'na-end-balance']),
+    []
+  );
+
+  const NON_ENCODABLE_SUMMARY_IDS = useMemo(
+    () => new Set([...NON_ENCODABLE_CASH_FLOW_IDS, ...NON_ENCODABLE_NET_ASSETS_IDS]),
+    [NON_ENCODABLE_CASH_FLOW_IDS, NON_ENCODABLE_NET_ASSETS_IDS]
+  );
+
+  const encodableStatementLineItems = useMemo(() => {
+    return activeStatementLineItems.filter((item) => !NON_ENCODABLE_SUMMARY_IDS.has(item.id));
+  }, [activeStatementLineItems, NON_ENCODABLE_SUMMARY_IDS]);
+
   // Determines whether a staged entry's line item is invalid / not in the official line items database for the active statement
   const isRowLineItemInvalid = (row: StagedEntry): boolean => {
     const hasText = Boolean(row.rawText && row.rawText.trim());
     const hasItem = Boolean(row.lineItemId);
     const hasAmount = Boolean(row.amount && row.amount.trim() && parseNumberInput(row.amount) !== 0);
 
-    // If row has an explicit lineItemId, verify it really exists in activeStatementLineItems
+    // If row has an explicit lineItemId, verify it really exists in encodableStatementLineItems
     if (hasItem) {
-      const exists = activeStatementLineItems.some((item) => item.id === row.lineItemId);
+      const exists = encodableStatementLineItems.some((item) => item.id === row.lineItemId);
       return !exists;
     }
 
     // If user wrote text or entered an amount, but no recognized lineItemId was matched:
     if (hasText || hasAmount) {
       if (hasText) {
-        const nameMatch = activeStatementLineItems.some(
+        const nameMatch = encodableStatementLineItems.some(
           (item) => item.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
         );
         if (nameMatch) return false;
@@ -201,7 +232,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   // Top account invalid check
   const isTopInvalid = Boolean(
     (topRawText.trim() || (topAmountInput.trim() && parseNumberInput(topAmountInput) !== 0)) &&
-    !activeStatementLineItems.some((i) => i.id === topSelectedItemId || (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()))
+    !encodableStatementLineItems.some((i) => i.id === topSelectedItemId || (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()))
   );
 
   // Staged rows for batch multiple entries (starts blank with 0 items on startup as requested)
@@ -242,7 +273,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     return calculateCashFlowsSummary(lineItems, dataStore, selectedYear, selectedDivisionId);
   }, [lineItems, dataStore, selectedYear, selectedDivisionId]);
 
-  // Stored records in database for this division & year with Cash Flows reconciliation rules applied
+  // Compute live Statement of Changes in Net Assets/Equity summary and reconciliation balances
+  const netAssetsSummary = useMemo(() => {
+    return calculateNetAssetsSummary(dataStore, selectedYear, selectedDivisionId);
+  }, [dataStore, selectedYear, selectedDivisionId]);
+
+  // Stored records in database for this division & year with Cash Flows & Net Assets reconciliation rules applied
   const currentDbEntries = useMemo(() => {
     const raw = (dataStore[selectedYear] && dataStore[selectedYear][selectedDivisionId]) || {};
     if (selectedStatement === 'cash_flows') {
@@ -267,8 +303,54 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
       return merged;
     }
+    if (selectedStatement === 'net_assets') {
+      const merged = { ...raw };
+      if (selectedYear !== '2024' || merged['na-beg-balance'] === undefined) {
+        merged['na-beg-balance'] = netAssetsSummary.january1Balance;
+      }
+      merged['na-restated-balance'] = netAssetsSummary.restatedBalance;
+      merged['na-end-balance'] = netAssetsSummary.december31Balance;
+      return merged;
+    }
     return raw;
-  }, [dataStore, selectedYear, selectedDivisionId, selectedStatement, cashFlowsSummary]);
+  }, [dataStore, selectedYear, selectedDivisionId, selectedStatement, cashFlowsSummary, netAssetsSummary]);
+
+  const handleStartEditJan1_2024 = () => {
+    const targetItemId = selectedStatement === 'net_assets' ? 'na-beg-balance' : 'cf-sum-beg-cash';
+    const fallbackVal =
+      selectedStatement === 'net_assets'
+        ? netAssetsSummary.january1Balance
+        : cashFlowsSummary.january1Cash;
+    const currentVal =
+      currentDbEntries[targetItemId] !== undefined
+        ? currentDbEntries[targetItemId]
+        : fallbackVal;
+    setJan1_2024Input(currentVal ? formatAccounting(currentVal) : '');
+    setIsEditingJan1_2024(true);
+  };
+
+  const handleSaveJan1_2024 = () => {
+    const parsedVal = parseNumberInput(jan1_2024Input);
+    const targetItemId: 'cf-sum-beg-cash' | 'na-beg-balance' =
+      selectedStatement === 'net_assets' ? 'na-beg-balance' : 'cf-sum-beg-cash';
+    const accountName =
+      selectedStatement === 'net_assets'
+        ? 'Balance at January 1 (Statement of Changes in Net Assets/Equity)'
+        : 'Cash and Cash Equivalents, January 1 (Statement of Cash Flows)';
+    const fallbackVal =
+      selectedStatement === 'net_assets'
+        ? netAssetsSummary.january1Balance
+        : cashFlowsSummary.january1Cash;
+    const previousAmount =
+      currentDbEntries[targetItemId] !== undefined ? currentDbEntries[targetItemId] : fallbackVal;
+
+    setPendingConfirmJan1_2024({
+      lineItemId: targetItemId,
+      accountName,
+      previousAmount,
+      newAmount: parsedVal,
+    });
+  };
 
   // Master accounts list in database: Zero balance items removed by default, automatically added as amounts are encoded
   const ledgerAccountsList = useMemo(() => {
@@ -281,12 +363,16 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         (item.subgroup && item.subgroup.toLowerCase().includes(q));
 
       const hasAmount = currentDbEntries[item.id] !== undefined && currentDbEntries[item.id] !== 0;
-      // Default: remove zero balance items, only show active amounts
-      const matchesZeroFilter = showZeroBalancesInLedger ? true : hasAmount;
+      const isEditable2024Jan1 =
+        selectedYear === '2024' &&
+        ((selectedStatement === 'cash_flows' && item.id === 'cf-sum-beg-cash') ||
+          (selectedStatement === 'net_assets' && item.id === 'na-beg-balance'));
+      // Default: remove zero balance items, only show active amounts (keep 2024 Jan 1 visible for adjustment)
+      const matchesZeroFilter = showZeroBalancesInLedger ? true : hasAmount || isEditable2024Jan1;
 
       return matchesSearch && matchesZeroFilter;
     });
-  }, [activeStatementLineItems, currentDbEntries, ledgerSearch, showZeroBalancesInLedger]);
+  }, [activeStatementLineItems, currentDbEntries, ledgerSearch, showZeroBalancesInLedger, selectedStatement, selectedYear]);
 
   // Row update handlers
   const handleUpdateStagedRow = (
@@ -339,9 +425,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       const sheet = workbook.Sheets[firstSheetName];
       const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
 
+      const IGNORED_CASH_FLOW_UPLOAD_NAMES = new Set([
+        'cashandcashequivalentsdecember31',
+        'cashandcashequivalentsjanuary1',
+        'increasedecreaseincashandcashequivalents',
+      ]);
+
+      const IGNORED_NET_ASSETS_UPLOAD_NAMES = new Set([
+        'balanceatjanuary1',
+        'balanceofjanuary1',
+        'restatedbalance',
+        'balanceatdecember31',
+        'balanceofdecember31',
+      ]);
+
       const importedEntries: StagedEntry[] = [];
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let ignoredSummaryCount = 0;
 
       rows.forEach((row, idx) => {
         if (!Array.isArray(row)) return;
@@ -365,7 +466,18 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           }
         }
 
-        if (!rawName || !rawAmountStr) return;
+        if (!rawName) return;
+
+        const alphaName = normalizeAlphanumeric(rawName);
+        if (
+          (selectedStatement === 'cash_flows' && IGNORED_CASH_FLOW_UPLOAD_NAMES.has(alphaName)) ||
+          (selectedStatement === 'net_assets' && IGNORED_NET_ASSETS_UPLOAD_NAMES.has(alphaName))
+        ) {
+          ignoredSummaryCount++;
+          return;
+        }
+
+        if (!rawAmountStr) return;
 
         // Parse amount and ignore rows where Column B is zero or has no numeric value
         let numericAmount = 0;
@@ -378,10 +490,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
         const amountStr = formatAccounting(numericAmount);
 
-        // Match against official lineItems database (exact or normalized alphanumeric)
+        // Match against encodable official lineItems database (exact or normalized alphanumeric)
         const lowerName = rawName.toLowerCase();
-        const alphaName = normalizeAlphanumeric(rawName);
-        const matchedItem = activeStatementLineItems.find(
+        const matchedItem = encodableStatementLineItems.find(
           (item) =>
             item.name.toLowerCase() === lowerName ||
             (alphaName && normalizeAlphanumeric(item.name) === alphaName)
@@ -407,14 +518,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       });
 
       if (importedEntries.length === 0) {
-        setUploadFeedback({ message: 'No valid rows found in columns A & B of the uploaded file.', isError: true });
+        setUploadFeedback({
+          message:
+            ignoredSummaryCount > 0
+              ? `No encodable rows found (${ignoredSummaryCount} auto-computed summary row${ignoredSummaryCount === 1 ? '' : 's'} ignored).`
+              : 'No valid rows found in columns A & B of the uploaded file.',
+          isError: true,
+        });
       } else {
         setStagedEntries((prev) => {
           const nonBlankPrev = prev.filter((r) => r.lineItemId || r.rawText?.trim() || r.amount?.trim());
           return [...nonBlankPrev, ...importedEntries];
         });
+        const ignoredSuffix =
+          ignoredSummaryCount > 0
+            ? `; ${ignoredSummaryCount} auto-computed summary row${ignoredSummaryCount === 1 ? '' : 's'} ignored`
+            : '';
         setUploadFeedback({
-          message: `Imported ${importedEntries.length} row${importedEntries.length === 1 ? '' : 's'} from "${file.name}" (${matchedCount} matched, ${unmatchedCount} not in database).`,
+          message: `Imported ${importedEntries.length} row${importedEntries.length === 1 ? '' : 's'} from "${file.name}" (${matchedCount} matched, ${unmatchedCount} not in database${ignoredSuffix}).`,
           isError: false,
         });
       }
@@ -434,8 +555,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     if (e) e.preventDefault();
     if (!topSelectedItemId && !topRawText.trim()) return;
 
-    // Resolve if line item is in active statement database
-    const resolvedItem = activeStatementLineItems.find(
+    // Resolve if line item is in encodable active statement database
+    const resolvedItem = encodableStatementLineItems.find(
       (i) =>
         i.id === topSelectedItemId ||
         (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim())
@@ -501,10 +622,10 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   // Pre-load primary key accounts (Cash, Receivables, PPE, Liabilities)
   const handlePreloadCommonAccounts = () => {
     const commonAccountIds =
-      selectedStatement === 'performance'
-        ? activeStatementLineItems.slice(0, 10).map((l) => l.id)
-        : selectedStatement === 'cash_flows'
-        ? activeStatementLineItems.slice(0, 10).map((l) => l.id)
+      selectedStatement === 'performance' ||
+      selectedStatement === 'cash_flows' ||
+      selectedStatement === 'net_assets'
+        ? encodableStatementLineItems.slice(0, 10).map((l) => l.id)
         : [
             'cash_collecting_officer',
             'petty_cash_fund',
@@ -558,7 +679,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       if (!isRowLineItemInvalid(row)) {
         let resolvedId = row.lineItemId;
         if (!resolvedId && row.rawText) {
-          const match = activeStatementLineItems.find(
+          const match = encodableStatementLineItems.find(
             (i) => i.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
           );
           if (match) resolvedId = match.id;
@@ -646,11 +767,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
   const validStagedCount = useMemo(() => {
     return stagedEntries.filter((r) => !isRowLineItemInvalid(r) && r.lineItemId && r.amount.trim() !== '').length;
-  }, [stagedEntries, activeStatementLineItems]);
+  }, [stagedEntries, encodableStatementLineItems]);
 
   const invalidStagedCount = useMemo(() => {
     return stagedEntries.filter((r) => isRowLineItemInvalid(r)).length;
-  }, [stagedEntries, activeStatementLineItems]);
+  }, [stagedEntries, encodableStatementLineItems]);
 
   const stagedBatchTotal = useMemo(() => {
     return stagedEntries.reduce((sum, row) => {
@@ -663,8 +784,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   }, [stagedEntries]);
 
   const topSelectedItemDetail = useMemo(() => {
-    return activeStatementLineItems.find((i) => i.id === topSelectedItemId);
-  }, [activeStatementLineItems, topSelectedItemId]);
+    return encodableStatementLineItems.find((i) => i.id === topSelectedItemId);
+  }, [encodableStatementLineItems, topSelectedItemId]);
 
   const handleClearEmptyStagedRows = () => {
     setStagedEntries((prev) => prev.filter((r) => (r.lineItemId || r.rawText?.trim()) && r.amount?.trim()));
@@ -896,7 +1017,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               </label>
               <SearchableLineItemSelect
                 inputRef={topLineItemInputRef}
-                lineItems={activeStatementLineItems}
+                lineItems={encodableStatementLineItems}
                 selectedItemId={topSelectedItemId}
                 rawText={topRawText}
                 onChangeRawText={setTopRawText}
@@ -1174,7 +1295,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         inputRef={(el) => {
                           lineItemInputRefs.current[row.id] = el;
                         }}
-                        lineItems={activeStatementLineItems}
+                        lineItems={encodableStatementLineItems}
                         selectedItemId={row.lineItemId}
                         rawText={row.rawText}
                         onChangeRawText={(text) => handleUpdateStagedRow(row.id, 'rawText', text)}
@@ -1405,6 +1526,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   ? 'View Statement of Financial Performance'
                   : selectedStatement === 'cash_flows'
                   ? 'View Statement of Cash Flows'
+                  : selectedStatement === 'net_assets'
+                  ? 'View Statement of Changes in Net Assets/Equity'
                   : 'View Statement of Financial Position'}
               </span>
               <ChevronRight className="w-4 h-4 text-[#38bdf8]" />
@@ -1471,13 +1594,67 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 </div>
               </div>
               <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
-                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between">
-                  <span>Cash & Eq., January 1</span>
-                  <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">(Prior Dec 31)</span>
+                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between gap-2">
+                  <span>Cash &amp; Eq., January 1</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                      {selectedYear === '2024' ? '(No 2023 Data)' : '(Prior Dec 31)'}
+                    </span>
+                    {selectedYear === '2024' && !isEditingJan1_2024 && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditJan1_2024}
+                        className="text-[11px] font-bold text-[#0072ce] dark:text-[#38bdf8] hover:underline cursor-pointer"
+                      >
+                        Adjust
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
-                  {formatAccounting(currentDbEntries['cf-sum-beg-cash'] !== undefined ? currentDbEntries['cf-sum-beg-cash'] : cashFlowsSummary.january1Cash)}
-                </div>
+                {selectedYear === '2024' && isEditingJan1_2024 ? (
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={jan1_2024Input}
+                      onChange={(e) => setJan1_2024Input(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveJan1_2024();
+                        } else if (e.key === 'Escape') {
+                          setIsEditingJan1_2024(false);
+                        }
+                      }}
+                      placeholder="0.00"
+                      autoFocus
+                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-[#0072ce] rounded-md text-slate-900 dark:text-white focus:outline-hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveJan1_2024}
+                      className="p-1.5 rounded-md bg-[#0072ce] hover:bg-[#005ea8] text-white cursor-pointer"
+                      title="Save January 1, 2024 balance"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingJan1_2024(false)}
+                      className="p-1.5 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
+                    {formatAccounting(
+                      currentDbEntries['cf-sum-beg-cash'] !== undefined
+                        ? currentDbEntries['cf-sum-beg-cash']
+                        : cashFlowsSummary.january1Cash
+                    )}
+                  </div>
+                )}
               </div>
               <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
                 <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
@@ -1486,6 +1663,120 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 </div>
                 <div className="text-base font-extrabold font-mono mt-0.5 text-emerald-900 dark:text-emerald-200">
                   {formatAccounting(currentDbEntries['cf-sum-end-cash'] !== undefined ? currentDbEntries['cf-sum-end-cash'] : cashFlowsSummary.december31Cash)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reconciliation Summary for Statement of Changes in Net Assets/Equity */}
+        {selectedStatement === 'net_assets' && (
+          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/40">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
+                <Calculator className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Net Assets / Equity Reconciliation (FY {selectedYear})
+              </span>
+              <span className="text-xs text-sky-700 dark:text-sky-400 font-medium">
+                Comparative Prior: FY {comparativeYear}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
+                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between gap-2">
+                  <span>Balance at Jan 1</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                      {selectedYear === '2024' ? '(No 2023 Data)' : '(Prior Dec 31)'}
+                    </span>
+                    {selectedYear === '2024' && !isEditingJan1_2024 && (
+                      <button
+                        type="button"
+                        onClick={handleStartEditJan1_2024}
+                        className="text-[11px] font-bold text-[#0072ce] dark:text-[#38bdf8] hover:underline cursor-pointer"
+                      >
+                        Adjust
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {selectedYear === '2024' && isEditingJan1_2024 ? (
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={jan1_2024Input}
+                      onChange={(e) => setJan1_2024Input(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveJan1_2024();
+                        } else if (e.key === 'Escape') {
+                          setIsEditingJan1_2024(false);
+                        }
+                      }}
+                      placeholder="0.00"
+                      autoFocus
+                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-[#0072ce] rounded-md text-slate-900 dark:text-white focus:outline-hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveJan1_2024}
+                      className="p-1.5 rounded-md bg-[#0072ce] hover:bg-[#005ea8] text-white cursor-pointer"
+                      title="Save January 1, 2024 balance"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingJan1_2024(false)}
+                      className="p-1.5 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
+                    {formatAccounting(
+                      currentDbEntries['na-beg-balance'] !== undefined
+                        ? currentDbEntries['na-beg-balance']
+                        : netAssetsSummary.january1Balance
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 font-medium">Beg. Adjustments</div>
+                <div className={`text-base font-bold font-mono mt-0.5 ${netAssetsSummary.totalBeginningAdjustments < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                  {formatAccounting(netAssetsSummary.totalBeginningAdjustments)}
+                </div>
+              </div>
+
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
+                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between">
+                  <span>Restated Balance</span>
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Auto</span>
+                </div>
+                <div className={`text-base font-extrabold font-mono mt-0.5 ${netAssetsSummary.restatedBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-sky-700 dark:text-sky-300'}`}>
+                  {formatAccounting(netAssetsSummary.restatedBalance)}
+                </div>
+              </div>
+
+              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
+                <div className="text-xs text-slate-500 font-medium">Calendar Year Changes</div>
+                <div className={`text-base font-bold font-mono mt-0.5 ${netAssetsSummary.totalCalendarYearChanges < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                  {formatAccounting(netAssetsSummary.totalCalendarYearChanges)}
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
+                <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
+                  <span>Balance at Dec 31</span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Restated + CY</span>
+                </div>
+                <div className={`text-base font-extrabold font-mono mt-0.5 ${netAssetsSummary.december31Balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-200'}`}>
+                  {formatAccounting(netAssetsSummary.december31Balance)}
                 </div>
               </div>
             </div>
@@ -1532,26 +1823,35 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <table className="w-full text-left text-base border-collapse">
               <thead className="bg-[#f0f5fa] dark:bg-[#0a274c] text-sm font-bold text-[#0a3461] dark:text-[#93c5fd] uppercase tracking-wider border-b-2 border-slate-200 dark:border-slate-700 sticky top-0 z-10">
                 <tr>
-                  {isSelectMultipleMode && (
-                    <th
-                      onClick={() => {
-                        if (ledgerAccountsList.length > 0 && selectedRecordedIds.length === ledgerAccountsList.length) {
-                          setSelectedRecordedIds([]);
-                        } else {
-                          setSelectedRecordedIds(ledgerAccountsList.map((i) => i.id));
-                        }
-                      }}
-                      className="py-3.5 px-4 w-14 text-center cursor-pointer select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={ledgerAccountsList.length > 0 && selectedRecordedIds.length === ledgerAccountsList.length}
-                        onChange={() => {}}
-                        className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
-                        aria-label="Select all recorded balances"
-                      />
-                    </th>
-                  )}
+                  {isSelectMultipleMode && (() => {
+                    const selectableLedgerIds = ledgerAccountsList
+                      .filter((i) => !NON_ENCODABLE_SUMMARY_IDS.has(i.id))
+                      .map((i) => i.id);
+                    const allSelectableSelected =
+                      selectableLedgerIds.length > 0 &&
+                      selectableLedgerIds.every((id) => selectedRecordedIds.includes(id));
+
+                    return (
+                      <th
+                        onClick={() => {
+                          if (allSelectableSelected) {
+                            setSelectedRecordedIds([]);
+                          } else {
+                            setSelectedRecordedIds(selectableLedgerIds);
+                          }
+                        }}
+                        className="py-3.5 px-4 w-14 text-center cursor-pointer select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allSelectableSelected}
+                          onChange={() => {}}
+                          className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
+                          aria-label="Select all recorded balances"
+                        />
+                      </th>
+                    );
+                  })()}
                   <th className="py-3.5 px-6">Official Account Title</th>
                   <th className="py-3.5 px-6">Classification & Group</th>
                   <th className="py-3.5 px-6 text-right">Balance (₱)</th>
@@ -1562,12 +1862,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 {ledgerAccountsList.map((item) => {
                   const amt = currentDbEntries[item.id] || 0;
                   const hasValue = currentDbEntries[item.id] !== undefined && currentDbEntries[item.id] !== 0;
+                  const isEditable2024Jan1 =
+                    selectedYear === '2024' &&
+                    ((selectedStatement === 'cash_flows' && item.id === 'cf-sum-beg-cash') ||
+                      (selectedStatement === 'net_assets' && item.id === 'na-beg-balance'));
+                  const isAutoComputedCashFlow = NON_ENCODABLE_SUMMARY_IDS.has(item.id) && !isEditable2024Jan1;
 
                   return (
                     <tr
                       key={item.id}
                       onClick={() => {
-                        if (!isSelectMultipleMode) return;
+                        if (!isSelectMultipleMode || isAutoComputedCashFlow) return;
                         setSelectedRecordedIds((prev) =>
                           prev.includes(item.id)
                             ? prev.filter((id) => id !== item.id)
@@ -1575,20 +1880,22 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         );
                       }}
                       className={`hover:bg-[#f4f8fc] dark:hover:bg-slate-800/60 transition-colors ${
-                        isSelectMultipleMode ? 'cursor-pointer select-none' : ''
+                        isSelectMultipleMode && !isAutoComputedCashFlow ? 'cursor-pointer select-none' : ''
                       } ${
                         hasValue ? 'bg-[#f8fbfd] dark:bg-[#0a274c]/15' : ''
                       }`}
                     >
                       {isSelectMultipleMode && (
                         <td className="py-3.5 px-4 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedRecordedIds.includes(item.id)}
-                            onChange={() => {}}
-                            className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
-                            aria-label={`Select ${item.name}`}
-                          />
+                          {!isAutoComputedCashFlow && (
+                            <input
+                              type="checkbox"
+                              checked={selectedRecordedIds.includes(item.id)}
+                              onChange={() => {}}
+                              className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
+                              aria-label={`Select ${item.name}`}
+                            />
+                          )}
                         </td>
                       )}
                       <td className="py-3.5 px-6 font-medium text-slate-900 dark:text-slate-100">
@@ -1596,7 +1903,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                           <span className="text-base font-bold text-slate-900 dark:text-slate-100">{item.name}</span>
                           {item.id === 'cf-sum-beg-cash' && (
                             <span className="text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
-                              Default: Prior Dec 31
+                              {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Default: Prior Dec 31'}
                             </span>
                           )}
                           {item.id === 'cf-sum-end-cash' && (
@@ -1607,6 +1914,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                           {item.id === 'cf-sum-net-inc-dec' && (
                             <span className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md font-bold border border-indigo-300 dark:border-indigo-700">
                               Auto: Net Inflows - Outflows
+                            </span>
+                          )}
+                          {item.id === 'na-beg-balance' && (
+                            <span className="text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
+                              {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Auto: Prior Dec 31'}
+                            </span>
+                          )}
+                          {item.id === 'na-restated-balance' && (
+                            <span className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md font-bold border border-indigo-300 dark:border-indigo-700">
+                              Auto: Jan 1 + Adjustments
+                            </span>
+                          )}
+                          {item.id === 'na-end-balance' && (
+                            <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
+                              Auto: Restated + CY Changes
                             </span>
                           )}
                           {item.isContra && (
@@ -1637,37 +1959,101 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                           hasValue ? 'font-bold text-slate-950 dark:text-white' : 'text-slate-400 dark:text-slate-500'
                         }`}
                       >
-                        {item.isContra && amt > 0
-                          ? `(${formatAccounting(amt)})`
-                          : formatAccounting(amt)}
+                        {isEditable2024Jan1 && isEditingJan1_2024 ? (
+                          <input
+                            type="text"
+                            value={jan1_2024Input}
+                            onChange={(e) => setJan1_2024Input(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleSaveJan1_2024();
+                              } else if (e.key === 'Escape') {
+                                setIsEditingJan1_2024(false);
+                              }
+                            }}
+                            placeholder="0.00"
+                            className="w-44 ml-auto px-3 py-1.5 text-right font-mono font-bold bg-white dark:bg-slate-800 border-2 border-[#0072ce] rounded-lg text-slate-900 dark:text-white focus:outline-hidden"
+                          />
+                        ) : item.isContra && amt > 0 ? (
+                          `(${formatAccounting(amt)})`
+                        ) : (
+                          formatAccounting(amt)
+                        )}
                       </td>
 
                       <td className="py-3.5 px-6 text-right">
-                        <div className="flex items-center justify-end gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStagedEntries((prev) => [
-                                { id: `stage-edit-${item.id}`, lineItemId: item.id, amount: amt !== 0 ? amt.toString() : '' },
-                                ...prev,
-                              ]);
-                              window.scrollTo({ top: 220, behavior: 'smooth' });
-                            }}
-                            className="text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white px-3.5 py-2 rounded-xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border border-[#b9d9f5] dark:border-[#1d4677] transition-colors cursor-pointer"
-                          >
-                            {hasValue ? 'Edit Amount' : 'Add Amount'}
-                          </button>
-                          {hasValue && (
+                        {isAutoComputedCashFlow ? (
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            Auto-Computed
+                          </span>
+                        ) : isEditable2024Jan1 ? (
+                          isEditingJan1_2024 ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={handleSaveJan1_2024}
+                                className="inline-flex items-center gap-1 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
+                              >
+                                <Check className="w-4 h-4" />
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingJan1_2024(false)}
+                                className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2.5">
+                              <button
+                                type="button"
+                                onClick={handleStartEditJan1_2024}
+                                className="text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white px-3.5 py-2 rounded-xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border border-[#b9d9f5] dark:border-[#1d4677] transition-colors cursor-pointer"
+                              >
+                                {hasValue ? 'Adjust Amount' : 'Set Jan 1 Balance'}
+                              </button>
+                              {hasValue && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDeleteRecordedItem(item)}
+                                  className="text-slate-400 hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                  title="Reset to zero"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex items-center justify-end gap-2.5">
                             <button
                               type="button"
-                              onClick={() => setPendingDeleteRecordedItem(item)}
-                              className="text-slate-400 hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
-                              title="Reset to zero"
+                              onClick={() => {
+                                setStagedEntries((prev) => [
+                                  { id: `stage-edit-${item.id}`, lineItemId: item.id, amount: amt !== 0 ? amt.toString() : '' },
+                                  ...prev,
+                                ]);
+                                window.scrollTo({ top: 220, behavior: 'smooth' });
+                              }}
+                              className="text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white px-3.5 py-2 rounded-xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border border-[#b9d9f5] dark:border-[#1d4677] transition-colors cursor-pointer"
                             >
-                              <Trash2 className="w-5 h-5" />
+                              {hasValue ? 'Edit Amount' : 'Add Amount'}
                             </button>
-                          )}
-                        </div>
+                            {hasValue && (
+                              <button
+                                type="button"
+                                onClick={() => setPendingDeleteRecordedItem(item)}
+                                className="text-slate-400 hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                title="Reset to zero"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1916,6 +2302,34 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           setPendingDeleteSelectedRecorded(false);
         }}
         onCancel={() => setPendingDeleteSelectedRecorded(false)}
+      />
+
+      {/* Confirmation Alarm: Adjusting FY 2024 Beginning Balance (Cash Flows & Net Assets/Equity) */}
+      <ConfirmModal
+        isOpen={pendingConfirmJan1_2024 !== null}
+        title="Confirm FY 2024 Beginning Balance Change"
+        message={
+          pendingConfirmJan1_2024
+            ? `Are you sure you want to change "${pendingConfirmJan1_2024.accountName}" for ${currentDivision?.name} (FY 2024) from ₱${formatAccounting(pendingConfirmJan1_2024.previousAmount, false)} to ₱${formatAccounting(pendingConfirmJan1_2024.newAmount, false)}? This opening balance directly affects FY 2024 ending balances and carries forward to subsequent years.`
+            : ''
+        }
+        confirmLabel="Yes, Save Change"
+        cancelLabel="Cancel"
+        variant="warning"
+        onConfirm={() => {
+          if (pendingConfirmJan1_2024) {
+            onSaveBatchAmounts('2024', selectedDivisionId, [
+              { lineItemId: pendingConfirmJan1_2024.lineItemId, amount: pendingConfirmJan1_2024.newAmount },
+            ]);
+            setSaveSuccessMsg(
+              `Updated ${pendingConfirmJan1_2024.accountName} for ${currentDivision?.name} (FY 2024) to ₱${formatAccounting(pendingConfirmJan1_2024.newAmount, false)}.`
+            );
+            setTimeout(() => setSaveSuccessMsg(null), 4000);
+            setPendingConfirmJan1_2024(null);
+            setIsEditingJan1_2024(false);
+          }
+        }}
+        onCancel={() => setPendingConfirmJan1_2024(null)}
       />
         </div>
       </div>

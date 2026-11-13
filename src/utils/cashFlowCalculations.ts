@@ -1,5 +1,5 @@
 import { LineItemDefinition, FinancialDataStore } from '../types/fs';
-import { getComparativeYear } from './yearUtils';
+import { getComparativeYear, EARLIEST_YEAR } from './yearUtils';
 
 export interface CashFlowsSummary {
   operatingInflows: number;
@@ -115,8 +115,8 @@ export function calculateCashFlowsSummary(
     if (hasExplicitEntry('cf-sum-end-cash', prevYear) && priorExplicitDec31 !== 0) {
       january1Cash = priorExplicitDec31;
       isJan1FromPriorDec31 = true;
-    } else if (dataStore[prevYear]) {
-      // If prior year exists, calculate its ending cash flow balance recursively
+    } else if (Number(prevYear) >= EARLIEST_YEAR) {
+      // If prior year >= 2024, calculate its ending cash flow balance recursively
       const priorSummary = calculateCashFlowsSummary(lineItems, dataStore, prevYear, divisionId);
       january1Cash = priorSummary.december31Cash;
       if (january1Cash !== 0) {

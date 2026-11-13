@@ -428,13 +428,17 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               ? 'Consolidated Statement of Cash Flows'
               : selectedStatement === 'performance'
               ? 'Consolidated Statement of Financial Performance'
+              : selectedStatement === 'net_assets'
+              ? 'Consolidated Statement of Changes in Net Assets/Equity'
               : isCondensed
               ? 'Consolidated Statement of Financial Position'
               : 'Consolidated Detailed Statement of Financial Position'}
           </div>
           <div className="text-base font-bold">All Funds</div>
           <div className="text-base font-bold">
-            {selectedStatement === 'cash_flows' || selectedStatement === 'performance'
+            {selectedStatement === 'cash_flows' ||
+            selectedStatement === 'performance' ||
+            selectedStatement === 'net_assets'
               ? `For the Year Ended December 31, ${selectedYear}`
               : `As at December 31, ${selectedYear}`}
           </div>
