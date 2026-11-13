@@ -18,3 +18,13 @@ export function getComparativeYear(year: string): string {
   if (isNaN(num) || num <= EARLIEST_YEAR) return '2023';
   return (num - 1).toString();
 }
+
+/**
+ * Returns the current calendar year clamped to the supported Fiscal Year range (2024-2099)
+ */
+export function getDefaultFiscalYear(): string {
+  const currentYear = new Date().getFullYear();
+  if (currentYear < EARLIEST_YEAR) return EARLIEST_YEAR.toString();
+  if (currentYear > LATEST_YEAR) return LATEST_YEAR.toString();
+  return currentYear.toString();
+}

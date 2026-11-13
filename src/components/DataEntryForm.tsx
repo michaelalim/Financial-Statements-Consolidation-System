@@ -14,7 +14,6 @@ import {
   ChevronRight, 
   Layers, 
   RotateCcw,
-  Sparkles,
   Building,
   CheckCircle2,
   Eye,
@@ -75,6 +74,79 @@ const FINANCIAL_STATEMENTS: FinancialStatementOption[] = [
     lockNotice: '',
   },
 ];
+
+interface StatementEncodingMeta {
+  topPlaceholder: string;
+  rowPlaceholder: string;
+  batchExampleTyped: string;
+  batchExampleMatched: string;
+  frequentAccounts: { id: string; label: string }[];
+}
+
+const STATEMENT_ENCODING_META: Record<FinancialStatementType, StatementEncodingMeta> = {
+  position: {
+    topPlaceholder: 'Type or click to choose account (e.g. Cash, Office Equip)...',
+    rowPlaceholder: 'Enter account (e.g. Cash, Office Equip)...',
+    batchExampleTyped: 'cash collecting',
+    batchExampleMatched: 'Cash - Collecting Officer',
+    frequentAccounts: [
+      { id: 'cash_collecting_officer', label: 'Cash - Collecting Officer' },
+      { id: 'petty_cash_fund', label: 'Petty Cash' },
+      { id: 'cash_bank_current_acct', label: 'Cash in Bank' },
+      { id: 'school_buildings', label: 'School Buildings' },
+      { id: 'office_equipment', label: 'Office Equipment' },
+      { id: 'accounts_payable', label: 'Accounts Payable' },
+      { id: 'due_to_bir', label: 'Due to BIR' },
+      { id: 'accumulated_surplus_deficit', label: 'Govt Equity' },
+    ],
+  },
+  performance: {
+    topPlaceholder: 'Type or click to choose line item (e.g. Salaries, Office Supplies)...',
+    rowPlaceholder: 'Enter line item (e.g. Salaries, Office Supplies)...',
+    batchExampleTyped: 'salaries regular',
+    batchExampleMatched: 'Salaries and Wages - Regular',
+    frequentAccounts: [
+      { id: 'perf-ps-salaries-reg', label: 'Salaries - Regular' },
+      { id: 'perf-ps-pera', label: 'PERA' },
+      { id: 'perf-mooe-office-sup', label: 'Office Supplies' },
+      { id: 'perf-mooe-travel-local', label: 'Travel - Local' },
+      { id: 'perf-mooe-electricity', label: 'Electricity Expenses' },
+      { id: 'perf-mooe-repairs-bldg', label: 'Repairs - Buildings' },
+      { id: 'perf-nc-depr-bldg', label: 'Depreciation - Buildings' },
+      { id: 'perf-tr-sub-ng', label: 'Subsidy from NG' },
+    ],
+  },
+  cash_flows: {
+    topPlaceholder: 'Type or click to choose line item (e.g. Notice of Cash Allocation, Personnel Services)...',
+    rowPlaceholder: 'Enter line item (e.g. Receipt of NCA, Personnel Services)...',
+    batchExampleTyped: 'payment personnel',
+    batchExampleMatched: 'Payment of personnel services',
+    frequentAccounts: [
+      { id: 'cf-op-in-nca-1', label: 'Receipt of NCA' },
+      { id: 'cf-op-in-rev-2', label: 'Service & Business Income' },
+      { id: 'cf-op-in-sub-1', label: 'Subsidy from NGAs' },
+      { id: 'cf-op-out-exp-1', label: 'Payment of Personnel Services' },
+      { id: 'cf-op-out-exp-2', label: 'Payment of MOOE' },
+      { id: 'cf-op-out-ap-1', label: 'Payment of Accounts Payables' },
+      { id: 'cf-op-out-ded-1', label: 'Remittance of Taxes (TRA)' },
+      { id: 'cf-inv-out-ppe-4', label: 'Construction of Buildings' },
+    ],
+  },
+  net_assets: {
+    topPlaceholder: 'Type or click to choose line item (e.g. Surplus/(Deficit), Prior period errors)...',
+    rowPlaceholder: 'Enter line item (e.g. Surplus/(Deficit), Accounting Policy)...',
+    batchExampleTyped: 'surplus deficit',
+    batchExampleMatched: 'Surplus/(Deficit) for the Period',
+    frequentAccounts: [
+      { id: 'na-adj-accounting-policy', label: 'Changes in Accounting Policy' },
+      { id: 'na-adj-prior-period-errors', label: 'Prior period errors' },
+      { id: 'na-adj-other-adjustments', label: 'Other Adjustments' },
+      { id: 'na-cy-surplus-deficit', label: 'Surplus/(Deficit) for the Period' },
+      { id: 'na-cy-net-revenue-adj', label: 'Net Revenue Recognized Directly' },
+      { id: 'na-cy-others', label: 'Others' },
+    ],
+  },
+};
 
 interface StagedEntry {
   id: string;
@@ -155,6 +227,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   const topAmountInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadFeedback, setUploadFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
+
+  useEffect(() => {
+    setTopSelectedItemId('');
+    setTopRawText('');
+    setTopAmountInput('');
+    setTopFeedbackMsg(null);
+  }, [selectedStatement]);
+
+  const activeEncodingMeta = STATEMENT_ENCODING_META[selectedStatement];
 
   // Keyboard navigation refs for batch table rows
   const lineItemInputRefs = useRef<{ [rowId: string]: HTMLInputElement | null }>({});
@@ -616,43 +697,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     }, 40);
   };
 
-  // Pre-load primary key accounts (Cash, Receivables, PPE, Liabilities)
-  const handlePreloadCommonAccounts = () => {
-    const commonAccountIds =
-      selectedStatement === 'performance' ||
-      selectedStatement === 'cash_flows' ||
-      selectedStatement === 'net_assets'
-        ? encodableStatementLineItems.slice(0, 10).map((l) => l.id)
-        : [
-            'cash_collecting_officer',
-            'petty_cash_fund',
-            'cash_bank_current_acct',
-            'due_from_ngas',
-            'due_from_local_gov',
-            'school_buildings',
-            'accum_dep_school_buildings',
-            'office_equipment',
-            'accum_dep_office_equip',
-            'accounts_payable',
-            'due_to_bir',
-            'accumulated_surplus_deficit',
-          ];
-    const prefilledRows: StagedEntry[] = commonAccountIds.map((accId) => {
-      const itm = lineItems.find((l) => l.id === accId);
-      return {
-        id: `stage-common-${accId}-${Date.now()}`,
-        lineItemId: accId,
-        rawText: itm ? itm.name : '',
-        amount:
-          currentDbEntries[accId] !== undefined && currentDbEntries[accId] !== 0
-            ? currentDbEntries[accId].toString()
-            : '',
-      };
-    });
-
-    setStagedEntries(prefilledRows);
-  };
-
   // Save all valid staged rows to database
   // If there are invalid/unrecognized line items, disallow direct saving and prompt user with option to save all except invalid items!
   const handleSaveAllStagedToDatabase = (e?: React.FormEvent) => {
@@ -901,7 +945,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               )}
             </h3>
             <p className="text-sm text-th-muted mt-1 leading-relaxed">
-              Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing <strong className="text-th-text font-bold">&quot;cash collecting&quot;</strong> suggests <strong className="text-th-text font-bold">&quot;Cash - Collecting Officer&quot;</strong>).
+              Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing <strong className="text-th-text font-bold">&quot;{activeEncodingMeta.batchExampleTyped}&quot;</strong> suggests <strong className="text-th-text font-bold">&quot;{activeEncodingMeta.batchExampleMatched}&quot;</strong>).
             </p>
           </div>
 
@@ -921,15 +965,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             >
               <Upload className="w-4 h-4" />
               <span>Upload Excel / CSV</span>
-            </button>
-            <button
-              type="button"
-              onClick={handlePreloadCommonAccounts}
-              className="text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 py-2 rounded-lg border border-th-border-strong transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-              title="Pre-fills rows for primary key accounts"
-            >
-              <Sparkles className="w-4 h-4 text-th-muted" />
-              <span>Preload Common Accounts</span>
             </button>
             <button
               type="button"
@@ -1017,7 +1052,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   topAmountInputRef.current?.select();
                 }}
                 placement="bottom"
-                placeholder="Type or click to choose account (e.g. Cash, Office Equip)..."
+                placeholder={activeEncodingMeta.topPlaceholder}
               />
               {topSelectedItemDetail && (
                 <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong shadow-2xs animate-in fade-in">
@@ -1096,21 +1131,14 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <span className="text-sm font-bold text-th-text mr-1">
               Frequent Accounts:
             </span>
-            {[
-              { id: 'cash_collecting_officer', label: 'Cash - Collecting Officer' },
-              { id: 'petty_cash_fund', label: 'Petty Cash' },
-              { id: 'cash_bank_current_acct', label: 'Cash in Bank' },
-              { id: 'school_buildings', label: 'School Buildings' },
-              { id: 'office_equipment', label: 'Office Equipment' },
-              { id: 'accounts_payable', label: 'Accounts Payable' },
-              { id: 'due_to_bir', label: 'Due to BIR' },
-              { id: 'accumulated_surplus_deficit', label: 'Govt Equity' },
-            ].map((preset) => (
+            {activeEncodingMeta.frequentAccounts.map((preset) => (
               <button
                 key={preset.id}
                 type="button"
                 onClick={() => {
+                  const matched = encodableStatementLineItems.find((i) => i.id === preset.id);
                   setTopSelectedItemId(preset.id);
+                  setTopRawText(matched ? matched.name : preset.label);
                   topAmountInputRef.current?.focus();
                 }}
                 className={`text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors border cursor-pointer ${
@@ -1246,14 +1274,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       <Plus className="w-5 h-5" />
                       <span>Add 1 Blank Row to Table</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={handlePreloadCommonAccounts}
-                      className="px-4 py-3 text-base font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
-                    >
-                      <Sparkles className="w-5 h-5 text-th-muted" />
-                      <span>Preload Common Accounts</span>
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -1303,7 +1323,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         }}
                         placement={preferredPlacement}
                         onOpenStateChange={(isOpen) => setActiveDropdownRowId(isOpen ? row.id : null)}
-                        placeholder="Enter line item..."
+                        placeholder={activeEncodingMeta.rowPlaceholder}
                       />
                     </div>
 

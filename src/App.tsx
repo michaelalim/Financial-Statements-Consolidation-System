@@ -14,6 +14,7 @@ import {
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
 import { calculateReport } from './utils/calculations';
+import { YEAR_RANGE, getDefaultFiscalYear } from './utils/yearUtils';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { AccountingAuditDrawer } from './components/AccountingAuditDrawer';
 import { DataEntryForm } from './components/DataEntryForm';
@@ -28,6 +29,7 @@ const LOCAL_STORAGE_KEY_DATA = 'deped_ro6_fs_data_v1';
 const LOCAL_STORAGE_KEY_DIVISIONS = 'deped_ro6_divisions_v1';
 const LOCAL_STORAGE_KEY_LINE_ITEMS = 'deped_ro6_line_items_v1';
 const LOCAL_STORAGE_KEY_ILOILO_MIGRATED = 'deped_ro6_transferred_iloilo_2024_v1';
+const SESSION_STORAGE_KEY_YEAR = 'deped_ro6_selected_year_session_v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('entry');
@@ -62,8 +64,18 @@ export default function App() {
     return hasIloiloCity ? 'iloilo-city-div' : (divisions[0]?.id || 'ro-vi');
   });
 
-  // Selected Fiscal Year: Default to 2024 to immediately display transferred data
-  const [selectedYear, setSelectedYear] = useState<string>('2024');
+  // Selected Fiscal Year: Default to current calendar year; retain user choice within the session
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_STORAGE_KEY_YEAR);
+      if (saved && YEAR_RANGE.includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // fallback
+    }
+    return getDefaultFiscalYear();
+  });
 
   // Line Items State
   const [lineItems, setLineItems] = useState<LineItemDefinition[]>(() => {
@@ -163,6 +175,14 @@ export default function App() {
       console.error(e);
     }
   }, [dataStore]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_STORAGE_KEY_YEAR, selectedYear);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [selectedYear]);
 
   // Handlers for Data Entry
   const handleSaveAmount = (year: string, divisionId: string, lineItemId: string, amount: number) => {
