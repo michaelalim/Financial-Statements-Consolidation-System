@@ -52,16 +52,16 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
   return (
     <div className="w-full max-w-[1780px] mx-auto px-2 sm:px-4 py-4 space-y-6">
       <div className="mb-2">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Schools Division Offices & Regional Management</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+        <h2 className="text-xl sm:text-2xl font-bold text-th-text">Schools Division Offices &amp; Regional Management</h2>
+        <p className="text-sm text-th-muted mt-1 leading-relaxed">
           Manage reporting divisions for Region VI Western Visayas. Confirmation is required before adding or deleting any division.
         </p>
       </div>
 
       {/* Add Division Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <Building2 className="w-4 h-4 text-sky-700 dark:text-sky-400" />
+      <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
+        <h3 className="text-lg font-bold text-th-text mb-4 flex items-center gap-2">
+          <Building2 className="w-5 h-5 text-th-muted" />
           Add New Division
         </h3>
         <form onSubmit={handleInitiateAdd} className="flex flex-col sm:flex-row gap-3">
@@ -70,53 +70,53 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
             value={newDivisionName}
             onChange={(e) => setNewDivisionName(e.target.value)}
             placeholder="Enter schools division name"
-            className="flex-1 px-4 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+            className="flex-1 px-4 py-2.5 text-sm bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
           />
           <button
             type="submit"
             disabled={!newDivisionName.trim()}
-            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-sky-800 hover:bg-sky-900 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs transition-colors whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs transition-colors whitespace-nowrap cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Add Division
           </button>
         </form>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+        <p className="text-sm text-th-muted mt-2.5 leading-relaxed">
           You will be prompted to confirm before this division is created.
         </p>
       </div>
 
       {/* Existing Divisions List */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between">
+      <div className="bg-th-surface border border-th-border rounded-xl overflow-hidden shadow-xs transition-colors">
+        <div className="px-6 py-4 border-b border-th-border bg-th-subtle flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">Registered Divisions</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">({divisions.length} total)</span>
+            <span className="text-base font-bold text-th-text">Registered Divisions</span>
+            <span className="text-sm font-medium text-th-muted">({divisions.length} total)</span>
           </div>
           <button
             onClick={() => setIsResetConfirmOpen(true)}
-            className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors"
+            className="text-sm font-semibold text-th-muted hover:text-th-text transition-colors cursor-pointer"
           >
             Reset to Default 9 Divisions
           </button>
         </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        <div className="divide-y divide-th-border">
           {divisions.map((division, idx) => (
             <div
               key={division.id}
-              className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
+              className="px-6 py-3.5 flex items-center justify-between hover:bg-th-subtle transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-slate-400 dark:text-slate-500 w-6">
+                <span className="text-sm font-mono font-semibold text-th-muted w-7">
                   {(idx + 1).toString().padStart(2, '0')}
                 </span>
-                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                <span className="text-base font-semibold text-th-text">
                   {division.name}
                 </span>
                 {division.id === 'ro-vi' && (
-                  <span className="text-xs text-sky-800 dark:text-sky-400 font-medium flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Regional Office
+                  <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-th-muted" /> Regional Office
                   </span>
                 )}
               </div>
@@ -125,7 +125,7 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleInitiateDelete(division)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
+                  className="p-1.5 text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors cursor-pointer"
                   title={`Delete ${division.name}`}
                   aria-label={`Delete ${division.name}`}
                 >

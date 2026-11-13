@@ -4,7 +4,7 @@ import { calculateReport } from '../utils/calculations';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { getComparativeYear, YEAR_RANGE } from '../utils/yearUtils';
 import { AccountingBalanceCheck } from './AccountingBalanceCheck';
-import { Search, Database, Download, Edit3, Check, Filter, ArrowLeftRight } from 'lucide-react';
+import { Search, Database, Download, Edit3, Check, Filter } from 'lucide-react';
 
 interface DataBankViewProps {
   divisions: Division[];
@@ -13,7 +13,6 @@ interface DataBankViewProps {
   onSelectYear: (year: string) => void;
   dataStore: FinancialDataStore;
   onSaveAmount: (year: string, divisionId: string, lineItemId: string, amount: number) => void;
-  onOpenTransferModal?: () => void;
 }
 
 export const DataBankView: React.FC<DataBankViewProps> = ({
@@ -23,7 +22,6 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
   onSelectYear,
   dataStore,
   onSaveAmount,
-  onOpenTransferModal,
 }) => {
   const [selectedDivisionFilter, setSelectedDivisionFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('Cash');
@@ -138,17 +136,17 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
   return (
     <div className="w-full max-w-[1780px] mx-auto px-2 sm:px-4 py-4 space-y-6">
       {/* Page Header */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-xl bg-sky-900 text-white shrink-0">
+      <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-th-border">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-xl bg-th-primary text-th-primary-fg border border-th-border-strong shrink-0">
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
+              <h2 className="text-xl sm:text-2xl font-bold text-th-text">
                 Financial Statement Data Bank
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-sm text-th-muted mt-1 leading-relaxed">
                 Banked line items, balances, and benchmark accounting data for Department of Education Region VI.
               </p>
             </div>
@@ -157,11 +155,11 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             {/* Division Scope */}
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Scope:</span>
+              <span className="font-bold text-th-text">Scope:</span>
               <select
                 value={selectedDivisionFilter}
                 onChange={(e) => setSelectedDivisionFilter(e.target.value)}
-                className="px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+                className="px-3.5 py-2 text-sm font-semibold text-th-text bg-th-input border border-th-border-strong rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
               >
                 <option value="all">Consolidated Region VI (All Divisions)</option>
                 {divisions.map((d) => (
@@ -174,11 +172,11 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
 
             {/* Year Selector (2024 - 2099) */}
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">Fiscal Year:</span>
+              <span className="font-bold text-th-text">Fiscal Year:</span>
               <select
                 value={selectedYear}
                 onChange={(e) => onSelectYear(e.target.value)}
-                className="px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+                className="px-3.5 py-2 text-sm font-semibold text-th-text bg-th-input border border-th-border-strong rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
               >
                 {YEAR_RANGE.map((yr) => (
                   <option key={yr} value={yr}>
@@ -186,25 +184,14 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                   </option>
                 ))}
               </select>
-              <span className="text-slate-400 font-mono text-xs">
+              <span className="text-th-muted font-mono text-xs sm:text-sm font-semibold">
                 (Comp: {priorYear})
               </span>
             </div>
 
-            {onOpenTransferModal && (
-              <button
-                type="button"
-                onClick={onOpenTransferModal}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-lg border border-[#0072ce]/40 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
-              >
-                <ArrowLeftRight className="w-4 h-4" />
-                <span>Transfer / Reassign Data</span>
-              </button>
-            )}
-
             <button
               onClick={handleExportBankCSV}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-sky-800 hover:bg-sky-900 rounded-lg shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-lg shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>Export Data Bank</span>
@@ -215,22 +202,22 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
         {/* Search & Filter Bar */}
         <div className="mt-4 flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search line items by account name, code, or group..."
-              className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+              className="w-full pl-10 pr-4 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
             />
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+            <Filter className="w-4 h-4 text-th-muted shrink-0" />
             <select
               value={selectedClassificationFilter}
               onChange={(e) => setSelectedClassificationFilter(e.target.value)}
-              className="px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden"
+              className="px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
             >
               <option value="all">All Classifications ({lineItems.length})</option>
               <option value="Current Assets">Current Assets</option>
@@ -249,24 +236,26 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
         totalEquity={reportCurrent.totalEquity}
       />
 
-      {/* Highlighted Account Inquiry Card (Directly solves User Requirement #2) */}
+      {/* Highlighted Account Inquiry Card */}
       {highlightedItem && (
-        <div className="bg-white border-2 border-sky-100 rounded-xl p-6 shadow-xs">
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+        <div className="bg-th-surface border-2 border-th-border rounded-xl p-6 shadow-xs transition-colors">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 border-b border-th-border">
             <div>
-              <div className="text-xs uppercase tracking-wider text-sky-800 font-semibold mb-1">
-                Account Inquiry & Subgroup Bank Details
+              <div className="text-xs uppercase tracking-wider text-th-muted font-bold mb-1">
+                Account Inquiry &amp; Subgroup Bank Details
               </div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-th-text flex items-center gap-2">
                 {highlightedItem.name}
                 {highlightedItem.isContra && (
-                  <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-normal">
+                  <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded font-semibold border border-amber-200 dark:border-amber-800">
                     Contra Account
                   </span>
                 )}
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Classification: <span className="font-medium text-slate-700">{highlightedItem.subsection}</span> · Group: <span className="font-medium text-slate-700">{highlightedItem.group}</span> {highlightedItem.subgroup ? `· Subgroup: ${highlightedItem.subgroup}` : ''}
+              <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                Classification: <span className="font-semibold text-th-text">{highlightedItem.subsection}</span> · Group:{' '}
+                <span className="font-semibold text-th-text">{highlightedItem.group}</span>{' '}
+                {highlightedItem.subgroup ? `· Subgroup: ${highlightedItem.subgroup}` : ''}
               </p>
             </div>
 
@@ -274,9 +263,9 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleStartEdit(highlightedItem)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-sky-800 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-primary hover:text-th-primary-fg border border-th-border-strong rounded-lg transition-colors cursor-pointer"
               >
-                <Edit3 className="w-3.5 h-3.5" />
+                <Edit3 className="w-4 h-4" />
                 <span>Update Balance</span>
               </button>
             </div>
@@ -285,25 +274,25 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
           {/* Balance Cards: Specific Item Balance + Subgroup Subtotal */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
             {/* 1. Specific Line Item Balance */}
-            <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-lg">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+            <div className="p-4 bg-th-subtle border border-th-border-strong rounded-lg">
+              <div className="text-xs text-th-muted font-bold uppercase tracking-wider">
                 {highlightedItem.name} ({selectedYear})
               </div>
-              <div className="text-lg font-bold font-mono tabular-nums text-slate-900 mt-1">
+              <div className="text-xl font-bold font-mono tabular-nums text-th-text mt-1">
                 ₱ {formatAccounting(reportCurrent.values[highlightedItem.id])}
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-xs font-medium text-th-muted mt-1">
                 Prior Year ({priorYear}): ₱ {formatAccounting(reportPrior.values[highlightedItem.id])}
               </div>
             </div>
 
-            {/* 2. Subgroup Subtotal (e.g. Cash on Hand = 709,342.56) */}
+            {/* 2. Subgroup Subtotal */}
             {highlightedItem.subgroup && (
-              <div className="p-4 bg-sky-50/60 border border-sky-200 rounded-lg">
-                <div className="text-xs text-sky-900 font-semibold uppercase tracking-wider">
+              <div className="p-4 bg-th-subtle border-2 border-th-border-strong rounded-lg">
+                <div className="text-xs text-th-text font-bold uppercase tracking-wider">
                   Subgroup: {highlightedItem.subgroup} ({selectedYear})
                 </div>
-                <div className="text-lg font-bold font-mono tabular-nums text-sky-950 mt-1">
+                <div className="text-xl font-bold font-mono tabular-nums text-th-text mt-1">
                   ₱{' '}
                   {formatAccounting(
                     reportCurrent.subgroupTotals[
@@ -311,7 +300,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                     ]
                   )}
                 </div>
-                <div className="text-[11px] text-sky-800/80 mt-0.5">
+                <div className="text-xs font-medium text-th-muted mt-1">
                   Prior ({priorYear}): ₱{' '}
                   {formatAccounting(
                     reportPrior.subgroupTotals[
@@ -323,17 +312,17 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
             )}
 
             {/* 3. Group Subtotal */}
-            <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-lg">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+            <div className="p-4 bg-th-subtle border border-th-border-strong rounded-lg">
+              <div className="text-xs text-th-muted font-bold uppercase tracking-wider">
                 Group: {highlightedItem.group} ({selectedYear})
               </div>
-              <div className="text-lg font-bold font-mono tabular-nums text-slate-900 mt-1">
+              <div className="text-xl font-bold font-mono tabular-nums text-th-text mt-1">
                 ₱{' '}
                 {formatAccounting(
                   reportCurrent.groupTotals[`${highlightedItem.subsection}__${highlightedItem.group}`]
                 )}
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-xs font-medium text-th-muted mt-1">
                 Prior ({priorYear}): ₱{' '}
                 {formatAccounting(
                   reportPrior.groupTotals[`${highlightedItem.subsection}__${highlightedItem.group}`]
@@ -342,8 +331,8 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
             </div>
 
             {/* 4. Variance / Net Change */}
-            <div className="p-4 bg-slate-50/70 border border-slate-200 rounded-lg">
-              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
+            <div className="p-4 bg-th-subtle border border-th-border-strong rounded-lg">
+              <div className="text-xs text-th-muted font-bold uppercase tracking-wider">
                 Year-Over-Year Variance
               </div>
               {(() => {
@@ -353,13 +342,13 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                 return (
                   <>
                     <div
-                      className={`text-lg font-bold font-mono tabular-nums mt-1 ${
-                        diff >= 0 ? 'text-emerald-700' : 'text-amber-700'
+                      className={`text-xl font-bold font-mono tabular-nums mt-1 ${
+                        diff >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
                       }`}
                     >
                       {diff >= 0 ? '+' : ''}₱ {formatAccounting(diff)}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
+                    <div className="text-xs font-medium text-th-muted mt-1">
                       {prev !== 0 ? `${((diff / Math.abs(prev)) * 100).toFixed(2)}% change` : 'New entry'}
                     </div>
                   </>
@@ -369,11 +358,11 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
           </div>
 
           {/* Division Breakdown for Highlighted Item */}
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+          <div className="mt-4 pt-4 border-t border-th-border">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-th-text mb-2.5">
               Breakdown Across Divisions for FY {selectedYear}
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 text-sm">
               {divisions.map((div) => {
                 const divAmt =
                   (dataStore[selectedYear] &&
@@ -383,12 +372,12 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                 return (
                   <div
                     key={div.id}
-                    className="p-2 bg-slate-50 border border-slate-200 rounded-md flex flex-col justify-between"
+                    className="p-3 bg-th-subtle border border-th-border-strong rounded-lg flex flex-col justify-between"
                   >
-                    <span className="text-slate-600 font-medium truncate" title={div.name}>
+                    <span className="text-xs text-th-muted font-semibold truncate" title={div.name}>
                       {div.name}
                     </span>
-                    <span className="font-mono tabular-nums font-bold text-slate-900 mt-1">
+                    <span className="font-mono tabular-nums font-bold text-th-text mt-1">
                       {formatAccounting(divAmt)}
                     </span>
                   </div>
@@ -400,24 +389,24 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
       )}
 
       {/* Banked Ledger Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-between">
+      <div className="bg-th-surface border border-th-border rounded-xl shadow-xs overflow-hidden transition-colors">
+        <div className="px-6 py-4 border-b border-th-border bg-th-subtle flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <span className="text-base font-bold text-th-text">
               Banked Line Items Catalog
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="text-sm font-medium text-th-muted">
               ({filteredBankedItems.length} accounts found)
             </span>
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-sm text-th-muted font-medium">
             Click on any account to inspect details or edit balance
           </span>
         </div>
 
         <div className="overflow-x-auto max-h-[600px]">
           <table className="w-full text-left text-sm border-collapse">
-            <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 font-bold sticky top-0 z-10 border-b border-slate-200 dark:border-slate-700 text-xs uppercase tracking-wider">
+            <thead className="bg-th-table-head text-th-table-head-fg font-bold sticky top-0 z-10 border-b border-th-border text-xs uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-4 min-w-[260px]">Account Title</th>
                 <th className="py-3 px-4 min-w-[150px]">Classification / Group</th>
@@ -427,7 +416,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                 <th className="py-3 px-4 text-center min-w-[80px]">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
+            <tbody className="divide-y divide-th-border text-th-text">
               {filteredBankedItems.map((item) => {
                 const curr = reportCurrent.values[item.id] || 0;
                 const prev = reportPrior.values[item.id] || 0;
@@ -440,36 +429,36 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                     onClick={() => {
                       setSearchQuery(item.name);
                     }}
-                    className={`hover:bg-sky-50/50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-sky-50/70 dark:bg-sky-950/40' : ''
+                    className={`hover:bg-th-subtle cursor-pointer transition-colors ${
+                      isSelected ? 'bg-th-subtle' : ''
                     }`}
                   >
-                    <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">
+                    <td className="py-3 px-4 font-medium text-th-text">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm">{item.name}</span>
+                        <span className="text-sm font-semibold">{item.name}</span>
                         {item.isContra && (
-                          <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-normal">
+                          <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
                             Contra
                           </span>
                         )}
                       </div>
                       {item.subgroup && (
-                        <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                        <div className="text-xs text-th-muted mt-0.5">
                           Subgroup: {item.subgroup}
                         </div>
                       )}
                     </td>
 
-                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                      <div className="text-sm font-medium">{item.subsection}</div>
-                      <div className="text-xs text-slate-400 dark:text-slate-500">{item.group}</div>
+                    <td className="py-3 px-4 text-th-muted">
+                      <div className="text-sm font-semibold text-th-text">{item.subsection}</div>
+                      <div className="text-xs text-th-muted">{item.group}</div>
                     </td>
 
-                    <td className="py-3 px-4 text-right font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    <td className="py-3 px-4 text-right font-mono tabular-nums font-bold text-th-text text-sm">
                       {item.isContra && curr > 0 ? `(${formatAccounting(curr)})` : formatAccounting(curr)}
                     </td>
 
-                    <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300 text-sm">
+                    <td className="py-3 px-4 text-right font-mono tabular-nums text-th-muted text-sm font-medium">
                       {item.isContra && prev > 0 ? `(${formatAccounting(prev)})` : formatAccounting(prev)}
                     </td>
 
@@ -486,7 +475,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStartEdit(item)}
-                        className="p-1.5 text-sky-800 dark:text-sky-400 hover:text-sky-950 dark:hover:text-white hover:bg-sky-100 dark:hover:bg-sky-900/50 rounded-md transition-colors"
+                        className="p-1.5 text-th-text hover:bg-th-subtle-hover rounded-md transition-colors cursor-pointer"
                         title="Edit balance"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -502,18 +491,18 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
 
       {/* Edit Amount Modal for Data Bank */}
       {editingItemId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 p-6 animate-in fade-in zoom-in-95">
-            <h3 className="text-base font-bold text-slate-900 mb-1">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-th-surface rounded-xl shadow-2xl border-2 border-th-border-strong p-6 animate-in fade-in zoom-in-95">
+            <h3 className="text-lg font-bold text-th-text mb-1">
               Update Banked Balance
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-sm text-th-muted mb-4 leading-relaxed">
               {lineItems.find((i) => i.id === editingItemId)?.name} · FY {selectedYear}
             </p>
 
             <div className="space-y-3 mb-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-sm font-bold text-th-text mb-1.5">
                   Target Division
                 </label>
                 <select
@@ -528,7 +517,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                       0;
                     setEditAmountStr(val.toString());
                   }}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-600 focus:outline-hidden"
+                  className="w-full px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:ring-2 focus:ring-th-accent focus:outline-hidden"
                 >
                   {divisions.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -539,11 +528,11 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-sm font-bold text-th-text mb-1.5">
                   Amount (Hard Input)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-th-muted font-mono text-sm">
                     ₱
                   </span>
                   <input
@@ -551,7 +540,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                     value={editAmountStr}
                     onChange={(e) => setEditAmountStr(e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-8 pr-4 py-2 text-sm font-mono tabular-nums bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-600 focus:outline-hidden"
+                    className="w-full pl-8 pr-4 py-2.5 text-base font-mono font-bold tabular-nums bg-th-input border border-th-border-strong text-th-text rounded-lg focus:ring-2 focus:ring-th-accent focus:outline-hidden"
                     autoFocus
                   />
                 </div>
@@ -562,14 +551,14 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingItemId(null)}
-                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="px-4 py-2 text-sm font-bold text-th-text bg-th-subtle border border-th-border-strong rounded-lg hover:bg-th-subtle-hover cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveEdit(editingItemId)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-sky-800 hover:bg-sky-900 rounded-lg shadow-xs"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-lg shadow-xs cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Save to Data Bank</span>

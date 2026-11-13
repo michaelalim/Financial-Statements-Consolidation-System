@@ -278,16 +278,16 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
         />
         <div className="flex-1 min-w-0 w-full space-y-6">
       {/* Control Toolbar (No-Print) */}
-      <div className="bg-white dark:bg-stone-900 border-2 border-stone-200 dark:border-stone-800 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 no-print transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 no-print transition-colors">
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-[#f0f5fa] dark:bg-[#0a274c]/60 text-[#0a3461] dark:text-[#93c5fd] border-2 border-[#b9d9f5] dark:border-[#1d4677] rounded-xl text-base font-bold shadow-xs">
-            <Building2 className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-base font-bold shadow-xs">
+            <Building2 className="w-5 h-5 text-th-muted" />
             <span>Consolidating {divisionsReportingCount} of {divisions.length} Divisions</span>
           </div>
 
           {/* Year Select (2024 - 2099) */}
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-slate-800 dark:text-slate-200">Year:</span>
+            <span className="text-base font-bold text-th-text">Year:</span>
             <div className="inline-flex items-center gap-1.5">
             <button
               type="button"
@@ -296,7 +296,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 if (YEAR_RANGE.includes(prevYr)) onSelectYear(prevYr);
               }}
               disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-              className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
+              className="p-2.5 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
               title="Previous Fiscal Year"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -304,7 +304,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             <select
               value={selectedYear}
               onChange={(e) => onSelectYear(e.target.value)}
-              className="px-4 py-2.5 text-base font-bold text-slate-900 dark:text-slate-100 bg-[#f4f8fc] dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-[#0072ce] focus:ring-2 focus:ring-[#0072ce]/20 cursor-pointer shadow-xs"
+              className="px-4 py-2.5 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 cursor-pointer shadow-xs"
             >
               {YEAR_RANGE.map((yr) => (
                 <option key={yr} value={yr}>
@@ -319,13 +319,13 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 if (YEAR_RANGE.includes(nextYr)) onSelectYear(nextYr);
               }}
               disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-              className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
+              className="p-2.5 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
               title="Next Fiscal Year"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-            <span className="text-xs text-slate-700 dark:text-slate-300 font-mono font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700">
+            <span className="text-sm text-th-text font-mono font-bold bg-th-subtle px-2.5 py-1 rounded-md border border-th-border-strong">
               Comp: {priorYear}
             </span>
           </div>
@@ -336,8 +336,8 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             onClick={() => setIsCondensed(!isCondensed)}
             className={`px-4 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors cursor-pointer ${
               isCondensed
-                ? "bg-[#0a3461] text-white border-[#0a3461] shadow-xs"
-                : "bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                ? "bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs"
+                : "bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover"
             }`}
             title="Toggle between Detailed and Condensed Statement of Financial Position"
           >
@@ -350,29 +350,29 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             onClick={() => setHideZeroRows(!hideZeroRows)}
             className={`px-4 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors inline-flex items-center gap-2 cursor-pointer shadow-xs ${
               hideZeroRows
-                ? 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
-                : 'bg-[#e1edf8] dark:bg-[#0a3461]/60 text-[#0a3461] dark:text-[#38bdf8] border-[#0072ce]/50 dark:border-[#0072ce] hover:bg-[#d0e4f5]'
+                ? 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+                : 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
             }`}
           >
-            {hideZeroRows ? <EyeOff className="w-4 h-4 text-slate-500 dark:text-slate-400" /> : <Eye className="w-4 h-4 text-[#0072ce] dark:text-[#38bdf8]" />}
+            {hideZeroRows ? <EyeOff className="w-4 h-4 text-th-muted" /> : <Eye className="w-4 h-4" />}
             <span>{hideZeroRows ? 'Zero Balances Removed (Default)' : 'Showing All Accounts (Include Zeroes)'}</span>
           </button>
 
           {/* Quick In-Sheet Account Search */}
           <div className="relative min-w-[220px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-th-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Find account in sheet..."
-              className="w-full pl-9 pr-8 py-2 text-sm font-semibold text-slate-900 dark:text-slate-100 bg-[#f4f8fc] dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-[#0072ce] focus:ring-2 focus:ring-[#0072ce]/20"
+              className="w-full pl-9 pr-8 py-2.5 text-sm font-semibold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-th-muted hover:text-th-text cursor-pointer"
                 title="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
@@ -383,24 +383,24 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
 
         <div className="flex items-center gap-3 self-end md:self-auto">
           {/* Quick Section Jumps */}
-          <div className="hidden sm:flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mr-2 font-bold">
-            <span className="text-slate-400 dark:text-slate-500">Jump:</span>
-            <a href="#assets-section-c" className="hover:text-[#0072ce] dark:hover:text-[#38bdf8] underline px-1">Assets</a>
-            <span>·</span>
-            <a href="#liabilities-section-c" className="hover:text-[#0072ce] dark:hover:text-[#38bdf8] underline px-1">Liabilities</a>
-            <span>·</span>
-            <a href="#equity-section-c" className="hover:text-[#0072ce] dark:hover:text-[#38bdf8] underline px-1">Equity</a>
+          <div className="hidden sm:flex items-center gap-2 text-sm text-th-text mr-2 font-bold">
+            <span className="text-th-muted">Jump:</span>
+            <a href="#assets-section-c" className="hover:text-th-accent-text underline px-1">Assets</a>
+            <span className="text-th-muted">·</span>
+            <a href="#liabilities-section-c" className="hover:text-th-accent-text underline px-1">Liabilities</a>
+            <span className="text-th-muted">·</span>
+            <a href="#equity-section-c" className="hover:text-th-accent-text underline px-1">Equity</a>
           </div>
           <button
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl shadow-xs transition-colors cursor-pointer"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-th-muted" />
             <span>CSV Export</span>
           </button>
           <button
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] rounded-xl shadow-sm transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             <span>Print Consolidated FS</span>

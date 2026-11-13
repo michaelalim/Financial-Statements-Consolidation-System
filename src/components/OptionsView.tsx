@@ -3,11 +3,13 @@ import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { DataBankView } from './DataBankView';
 import { DivisionManager } from './DivisionManager';
 import { LineItemManager } from './LineItemManager';
-import { Database, Building2, Sliders, RotateCcw, Settings, Sun, Moon, Check, Sparkles, ArrowLeftRight } from 'lucide-react';
+import { TransferDivisionPanel } from './TransferDivisionModal';
+import { Database, Building2, Sliders, RotateCcw, Settings, Sun, Moon, Check, Sparkles, ArrowLeftRight, Palette } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { useTheme } from '../context/ThemeContext';
+import { COLOR_THEMES } from '../types/theme';
 
-export type OptionsSubTab = 'databank' | 'divisions' | 'lineItems' | 'theme';
+export type OptionsSubTab = 'databank' | 'divisions' | 'lineItems' | 'transfer' | 'theme';
 
 interface OptionsViewProps {
   initialSubTab?: OptionsSubTab;
@@ -24,7 +26,13 @@ interface OptionsViewProps {
   dataStore: FinancialDataStore;
   onSaveAmount: (year: string, divisionId: string, lineItemId: string, amount: number) => void;
   onResetBenchmark: () => void;
-  onOpenTransferModal?: () => void;
+  onTransferDivisionData: (
+    fromYear: string,
+    fromDivId: string,
+    toYear: string,
+    toDivId: string,
+    mode: 'move' | 'copy'
+  ) => void;
 }
 
 export const OptionsView: React.FC<OptionsViewProps> = ({
@@ -42,7 +50,7 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
   dataStore,
   onSaveAmount,
   onResetBenchmark,
-  onOpenTransferModal,
+  onTransferDivisionData,
 }) => {
   const [subTab, setSubTab] = useState<OptionsSubTab>(initialSubTab);
 
@@ -54,44 +62,36 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
   }, [initialSubTab]);
 
   const [isResetBenchmarkModalOpen, setIsResetBenchmarkModalOpen] = useState(false);
-  const { mode, setMode } = useTheme();
+  const { mode, isDark, setMode, themeId, setThemeId, useContrastAccent, setUseContrastAccent } = useTheme();
+  const activeTheme = COLOR_THEMES.find((t) => t.id === themeId) ?? COLOR_THEMES[0];
+  const activeTonalHex = isDark ? activeTheme.tonalAccent.dark : activeTheme.tonalAccent.light;
 
   return (
     <div className="w-full max-w-[1780px] mx-auto px-2 sm:px-4 py-4 space-y-6">
       {/* Options Header & Sub-Tab Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs transition-colors">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-[#0a3461] text-white rounded-xl shrink-0">
+      <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-th-border">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-th-primary text-th-primary-fg border border-th-border-strong rounded-xl shrink-0">
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100">
-                System Options & Administrative Tools
+              <h2 className="text-xl sm:text-2xl font-bold text-th-text">
+                System Options &amp; Administrative Tools
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                Manage the financial data bank, schools division offices, chart of accounts, and display settings.
+              <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                Manage the financial data bank, schools division offices, chart of accounts, data transfers, and appearance themes.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
-            {onOpenTransferModal && (
-              <button
-                type="button"
-                onClick={onOpenTransferModal}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] rounded-lg transition-colors whitespace-nowrap border border-[#005ea8] shadow-xs cursor-pointer"
-              >
-                <ArrowLeftRight className="w-4 h-4" />
-                <span>Transfer / Reassign Division Data</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setIsResetBenchmarkModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap border border-slate-200 dark:border-slate-700 cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-lg transition-colors whitespace-nowrap border border-th-border-strong cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+              <RotateCcw className="w-4 h-4 text-th-muted" />
               <span>Reload PDF Benchmark Data</span>
             </button>
           </div>
@@ -102,10 +102,10 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
           <button
             type="button"
             onClick={() => setSubTab('databank')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs border ${
               subTab === 'databank'
-                ? 'bg-[#0a3461] text-white'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                : 'bg-th-subtle text-th-text hover:bg-th-subtle-hover border-th-border'
             }`}
           >
             <Database className="w-4 h-4" />
@@ -115,10 +115,10 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
           <button
             type="button"
             onClick={() => setSubTab('divisions')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs border ${
               subTab === 'divisions'
-                ? 'bg-[#0a3461] text-white'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                : 'bg-th-subtle text-th-text hover:bg-th-subtle-hover border-th-border'
             }`}
           >
             <Building2 className="w-4 h-4" />
@@ -128,10 +128,10 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
           <button
             type="button"
             onClick={() => setSubTab('lineItems')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs border ${
               subTab === 'lineItems'
-                ? 'bg-[#0a3461] text-white'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                : 'bg-th-subtle text-th-text hover:bg-th-subtle-hover border-th-border'
             }`}
           >
             <Sliders className="w-4 h-4" />
@@ -140,15 +140,28 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setSubTab('theme')}
-            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
-              subTab === 'theme'
-                ? 'bg-[#0a3461] text-white'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+            onClick={() => setSubTab('transfer')}
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs border ${
+              subTab === 'transfer'
+                ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                : 'bg-th-subtle text-th-text hover:bg-th-subtle-hover border-th-border'
             }`}
           >
-            <Sun className="w-4 h-4" />
-            <span>4. Display Mode</span>
+            <ArrowLeftRight className="w-4 h-4" />
+            <span>4. Transfer / Reassign Data</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSubTab('theme')}
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs border ${
+              subTab === 'theme'
+                ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                : 'bg-th-subtle text-th-text hover:bg-th-subtle-hover border-th-border'
+            }`}
+          >
+            <Palette className="w-4 h-4" />
+            <span>5. Themes &amp; Display</span>
           </button>
         </div>
       </div>
@@ -163,7 +176,6 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             onSelectYear={onSelectYear}
             dataStore={dataStore}
             onSaveAmount={onSaveAmount}
-            onOpenTransferModal={onOpenTransferModal}
           />
         )}
 
@@ -185,70 +197,238 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
           />
         )}
 
+        {subTab === 'transfer' && (
+          <TransferDivisionPanel
+            divisions={divisions}
+            dataStore={dataStore}
+            onTransfer={onTransferDivisionData}
+            initialFromDivId="iloilo-div"
+            initialToDivId="iloilo-city-div"
+            initialYear="2024"
+          />
+        )}
+
         {subTab === 'theme' && (
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-8 shadow-xs space-y-6">
+          <div className="bg-th-surface border border-th-border rounded-xl p-6 sm:p-8 shadow-xs space-y-6 transition-colors">
             <div>
-              <h3 className="text-base font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Sun className="w-5 h-5 text-[#0072ce]" />
-                Display Mode (Dark / Light)
+              <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
+                <Palette className="w-5 h-5 text-th-muted" />
+                <span>Themes &amp; Display Mode</span>
               </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Choose your preferred interface display mode for viewing financial statements and encoding records.
+              <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                Select a color theme and choose between Light, Dark, or System display mode.
               </p>
             </div>
 
-            {/* Mode selection */}
-            <div className="p-6 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl space-y-4">
-              <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Select Mode
+            {/* Color Theme Presets */}
+            <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h4 className="text-base font-bold text-th-text">
+                  Color Theme
+                </h4>
+                <span className="text-sm font-semibold text-th-muted">
+                  Applies across both Light &amp; Dark modes
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {COLOR_THEMES.map((preset) => {
+                  const isSelected = themeId === preset.id;
+                  const displayedThirdColor = useContrastAccent
+                    ? preset.colors.accent
+                    : isDark
+                    ? preset.tonalAccent.dark
+                    : preset.tonalAccent.light;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setThemeId(preset.id)}
+                      className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                        isSelected
+                          ? 'bg-th-surface border-th-primary dark:border-th-border-strong ring-2 ring-th-border-strong shadow-sm'
+                          : 'bg-th-surface border-th-border hover:border-th-border-strong'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-base font-bold text-th-text flex items-center gap-2">
+                            <span>{preset.name}</span>
+                          </div>
+                          <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                            {preset.description}
+                          </p>
+                        </div>
+                        {isSelected && (
+                          <span className="w-6 h-6 rounded-full bg-th-primary text-th-primary-fg flex items-center justify-center shrink-0 border border-th-border-strong">
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2.5 border-t border-th-border">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                            style={{ backgroundColor: preset.colors.primary }}
+                            title={`Primary: ${preset.colors.primary}`}
+                          />
+                          <span
+                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                            style={{ backgroundColor: preset.colors.light }}
+                            title={`Surface / Light: ${preset.colors.light}`}
+                          />
+                          <span
+                            className="w-6 h-6 rounded-md border border-black/15 dark:border-white/20 shadow-2xs"
+                            style={{ backgroundColor: displayedThirdColor }}
+                            title={
+                              useContrastAccent
+                                ? `Contrasting Accent: ${displayedThirdColor}`
+                                : `Primary Shade Accent: ${displayedThirdColor}`
+                            }
+                          />
+                        </div>
+                        <span className="text-xs font-mono font-semibold text-th-muted">
+                          {preset.colors.primary} · {preset.colors.light} · {displayedThirdColor}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Accent Color Mode Selection */}
+            <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h4 className="text-base font-bold text-th-text">
+                    Accent Color Style
+                  </h4>
+                  <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                    Choose whether primary action buttons and focus indicators use the theme&apos;s contrasting 3rd color or a tonal shade of its 1st primary color.
+                  </p>
+                </div>
+                <span className="text-xs sm:text-sm font-mono font-semibold text-th-muted">
+                  Active: {useContrastAccent ? activeTheme.colors.accent : activeTonalHex}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setUseContrastAccent(true)}
+                  className={`p-4 rounded-xl border-2 text-left flex items-center justify-between gap-4 transition-all cursor-pointer ${
+                    useContrastAccent
+                      ? 'bg-th-surface text-th-text border-th-primary dark:border-th-border-strong ring-2 ring-th-border-strong shadow-sm'
+                      : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <span
+                      className="w-9 h-9 rounded-lg border border-black/15 dark:border-white/20 shrink-0 shadow-2xs"
+                      style={{ backgroundColor: activeTheme.colors.accent }}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-base font-bold text-th-text">
+                        Use Contrasting Color (3rd Color)
+                      </div>
+                      <p className="text-sm text-th-muted mt-0.5 leading-relaxed">
+                        Applies {activeTheme.name}&apos;s distinct accent ({activeTheme.colors.accent}) for primary action buttons.
+                      </p>
+                    </div>
+                  </div>
+                  {useContrastAccent && (
+                    <span className="w-6 h-6 rounded-full bg-th-primary text-th-primary-fg flex items-center justify-center shrink-0 border border-th-border-strong">
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUseContrastAccent(false)}
+                  className={`p-4 rounded-xl border-2 text-left flex items-center justify-between gap-4 transition-all cursor-pointer ${
+                    !useContrastAccent
+                      ? 'bg-th-surface text-th-text border-th-primary dark:border-th-border-strong ring-2 ring-th-border-strong shadow-sm'
+                      : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
+                  }`}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <span
+                      className="w-9 h-9 rounded-lg border border-black/15 dark:border-white/20 shrink-0 shadow-2xs"
+                      style={{ backgroundColor: activeTonalHex }}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-base font-bold text-th-text">
+                        Use Shade of Primary Color (1st Color)
+                      </div>
+                      <p className="text-sm text-th-muted mt-0.5 leading-relaxed">
+                        Replaces the contrasting color with a tonal shade ({activeTonalHex}) derived from {activeTheme.colors.primary}.
+                      </p>
+                    </div>
+                  </div>
+                  {!useContrastAccent && (
+                    <span className="w-6 h-6 rounded-full bg-th-primary text-th-primary-fg flex items-center justify-center shrink-0 border border-th-border-strong">
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Light / Dark / System Mode Selection */}
+            <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
+              <h4 className="text-base font-bold text-th-text">
+                Display Mode
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <button
                   type="button"
                   onClick={() => setMode('light')}
-                  className={`p-4 rounded-xl border-2 text-sm font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  className={`p-4 rounded-xl border-2 text-base font-bold flex items-center justify-between transition-all cursor-pointer ${
                     mode === 'light'
-                      ? 'bg-white text-slate-900 border-[#0072ce] ring-2 ring-[#0072ce]/20 shadow-xs'
-                      : 'bg-white/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-white'
+                      ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-sm'
+                      : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Sun className="w-5 h-5 text-amber-500" />
+                    <Sun className={`w-5 h-5 ${mode === 'light' ? 'text-th-primary-fg' : 'text-th-muted'}`} />
                     <span>Light Mode</span>
                   </div>
-                  {mode === 'light' && <Check className="w-5 h-5 text-[#0072ce]" />}
+                  {mode === 'light' && <Check className="w-5 h-5 text-th-primary-fg" />}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setMode('dark')}
-                  className={`p-4 rounded-xl border-2 text-sm font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  className={`p-4 rounded-xl border-2 text-base font-bold flex items-center justify-between transition-all cursor-pointer ${
                     mode === 'dark'
-                      ? 'bg-slate-950 text-white border-[#0072ce] ring-2 ring-[#0072ce]/20 shadow-xs'
-                      : 'bg-white/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-950 hover:text-white'
+                      ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-sm'
+                      : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Moon className="w-5 h-5 text-blue-400" />
+                    <Moon className={`w-5 h-5 ${mode === 'dark' ? 'text-th-primary-fg' : 'text-th-muted'}`} />
                     <span>Dark Mode</span>
                   </div>
-                  {mode === 'dark' && <Check className="w-5 h-5 text-[#0072ce]" />}
+                  {mode === 'dark' && <Check className="w-5 h-5 text-th-primary-fg" />}
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setMode('system')}
-                  className={`p-4 rounded-xl border-2 text-sm font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  className={`p-4 rounded-xl border-2 text-base font-bold flex items-center justify-between transition-all cursor-pointer ${
                     mode === 'system'
-                      ? 'bg-blue-50/50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 border-[#0072ce] ring-2 ring-[#0072ce]/20 shadow-xs'
-                      : 'bg-white/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-blue-50/30'
+                      ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-sm'
+                      : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Sparkles className="w-5 h-5 text-blue-500" />
+                    <Sparkles className={`w-5 h-5 ${mode === 'system' ? 'text-th-primary-fg' : 'text-th-muted'}`} />
                     <span>System Default</span>
                   </div>
-                  {mode === 'system' && <Check className="w-5 h-5 text-[#0072ce]" />}
+                  {mode === 'system' && <Check className="w-5 h-5 text-th-primary-fg" />}
                 </button>
               </div>
             </div>

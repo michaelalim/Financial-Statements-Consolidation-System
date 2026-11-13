@@ -27,7 +27,6 @@ import {
   AlertCircle,
   PenTool,
   Calculator,
-  ArrowLeftRight,
   Upload,
   X,
 } from 'lucide-react';
@@ -99,7 +98,6 @@ interface DataEntryFormProps {
   onAddDivisionPrompt: (name: string) => void;
   onAddLineItemPrompt: (name: string, group: string) => void;
   onDeleteLineItemPrompt: (item: LineItemDefinition) => void;
-  onOpenTransferModal?: () => void;
 }
 
 export const DataEntryForm: React.FC<DataEntryFormProps> = ({
@@ -117,7 +115,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   onAddDivisionPrompt,
   onAddLineItemPrompt,
   onDeleteLineItemPrompt,
-  onOpenTransferModal,
 }) => {
   // Financial Statement selection (Financial Position active, others locked)
   const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>('position');
@@ -801,30 +798,19 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         />
         <div className="flex-1 min-w-0 w-full space-y-6">
       {/* 1. Entity & Year Control Strip */}
-      <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-xl p-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-xl p-6 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6 transition-colors">
         {/* Division Picker */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Building className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+            <label className="text-sm font-bold text-th-text flex items-center gap-2">
+              <Building className="w-4 h-4 text-th-muted" />
               <span>Reporting Office / Schools Division</span>
             </label>
             <div className="flex items-center gap-2.5">
-              {onOpenTransferModal && (
-                <button
-                  type="button"
-                  onClick={onOpenTransferModal}
-                  className="text-xs font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#0a3461] dark:hover:text-white inline-flex items-center gap-1.5 bg-[#f0f5fa] dark:bg-[#0a274c] hover:bg-[#e1edf8] px-2.5 py-1 rounded-md border border-[#b9d9f5] dark:border-[#1d4677] cursor-pointer shadow-2xs transition-colors"
-                  title="Transfer or copy accounts and balances between divisions or years"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  <span>Transfer / Copy Data</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => setIsQuickAddDivOpen(true)}
-                className="text-sm text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white inline-flex items-center gap-1 font-bold underline cursor-pointer"
+                className="text-sm text-th-text hover:text-th-accent-text inline-flex items-center gap-1 font-bold underline cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 Add Division
@@ -834,7 +820,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           <select
             value={selectedDivisionId}
             onChange={(e) => onSelectDivision(e.target.value)}
-            className="w-full px-4 py-3 text-base font-bold text-slate-900 dark:text-slate-100 bg-[#f4f8fc] dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#0072ce] focus:border-[#0072ce] cursor-pointer shadow-2xs"
+            className="w-full px-4 py-3 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer shadow-2xs"
           >
             {divisions.map((div) => (
               <option key={div.id} value={div.id}>
@@ -847,15 +833,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         {/* Year Range (2024-2099) */}
         <div className="w-full md:w-96">
           <div className="flex items-center justify-between mb-2">
-            <label className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+            <label className="text-sm font-bold text-th-text flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-th-muted" />
               <span>Fiscal Year</span>
-              <span className="px-2.5 py-0.5 rounded-md bg-[#0a3461] dark:bg-[#0072ce] text-white text-xs font-black tracking-wide">
+              <span className="px-2.5 py-0.5 rounded-md bg-th-primary text-th-primary-fg border border-th-border-strong text-xs font-extrabold tracking-wide">
                 FY {selectedYear}
               </span>
             </label>
-            <span className="text-sm font-mono font-semibold text-slate-600 dark:text-slate-400">
-              (Comparative: {comparativeYear})
+            <span className="text-sm font-mono font-semibold text-th-muted">
+              Comparative: {comparativeYear}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -866,7 +852,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 if (YEAR_RANGE.includes(prevYr)) onSelectYear(prevYr);
               }}
               disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-              className="px-3 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition-colors shrink-0"
+              className="px-3 py-3 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text font-bold text-sm flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
               title="Previous Fiscal Year"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -875,7 +861,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <select
               value={selectedYear}
               onChange={(e) => onSelectYear(e.target.value)}
-              className="w-full px-4 py-3 text-base font-extrabold text-[#0a3461] dark:text-white bg-[#e8f2fc] dark:bg-slate-800 border-2 border-[#0072ce] dark:border-[#38bdf8] rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#0072ce] cursor-pointer shadow-2xs"
+              className="w-full px-4 py-3 text-base font-extrabold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer shadow-2xs"
             >
               {YEAR_RANGE.map((yr) => (
                 <option key={yr} value={yr}>
@@ -890,7 +876,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 if (YEAR_RANGE.includes(nextYr)) onSelectYear(nextYr);
               }}
               disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-              className="px-3 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border-2 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition-colors shrink-0"
+              className="px-3 py-3 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text font-bold text-xs flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
               title="Next Fiscal Year"
             >
               <span className="hidden sm:inline">Next</span>
@@ -901,21 +887,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       </div>
 
       {/* 3. Batch Multiple Entries Form */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors">
         {/* Header with Title and Presets */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-3 mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-th-border gap-3 mb-5">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Layers className="w-5 h-5 text-sky-800 dark:text-sky-400" />
+            <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
+              <Layers className="w-5 h-5 text-th-muted" />
               <span>Batch Data Entry</span>
               {validStagedCount > 0 && (
-                <span className="text-xs font-semibold text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 px-2.5 py-0.5 rounded-full border border-sky-200 dark:border-sky-800">
+                <span className="text-xs font-bold text-th-text bg-th-subtle px-2.5 py-0.5 rounded-lg border border-th-border-strong">
                   {validStagedCount} ready to save
                 </span>
               )}
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing <strong className="text-sky-900 dark:text-sky-300 font-semibold">"cash collecting"</strong> suggests <strong className="text-sky-900 dark:text-sky-300 font-semibold">"Cash - Collecting Officer"</strong>).
+            <p className="text-sm text-th-muted mt-1 leading-relaxed">
+              Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing <strong className="text-th-text font-bold">&quot;cash collecting&quot;</strong> suggests <strong className="text-th-text font-bold">&quot;Cash - Collecting Officer&quot;</strong>).
             </p>
           </div>
 
@@ -930,35 +916,35 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-xs sm:text-sm font-semibold text-emerald-900 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors inline-flex items-center gap-1.5"
+              className="text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 px-3.5 py-2 rounded-lg border border-th-primary dark:border-th-border-strong transition-colors inline-flex items-center gap-1.5 cursor-pointer"
               title="Upload an Excel (.xlsx, .xls) or CSV file with Line Item Account in Column A and Amount in Column B"
             >
-              <Upload className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+              <Upload className="w-4 h-4" />
               <span>Upload Excel / CSV</span>
             </button>
             <button
               type="button"
               onClick={handlePreloadCommonAccounts}
-              className="text-xs sm:text-sm font-medium text-sky-900 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 px-3 py-2 rounded-lg border border-sky-200 dark:border-sky-800 transition-colors inline-flex items-center gap-1.5"
+              className="text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 py-2 rounded-lg border border-th-border-strong transition-colors inline-flex items-center gap-1.5 cursor-pointer"
               title="Pre-fills rows for primary key accounts"
             >
-              <Sparkles className="w-4 h-4 text-sky-700 dark:text-sky-400" />
+              <Sparkles className="w-4 h-4 text-th-muted" />
               <span>Preload Common Accounts</span>
             </button>
             <button
               type="button"
               onClick={handleAddStagedRow}
-              className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5"
+              className="text-sm font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 text-th-muted" />
               Add 1 Row
             </button>
             <button
               type="button"
               onClick={handleAdd5StagedRows}
-              className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5"
+              className="text-sm font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 text-th-muted" />
               Add 5 Rows
             </button>
           </div>
@@ -966,54 +952,54 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
         {uploadFeedback && (
           <div
-            className={`mb-4 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 border ${
+            className={`mb-4 px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 border ${
               uploadFeedback.isError
                 ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'
+                : 'bg-th-subtle text-th-text border-th-border-strong'
             }`}
           >
             {uploadFeedback.isError ? (
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
             ) : (
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-th-text" />
             )}
             <span>{uploadFeedback.message}</span>
           </div>
         )}
 
-        {/* PRIMARY HIGHLIGHTED DATA ENTRY & ENCODING STATION */}
-        <div className="mb-7 p-6 sm:p-7 bg-gradient-to-r from-[#f0f5fa] via-[#ffffff] to-[#f0f5fa] dark:from-[#0a1b30] dark:via-[#0e2440] dark:to-[#0a1b30] border-2 border-[#0072ce] dark:border-[#38bdf8] rounded-2xl shadow-lg ring-4 ring-[#0072ce]/15 dark:ring-[#38bdf8]/20 transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b-2 border-[#0072ce]/20 dark:border-[#38bdf8]/30">
-            <div className="flex items-center gap-3">
-              <div className="px-3.5 py-1.5 rounded-lg bg-[#0a3461] text-white text-xs font-black uppercase tracking-wider shadow-xs flex items-center gap-2">
-                <PenTool className="w-4 h-4 text-[#38bdf8]" />
+        {/* PRIMARY DATA ENTRY & ENCODING STATION */}
+        <div className="mb-7 p-6 sm:p-7 bg-th-subtle border-2 border-th-border-strong rounded-2xl shadow-sm transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-th-border">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="px-3.5 py-1.5 rounded-lg bg-th-primary text-th-primary-fg border border-th-border-strong text-xs font-extrabold uppercase tracking-wider shadow-xs flex items-center gap-2">
+                <PenTool className="w-4 h-4" />
                 <span>DATA ENCODING STATION</span>
               </div>
-              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                Enter Line Item & Balance Here
+              <h3 className="text-xl sm:text-2xl font-extrabold text-th-text">
+                Enter Line Item &amp; Balance Here
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-black text-white bg-[#0a3461] dark:bg-[#0072ce] px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-[#38bdf8] dark:text-white" />
+              <span className="text-sm font-bold text-th-primary-fg bg-th-primary border border-th-border-strong px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
+                <Calendar className="w-4 h-4" />
                 <span>Operating Year: FY {selectedYear}</span>
               </span>
-              <span className="text-sm font-bold text-[#0a3461] dark:text-[#93c5fd] bg-white/90 dark:bg-slate-800/90 px-3.5 py-1.5 rounded-xl border border-[#b9d9f5] dark:border-[#1d4677] shadow-xs">
-                ⚡ Primary Data Entry Area
+              <span className="text-sm font-semibold text-th-text bg-th-surface px-3.5 py-1.5 rounded-xl border border-th-border-strong shadow-xs">
+                Primary Data Entry Area
               </span>
             </div>
           </div>
 
-          <p className="text-base text-slate-700 dark:text-slate-300 font-medium mb-5 leading-relaxed">
-            Select or type the official line item on the left, enter the monetary balance in the middle, then click <strong className="text-[#0072ce] dark:text-[#38bdf8] font-bold">"Add to Batch"</strong> or press <strong className="text-[#0072ce] dark:text-[#38bdf8] font-bold">Enter</strong>.
+          <p className="text-sm sm:text-base text-th-muted font-medium mb-5 leading-relaxed">
+            Select or type the official line item on the left, enter the monetary balance in the middle, then click <strong className="text-th-text font-bold">&quot;Add to Batch&quot;</strong> or press <strong className="text-th-text font-bold">Enter</strong>.
           </p>
 
           <form onSubmit={handleAddTopItemToBatch} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
             {/* Step 1: Searchable Combobox */}
             <div className="md:col-span-7">
-              <label className="block text-sm font-bold uppercase tracking-wider text-[#0a3461] dark:text-[#93c5fd] mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#0a3461] text-white text-xs font-bold">1</span>
-                <span>Select or Type Line Item Account:</span>
+              <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">1</span>
+                <span>Select or Type Line Item Account</span>
               </label>
               <SearchableLineItemSelect
                 inputRef={topLineItemInputRef}
@@ -1034,13 +1020,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 placeholder="Type or click to choose account (e.g. Cash, Office Equip)..."
               />
               {topSelectedItemDetail && (
-                <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#0a3461] dark:text-[#93c5fd] bg-white/90 dark:bg-slate-800/90 px-3 py-1.5 rounded-lg border border-[#b9d9f5] dark:border-[#1d4677] shadow-2xs animate-in fade-in">
-                  <span className="font-bold text-[#0072ce] dark:text-[#38bdf8]">✓ Selected:</span>
+                <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong shadow-2xs animate-in fade-in">
+                  <span className="font-bold text-th-text">Selected:</span>
                   <span className="font-bold">{topSelectedItemDetail.name}</span>
                   <span>·</span>
-                  <span className="text-slate-600 dark:text-slate-400">{topSelectedItemDetail.subsection} ({topSelectedItemDetail.group})</span>
+                  <span className="text-th-muted">{topSelectedItemDetail.subsection} ({topSelectedItemDetail.group})</span>
                   {topSelectedItemDetail.isContra && (
-                    <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold">Contra Account</span>
+                    <span className="px-1.5 py-0.5 rounded bg-th-subtle text-th-text text-xs font-bold border border-th-border-strong">Contra Account</span>
                   )}
                 </div>
               )}
@@ -1048,12 +1034,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
             {/* Step 2: Amount Input */}
             <div className="md:col-span-3">
-              <label className="block text-sm font-bold uppercase tracking-wider text-[#0a3461] dark:text-[#93c5fd] mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#0a3461] text-white text-xs font-bold">2</span>
-                <span>Enter Amount (₱ Balance):</span>
+              <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">2</span>
+                <span>Enter Amount (₱ Balance)</span>
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-mono text-lg font-bold">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-th-muted font-mono text-lg font-bold">
                   ₱
                 </span>
                 <input
@@ -1073,18 +1059,18 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     }
                   }}
                   placeholder="0.00"
-                  className="w-full pl-9 pr-4 py-3.5 text-lg font-mono font-bold tabular-nums text-right bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-hidden focus:border-[#0072ce] focus:ring-4 focus:ring-[#0072ce]/20 shadow-xs"
+                  className="w-full pl-9 pr-4 py-3.5 text-lg font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong rounded-xl text-th-text focus:outline-hidden focus:border-th-accent focus:ring-4 focus:ring-th-accent/20 shadow-xs"
                 />
               </div>
               {topAmountInput.trim() !== '' && (
                 <div className="mt-2 flex items-center justify-between text-xs px-1">
-                  <span className="font-mono font-semibold text-slate-600 dark:text-slate-400">
+                  <span className="font-mono font-semibold text-th-muted">
                     ₱ {formatAccounting(parseNumberInput(topAmountInput))}
                   </span>
                   <button
                     type="button"
                     onClick={() => setTopAmountInput('')}
-                    className="text-xs text-slate-500 hover:text-red-600 font-semibold cursor-pointer underline"
+                    className="text-xs text-th-muted hover:text-red-600 dark:hover:text-red-400 font-semibold cursor-pointer underline"
                   >
                     Clear
                   </button>
@@ -1097,7 +1083,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="submit"
                 disabled={!topSelectedItemId && !topRawText.trim()}
-                className="w-full py-3.5 px-5 text-base font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-[#005ea8] cursor-pointer"
+                className="w-full py-3.5 px-5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-th-accent cursor-pointer"
               >
                 <Plus className="w-5 h-5 stroke-[2.5]" />
                 <span>Add to Batch</span>
@@ -1106,8 +1092,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </form>
 
           {/* Quick preset chips underneath top bar */}
-          <div className="mt-5 pt-3.5 border-t border-[#0072ce]/20 dark:border-[#38bdf8]/30 flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-300 mr-1">
+          <div className="mt-5 pt-3.5 border-t border-th-border flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-th-text mr-1">
               Frequent Accounts:
             </span>
             {[
@@ -1127,10 +1113,10 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   setTopSelectedItemId(preset.id);
                   topAmountInputRef.current?.focus();
                 }}
-                className={`text-sm font-bold px-3 py-1.5 rounded-xl transition-colors border-2 cursor-pointer ${
+                className={`text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors border cursor-pointer ${
                   topSelectedItemId === preset.id
-                    ? 'bg-[#0a3461] text-white border-[#0a3461]'
-                    : 'bg-white/90 dark:bg-slate-800/90 text-[#0072ce] dark:text-[#38bdf8] border-slate-300 dark:border-slate-700 hover:bg-[#f0f5fa]'
+                    ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong font-bold'
+                    : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
                 }`}
               >
                 {preset.label}
@@ -1139,8 +1125,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
 
           {topFeedbackMsg && (
-            <div className="mt-3.5 p-3 bg-[#f0f7fd] dark:bg-[#0a274c] text-base text-[#0a3461] dark:text-[#93c5fd] font-bold rounded-xl border-2 border-[#b9d9f5] flex items-center gap-2.5 animate-in fade-in shadow-xs">
-              <Check className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+            <div className="mt-3.5 p-3 bg-th-surface text-base text-th-text font-bold rounded-xl border-2 border-th-border-strong flex items-center gap-2.5 animate-in fade-in shadow-xs">
+              <Check className="w-5 h-5 text-th-accent-text" />
               <span>{topFeedbackMsg}</span>
             </div>
           )}
@@ -1156,22 +1142,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             }
           }}
         >
-          {/* Simple, Minimalist Keyboard Navigation Guide */}
           {/* Clean, Senior-Friendly Keyboard Tips Callout */}
-          <div className="mb-4 px-5 py-3.5 bg-[#f0f5fa] dark:bg-[#0a274c]/50 border-2 border-[#b9d9f5] dark:border-[#1d4677] rounded-xl flex flex-wrap items-center justify-between text-base text-slate-800 dark:text-slate-200 gap-4 shadow-2xs">
+          <div className="mb-4 px-5 py-3.5 bg-th-subtle border border-th-border-strong rounded-xl flex flex-wrap items-center justify-between text-sm text-th-text gap-4 shadow-2xs">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-bold text-[#0a3461] dark:text-[#93c5fd] flex items-center gap-2">
-                <Keyboard className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+              <span className="font-bold text-th-text flex items-center gap-2">
+                <Keyboard className="w-5 h-5 text-th-muted" />
                 <span>Tips for fast entry:</span>
               </span>
-              <span>Use ↑ and ↓ arrow keys to highlight an option</span>
-              <span className="text-[#0072ce] font-bold">·</span>
-              <span>Press Tab or Enter to select & enter amount</span>
-              <span className="text-[#0072ce] font-bold">·</span>
-              <span>Enter on amount advances to next line</span>
+              <span className="text-th-muted font-medium">Use ↑ and ↓ arrow keys to highlight an option</span>
+              <span className="text-th-muted font-bold">·</span>
+              <span className="text-th-muted font-medium">Press Tab or Enter to select &amp; enter amount</span>
+              <span className="text-th-muted font-bold">·</span>
+              <span className="text-th-muted font-medium">Enter on amount advances to next line</span>
             </div>
 
-            <div className="text-base font-bold text-[#0a3461] dark:text-[#38bdf8] bg-white/90 dark:bg-slate-800 px-3.5 py-1.5 rounded-lg border border-[#b9d9f5] dark:border-[#1d4677]">
+            <div className="text-sm font-bold text-th-text bg-th-surface px-3.5 py-1.5 rounded-lg border border-th-border-strong">
               Shortcut: Shift + Enter to Save All
             </div>
           </div>
@@ -1192,27 +1177,27 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           )}
 
           {/* Live Batch Tape Summary & Running Total Bar */}
-          <div className="mb-4 px-5 py-3.5 bg-[#f0f5fa] dark:bg-[#0a274c]/40 border-2 border-[#b9d9f5] dark:border-[#1d4677] rounded-xl flex flex-wrap items-center justify-between gap-4 text-base shadow-2xs">
+          <div className="mb-4 px-5 py-3.5 bg-th-subtle border border-th-border-strong rounded-xl flex flex-wrap items-center justify-between gap-4 text-base shadow-2xs">
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 font-bold text-[#0a3461] dark:text-[#93c5fd]">
-                <Calculator className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+              <div className="flex items-center gap-2 font-bold text-th-text">
+                <Calculator className="w-5 h-5 text-th-muted" />
                 <span>Batch Tape Summary:</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-600 dark:text-slate-400 font-medium">Rows:</span>
-                <span className="font-bold font-mono text-slate-900 dark:text-white bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-300 dark:border-slate-700">
+                <span className="text-th-muted font-semibold">Rows:</span>
+                <span className="font-bold font-mono text-th-text bg-th-surface px-2.5 py-0.5 rounded-md border border-th-border-strong">
                   {stagedEntries.length}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-600 dark:text-slate-400 font-medium">Ready to Save:</span>
-                <span className="font-bold font-mono text-[#0072ce] dark:text-[#38bdf8] bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-300 dark:border-slate-700">
+                <span className="text-th-muted font-semibold">Ready to Save:</span>
+                <span className="font-bold font-mono text-th-text bg-th-surface px-2.5 py-0.5 rounded-md border border-th-border-strong">
                   {validStagedCount}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-700 dark:text-slate-300 font-bold">Total Batch Balance:</span>
-                <span className="font-bold font-mono text-base text-[#0a3461] dark:text-[#93c5fd] bg-white dark:bg-slate-800 px-3 py-1 rounded-md border border-[#b9d9f5] dark:border-[#1d4677] shadow-2xs">
+                <span className="text-th-text font-bold">Total Batch Balance:</span>
+                <span className="font-extrabold font-mono text-lg text-th-text bg-th-surface px-3.5 py-1 rounded-lg border-2 border-th-border-strong shadow-2xs">
                   ₱ {formatAccounting(stagedBatchTotal)}
                 </span>
               </div>
@@ -1223,7 +1208,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 <button
                   type="button"
                   onClick={handleClearEmptyStagedRows}
-                  className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white underline cursor-pointer"
+                  className="text-sm font-bold text-th-muted hover:text-th-text underline cursor-pointer"
                   title="Removes unused blank rows from the batch table"
                 >
                   Clear Blank Rows
@@ -1232,31 +1217,31 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </div>
           </div>
 
-          <div className="border-2 border-slate-300 dark:border-slate-700 rounded-xl mb-5 shadow-xs overflow-visible bg-white dark:bg-slate-900">
-            <div className="bg-[#f0f5fa] dark:bg-[#0a274c] px-5 py-3.5 border-b-2 border-slate-300 dark:border-slate-700 rounded-t-xl grid grid-cols-12 gap-3 text-sm font-bold text-[#0a3461] dark:text-[#93c5fd] uppercase tracking-wider">
+          <div className="border-2 border-th-border rounded-xl mb-5 shadow-xs overflow-visible bg-th-surface">
+            <div className="bg-th-table-head px-5 py-3.5 border-b-2 border-th-border rounded-t-xl grid grid-cols-12 gap-3 text-sm font-bold text-th-table-head-fg uppercase tracking-wider">
               <div className="col-span-1 text-center">#</div>
               <div className="col-span-7">Line Item (Type to Search)</div>
               <div className="col-span-3 text-right">Amount (₱ Balance)</div>
               <div className="col-span-1 text-center">Remove</div>
             </div>
 
-            <div className="divide-y-2 divide-slate-200/80 dark:divide-slate-800 overflow-visible rounded-b-xl">
+            <div className="divide-y-2 divide-th-border overflow-visible rounded-b-xl">
               {stagedEntries.length === 0 ? (
-                <div className="py-14 px-6 text-center bg-[#fdfdfd] dark:bg-slate-900 rounded-b-xl">
-                  <div className="w-16 h-16 rounded-2xl bg-[#f0f5fa] dark:bg-[#0a274c] border-2 border-[#b9d9f5] dark:border-[#1d4677] flex items-center justify-center mx-auto mb-3.5 text-[#0072ce] dark:text-[#38bdf8]">
-                    <Layers className="w-8 h-8" />
+                <div className="py-12 px-6 text-center bg-th-surface rounded-b-xl">
+                  <div className="w-14 h-14 rounded-2xl bg-th-subtle border-2 border-th-border-strong flex items-center justify-center mx-auto mb-3.5 text-th-text">
+                    <Layers className="w-7 h-7" />
                   </div>
-                  <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  <h4 className="text-lg font-bold text-th-text">
                     No Line Items in Batch Table (0 Items)
                   </h4>
-                  <p className="text-base text-slate-600 dark:text-slate-400 max-w-lg mx-auto mt-2 mb-6 leading-relaxed font-medium">
-                    Use the highlighted <strong className="text-[#0072ce] dark:text-[#38bdf8]">Data Encoding Station</strong> above to quickly enter an account and amount, or click below to add a blank row directly to this table.
+                  <p className="text-sm sm:text-base text-th-muted max-w-lg mx-auto mt-2 mb-6 leading-relaxed">
+                    Use the <strong className="text-th-text font-bold">Data Encoding Station</strong> above to quickly enter an account and amount, or click below to add a blank row directly to this table.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3.5">
                     <button
                       type="button"
                       onClick={handleAddStagedRow}
-                      className="px-5 py-3 text-base font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] rounded-xl shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+                      className="px-5 py-3 text-base font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
                     >
                       <Plus className="w-5 h-5" />
                       <span>Add 1 Blank Row to Table</span>
@@ -1264,9 +1249,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     <button
                       type="button"
                       onClick={handlePreloadCommonAccounts}
-                      className="px-4 py-3 text-base font-bold text-[#0a3461] dark:text-[#93c5fd] bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border-2 border-[#b9d9f5] dark:border-[#1d4677] rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
+                      className="px-4 py-3 text-base font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer"
                     >
-                      <Sparkles className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+                      <Sparkles className="w-5 h-5 text-th-muted" />
                       <span>Preload Common Accounts</span>
                     </button>
                   </div>
@@ -1281,11 +1266,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 return (
                   <div
                     key={row.id}
-                    className={`px-4 py-3 grid grid-cols-12 gap-3.5 items-center hover:bg-[#f4f8fc] dark:hover:bg-slate-800/60 transition-colors ${
-                      isThisRowDropdownOpen ? 'relative z-50 bg-[#eef4fb] dark:bg-[#0a274c]/40' : 'relative z-auto'
+                    className={`px-4 py-3 grid grid-cols-12 gap-3.5 items-center hover:bg-th-subtle transition-colors ${
+                      isThisRowDropdownOpen ? 'relative z-50 bg-th-subtle' : 'relative z-auto'
                     }`}
                   >
-                    <div className="col-span-1 text-center font-mono text-base font-bold text-[#0072ce] dark:text-[#38bdf8]">
+                    <div className="col-span-1 text-center font-mono text-base font-bold text-th-text">
                       {idx + 1}
                     </div>
 
@@ -1325,7 +1310,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     {/* Amount Input with Auto-Advance to Next Line Item & Shift+Enter Save */}
                     <div className="col-span-3">
                       <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 font-mono text-base font-bold">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-th-muted font-mono text-base font-bold">
                           ₱
                         </span>
                         <input
@@ -1365,7 +1350,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                             }
                           }}
                           placeholder="0.00"
-                          className="w-full pl-8 pr-4 py-3 text-base font-mono font-bold tabular-nums text-right bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#0072ce] focus:border-[#0072ce] shadow-2xs"
+                          className="w-full pl-8 pr-4 py-3 text-base font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong text-th-text rounded-xl focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent shadow-2xs"
                         />
                       </div>
                     </div>
@@ -1375,7 +1360,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveStagedRow(row.id)}
-                        className="p-2.5 text-slate-400 hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                        className="p-2.5 text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
                         title="Remove row"
                       >
                         <Trash2 className="w-5 h-5" />
@@ -1393,15 +1378,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="button"
                 onClick={handleAddStagedRow}
-                className="px-5 py-3 text-base font-bold text-slate-800 dark:text-slate-200 bg-[#f4f8fc] dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 hover:bg-[#e1edf8] dark:hover:bg-slate-700 rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs cursor-pointer"
+                className="px-5 py-3 text-base font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs cursor-pointer"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-5 h-5 text-th-muted" />
                 <span>Add Row</span>
               </button>
               <button
                 type="button"
                 onClick={() => setIsDiscardConfirmOpen(true)}
-                className="px-5 py-3 text-base font-semibold text-slate-600 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 cursor-pointer"
+                className="px-5 py-3 text-base font-semibold text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 cursor-pointer"
               >
                 <RotateCcw className="w-5 h-5" />
                 <span>Clear Form</span>
@@ -1419,7 +1404,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="submit"
                 disabled={validStagedCount === 0 && invalidStagedCount === 0}
-                className="w-full sm:w-auto px-8 py-3.5 text-base font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-[#005ea8] cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3.5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-th-accent cursor-pointer"
               >
                 <Check className="w-5 h-5" />
                 <span>
@@ -1430,8 +1415,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
 
           {saveSuccessMsg && (
-            <div className="mt-4 p-4 bg-[#f0f7fd] dark:bg-[#0a274c] text-[#0a3461] dark:text-[#93c5fd] border-2 border-[#b9d9f5] dark:border-[#1d4677] rounded-xl text-base font-bold flex items-center gap-2.5 animate-in fade-in shadow-xs">
-              <CheckCircle2 className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8] shrink-0" />
+            <div className="mt-4 p-4 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-base font-bold flex items-center gap-2.5 animate-in fade-in shadow-xs">
+              <CheckCircle2 className="w-5 h-5 text-th-accent-text shrink-0" />
               <span>{saveSuccessMsg}</span>
             </div>
           )}
@@ -1439,14 +1424,14 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       </div>
 
       {/* 4. Encoded Items for this Division & Fiscal Year (Zero balances removed by default) */}
-      <div className="bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
-        <div className="px-6 py-5 border-b-2 border-slate-200 dark:border-slate-800 bg-[#f0f5fa] dark:bg-[#0a274c]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl shadow-sm overflow-hidden transition-colors">
+        <div className="px-6 py-5 border-b-2 border-th-border bg-th-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2.5">
-              <FileText className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+            <h4 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
+              <FileText className="w-5 h-5 text-th-muted" />
               Recorded Balances: {currentDivision?.name} (FY {selectedYear})
             </h4>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mt-1">
+            <p className="text-sm font-medium text-th-muted mt-1 leading-relaxed">
               {showZeroBalancesInLedger
                 ? 'Showing all accounts including zero balances.'
                 : 'Zero balance items removed. Items appear automatically as amounts are encoded.'}
@@ -1458,9 +1443,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={() => setShowZeroBalancesInLedger(!showZeroBalancesInLedger)}
-              className="px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl hover:bg-[#f0f5fa] dark:hover:bg-[#0a274c]/50 transition-colors inline-flex items-center gap-2 shadow-xs cursor-pointer"
+              className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-surface border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover transition-colors inline-flex items-center gap-2 shadow-xs cursor-pointer"
             >
-              {showZeroBalancesInLedger ? <EyeOff className="w-4 h-4 text-slate-500" /> : <Eye className="w-4 h-4 text-[#0072ce] dark:text-[#38bdf8]" />}
+              {showZeroBalancesInLedger ? <EyeOff className="w-4 h-4 text-th-muted" /> : <Eye className="w-4 h-4 text-th-muted" />}
               <span>{showZeroBalancesInLedger ? 'Remove Zero Balances (Default)' : 'Show All Accounts (Include Zeroes)'}</span>
             </button>
 
@@ -1481,10 +1466,10 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 setIsSelectMultipleMode((prev) => !prev);
                 setSelectedRecordedIds([]);
               }}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-bold rounded-xl border-2 transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors cursor-pointer ${
                 isSelectMultipleMode
-                  ? 'bg-[#0a3461] text-white border-[#0a3461]'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                  : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
               }`}
             >
               <span>{isSelectMultipleMode ? 'Cancel Select' : 'Select Multiples'}</span>
@@ -1494,7 +1479,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="button"
                 onClick={() => setPendingDeleteSelectedRecorded(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors cursor-pointer shadow-xs"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors cursor-pointer shadow-xs"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Delete Selected ({selectedRecordedIds.length})</span>
@@ -1510,7 +1495,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 setDeletedHistory((prev) => prev.slice(0, -1));
               }}
               disabled={deletedHistory.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-bold rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 border-th-border-strong bg-th-surface text-th-text hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title={deletedHistory.length > 0 ? 'Undo last delete' : 'Nothing to undo'}
             >
               <RotateCcw className="w-4 h-4" />
@@ -1519,7 +1504,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
             <button
               onClick={onNavigateToViewFS}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-white bg-[#0a3461] hover:bg-[#072648] rounded-xl transition-colors border-2 border-[#0072ce]/40 cursor-pointer shadow-xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong cursor-pointer shadow-xs"
             >
               <span>
                 {selectedStatement === 'performance'
@@ -1530,81 +1515,72 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   ? 'View Statement of Changes in Net Assets/Equity'
                   : 'View Statement of Financial Position'}
               </span>
-              <ChevronRight className="w-4 h-4 text-[#38bdf8]" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Informative transferred dataset banner for Iloilo City Division 2024 */}
         {selectedDivisionId === 'iloilo-city-div' && selectedYear === '2024' && (
-          <div className="mx-6 mt-4 p-3.5 bg-[#e1edf8] dark:bg-[#0a274c]/70 border-2 border-[#0072ce]/40 rounded-xl flex items-center justify-between gap-3 text-sm text-[#0a3461] dark:text-[#93c5fd]">
+          <div className="mx-6 mt-4 p-3.5 bg-th-subtle border-2 border-th-border-strong rounded-xl flex items-center justify-between gap-3 text-sm text-th-text">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8] shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-th-text shrink-0" />
               <span>
                 <strong>Transferred Dataset:</strong> FY 2024 details from <strong>Iloilo Division</strong> were transferred to <strong>Iloilo City Division</strong>.
               </span>
             </div>
-            {onOpenTransferModal && (
-              <button
-                type="button"
-                onClick={onOpenTransferModal}
-                className="text-xs font-bold px-2.5 py-1 bg-white dark:bg-slate-800 rounded-md border border-[#b9d9f5] dark:border-[#1d4677] text-[#0072ce] dark:text-[#38bdf8] hover:underline shrink-0 cursor-pointer"
-              >
-                Transfer / Reassign
-              </button>
-            )}
           </div>
         )}
 
         {/* Cash Reconciliation Summary for Statement of Cash Flows */}
         {selectedStatement === 'cash_flows' && (
-          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/40">
+          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-th-border bg-th-subtle">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
-                <Calculator className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <span className="text-sm font-bold uppercase tracking-wider text-th-text flex items-center gap-1.5">
+                <Calculator className="w-4 h-4 text-th-muted" />
                 Cash Flows Reconciliation (FY {selectedYear})
               </span>
-              <span className="text-xs text-sky-700 dark:text-sky-400 font-medium">
+              <span className="text-sm text-th-muted font-semibold">
                 Comparative Prior: FY {comparativeYear}
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
-                <div className="text-xs text-slate-500 font-medium">Net Operating Activities</div>
-                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netOperating < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
+                <div className="text-sm text-th-muted font-semibold">Net Operating Activities</div>
+                <div className={`text-lg font-bold font-mono mt-1 ${cashFlowsSummary.netOperating < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(cashFlowsSummary.netOperating)}
                 </div>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
-                <div className="text-xs text-slate-500 font-medium">Net Investing Activities</div>
-                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netInvesting < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
+                <div className="text-sm text-th-muted font-semibold">Net Investing Activities</div>
+                <div className={`text-lg font-bold font-mono mt-1 ${cashFlowsSummary.netInvesting < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(cashFlowsSummary.netInvesting)}
                 </div>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
-                <div className="text-xs text-slate-500 font-medium">Net Financing Activities</div>
-                <div className={`text-base font-bold font-mono mt-0.5 ${cashFlowsSummary.netFinancing < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
+                <div className="text-sm text-th-muted font-semibold">Net Financing Activities</div>
+                <div className={`text-lg font-bold font-mono mt-1 ${cashFlowsSummary.netFinancing < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(cashFlowsSummary.netFinancing)}
                 </div>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
-                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold">Increase(Decrease) in Cash</div>
-                <div className={`text-base font-extrabold font-mono mt-0.5 ${cashFlowsSummary.netIncreaseDecrease < 0 ? 'text-red-600 dark:text-red-400' : 'text-sky-700 dark:text-sky-300'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border-strong">
+                <div className="text-sm text-th-text font-bold">Increase(Decrease) in Cash</div>
+                <div className={`text-lg font-extrabold font-mono mt-1 ${cashFlowsSummary.netIncreaseDecrease < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(cashFlowsSummary.netIncreaseDecrease)}
                 </div>
               </div>
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
-                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between gap-2">
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border-strong">
+                <div className="text-sm text-th-text font-bold flex items-center justify-between gap-2">
                   <span>Cash &amp; Eq., January 1</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-th-muted font-semibold">
                       {selectedYear === '2024' ? '(No 2023 Data)' : '(Prior Dec 31)'}
                     </span>
                     {selectedYear === '2024' && !isEditingJan1_2024 && (
                       <button
                         type="button"
                         onClick={handleStartEditJan1_2024}
-                        className="text-[11px] font-bold text-[#0072ce] dark:text-[#38bdf8] hover:underline cursor-pointer"
+                        className="text-xs font-bold text-th-accent-text hover:underline cursor-pointer"
                       >
                         Adjust
                       </button>
@@ -1627,12 +1603,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       }}
                       placeholder="0.00"
                       autoFocus
-                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-[#0072ce] rounded-md text-slate-900 dark:text-white focus:outline-hidden"
+                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-th-input border border-th-accent rounded-md text-th-text focus:outline-hidden"
                     />
                     <button
                       type="button"
                       onClick={handleSaveJan1_2024}
-                      className="p-1.5 rounded-md bg-[#0072ce] hover:bg-[#005ea8] text-white cursor-pointer"
+                      className="p-1.5 rounded-md bg-th-accent hover:bg-th-accent-hover text-th-accent-fg cursor-pointer"
                       title="Save January 1, 2024 balance"
                     >
                       <Check className="w-3.5 h-3.5" />
@@ -1640,14 +1616,14 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsEditingJan1_2024(false)}
-                      className="p-1.5 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      className="p-1.5 rounded-md bg-th-subtle hover:bg-th-subtle-hover text-th-text cursor-pointer"
                       title="Cancel"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
-                  <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
+                  <div className="text-lg font-extrabold font-mono mt-1 text-th-text">
                     {formatAccounting(
                       currentDbEntries['cf-sum-beg-cash'] !== undefined
                         ? currentDbEntries['cf-sum-beg-cash']
@@ -1656,12 +1632,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   </div>
                 )}
               </div>
-              <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
-                <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
-                  <span>Cash & Eq., December 31</span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Jan 1 + Net Change</span>
+              <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
+                <div className="text-sm text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between gap-2">
+                  <span>Cash &amp; Eq., December 31</span>
+                  <span className="text-xs text-emerald-700 dark:text-emerald-300 font-bold">Jan 1 + Net Change</span>
                 </div>
-                <div className="text-base font-extrabold font-mono mt-0.5 text-emerald-900 dark:text-emerald-200">
+                <div className="text-lg font-extrabold font-mono mt-1 text-emerald-900 dark:text-emerald-200">
                   {formatAccounting(currentDbEntries['cf-sum-end-cash'] !== undefined ? currentDbEntries['cf-sum-end-cash'] : cashFlowsSummary.december31Cash)}
                 </div>
               </div>
@@ -1671,29 +1647,29 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
         {/* Reconciliation Summary for Statement of Changes in Net Assets/Equity */}
         {selectedStatement === 'net_assets' && (
-          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/40">
+          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-th-border bg-th-subtle">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-sky-900 dark:text-sky-300 flex items-center gap-1.5">
-                <Calculator className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+              <span className="text-sm font-bold uppercase tracking-wider text-th-text flex items-center gap-1.5">
+                <Calculator className="w-4 h-4 text-th-muted" />
                 Net Assets / Equity Reconciliation (FY {selectedYear})
               </span>
-              <span className="text-xs text-sky-700 dark:text-sky-400 font-medium">
+              <span className="text-sm text-th-muted font-semibold">
                 Comparative Prior: FY {comparativeYear}
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
-                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between gap-2">
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border-strong">
+                <div className="text-sm text-th-text font-bold flex items-center justify-between gap-2">
                   <span>Balance at Jan 1</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-th-muted font-semibold">
                       {selectedYear === '2024' ? '(No 2023 Data)' : '(Prior Dec 31)'}
                     </span>
                     {selectedYear === '2024' && !isEditingJan1_2024 && (
                       <button
                         type="button"
                         onClick={handleStartEditJan1_2024}
-                        className="text-[11px] font-bold text-[#0072ce] dark:text-[#38bdf8] hover:underline cursor-pointer"
+                        className="text-xs font-bold text-th-accent-text hover:underline cursor-pointer"
                       >
                         Adjust
                       </button>
@@ -1716,12 +1692,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       }}
                       placeholder="0.00"
                       autoFocus
-                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-[#0072ce] rounded-md text-slate-900 dark:text-white focus:outline-hidden"
+                      className="w-full px-2.5 py-1 text-sm font-mono font-bold bg-th-input border border-th-accent rounded-md text-th-text focus:outline-hidden"
                     />
                     <button
                       type="button"
                       onClick={handleSaveJan1_2024}
-                      className="p-1.5 rounded-md bg-[#0072ce] hover:bg-[#005ea8] text-white cursor-pointer"
+                      className="p-1.5 rounded-md bg-th-accent hover:bg-th-accent-hover text-th-accent-fg cursor-pointer"
                       title="Save January 1, 2024 balance"
                     >
                       <Check className="w-3.5 h-3.5" />
@@ -1729,14 +1705,14 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsEditingJan1_2024(false)}
-                      className="p-1.5 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 cursor-pointer"
+                      className="p-1.5 rounded-md bg-th-subtle hover:bg-th-subtle-hover text-th-text cursor-pointer"
                       title="Cancel"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
-                  <div className="text-base font-extrabold font-mono mt-0.5 text-slate-900 dark:text-slate-100">
+                  <div className="text-lg font-extrabold font-mono mt-1 text-th-text">
                     {formatAccounting(
                       currentDbEntries['na-beg-balance'] !== undefined
                         ? currentDbEntries['na-beg-balance']
@@ -1746,36 +1722,36 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 )}
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
-                <div className="text-xs text-slate-500 font-medium">Beg. Adjustments</div>
-                <div className={`text-base font-bold font-mono mt-0.5 ${netAssetsSummary.totalBeginningAdjustments < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
+                <div className="text-sm text-th-muted font-semibold">Beg. Adjustments</div>
+                <div className={`text-lg font-bold font-mono mt-1 ${netAssetsSummary.totalBeginningAdjustments < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(netAssetsSummary.totalBeginningAdjustments)}
                 </div>
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-200 dark:border-slate-700">
-                <div className="text-xs text-slate-600 dark:text-slate-400 font-bold flex items-center justify-between">
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border-strong">
+                <div className="text-sm text-th-text font-bold flex items-center justify-between">
                   <span>Restated Balance</span>
-                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Auto</span>
+                  <span className="text-xs text-th-muted font-bold">Auto</span>
                 </div>
-                <div className={`text-base font-extrabold font-mono mt-0.5 ${netAssetsSummary.restatedBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-sky-700 dark:text-sky-300'}`}>
+                <div className={`text-lg font-extrabold font-mono mt-1 ${netAssetsSummary.restatedBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(netAssetsSummary.restatedBalance)}
                 </div>
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-sky-100 dark:border-slate-800">
-                <div className="text-xs text-slate-500 font-medium">Calendar Year Changes</div>
-                <div className={`text-base font-bold font-mono mt-0.5 ${netAssetsSummary.totalCalendarYearChanges < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
+              <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
+                <div className="text-sm text-th-muted font-semibold">Calendar Year Changes</div>
+                <div className={`text-lg font-bold font-mono mt-1 ${netAssetsSummary.totalCalendarYearChanges < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
                   {formatAccounting(netAssetsSummary.totalCalendarYearChanges)}
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
-                <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between">
+              <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
+                <div className="text-sm text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between gap-2">
                   <span>Balance at Dec 31</span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Restated + CY</span>
+                  <span className="text-xs text-emerald-700 dark:text-emerald-300 font-bold">Restated + CY</span>
                 </div>
-                <div className={`text-base font-extrabold font-mono mt-0.5 ${netAssetsSummary.december31Balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-200'}`}>
+                <div className={`text-lg font-extrabold font-mono mt-1 ${netAssetsSummary.december31Balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-900 dark:text-emerald-200'}`}>
                   {formatAccounting(netAssetsSummary.december31Balance)}
                 </div>
               </div>
@@ -1784,15 +1760,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         )}
 
         {/* Ledger Search Filter */}
-        <div className="px-6 py-4 bg-[#f4f8fc] dark:bg-slate-900/60 border-b-2 border-slate-200 dark:border-slate-800 flex items-center gap-4">
+        <div className="px-6 py-4 bg-th-subtle border-b-2 border-th-border flex items-center gap-4">
           <input
             type="text"
             value={ledgerSearch}
             onChange={(e) => setLedgerSearch(e.target.value)}
             placeholder="Search within recorded accounts..."
-            className="flex-1 px-4 py-3 text-base bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-medium placeholder:text-slate-400 focus:outline-hidden focus:border-[#0072ce] focus:ring-2 focus:ring-[#0072ce]/20 shadow-xs"
+            className="flex-1 px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-medium placeholder:text-th-muted focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 shadow-xs"
           />
-          <span className="text-sm font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap bg-slate-100 dark:bg-slate-800 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+          <span className="text-sm font-bold text-th-text whitespace-nowrap bg-th-surface px-3.5 py-2.5 rounded-xl border border-th-border-strong">
             {ledgerAccountsList.length} {showZeroBalancesInLedger ? 'accounts listed' : 'recorded items'}
           </span>
         </div>
@@ -1800,19 +1776,19 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         {/* Ledger Table or Empty State */}
         {ledgerAccountsList.length === 0 ? (
           <div className="py-16 px-6 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 border-2 border-[#b9d9f5] dark:border-[#1d4677] flex items-center justify-center mx-auto mb-4 text-[#0072ce] dark:text-[#38bdf8]">
+            <div className="w-16 h-16 rounded-2xl bg-th-subtle border-2 border-th-border-strong flex items-center justify-center mx-auto mb-4 text-th-text">
               <FileText className="w-8 h-8" />
             </div>
-            <h5 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            <h5 className="text-lg font-bold text-th-text">
               No balances recorded yet for {currentDivision?.name} (FY {selectedYear})
             </h5>
-            <p className="text-base text-slate-600 dark:text-slate-400 max-w-xl mx-auto mt-2 leading-relaxed font-medium">
+            <p className="text-sm sm:text-base text-th-muted max-w-xl mx-auto mt-2 leading-relaxed font-medium">
               Zero balance items are removed by default. Enter line items and amounts in the batch entry form above and click &quot;Save All Entries to Database&quot;—they will automatically appear here as amounts are added.
             </p>
             <button
               type="button"
               onClick={() => setShowZeroBalancesInLedger(true)}
-              className="mt-6 inline-flex items-center gap-2 px-5 py-3 text-sm font-bold text-[#0a3461] dark:text-[#93c5fd] bg-[#f0f5fa] dark:bg-[#0a274c]/60 hover:bg-[#e1edf8] dark:hover:bg-[#0a274c] border-2 border-[#0072ce]/40 rounded-xl transition-colors cursor-pointer shadow-xs"
+              className="mt-6 inline-flex items-center gap-2 px-5 py-3 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors cursor-pointer shadow-xs"
             >
               <Eye className="w-5 h-5" />
               <span>Show All Accounts (Include Zeroes)</span>
@@ -1821,7 +1797,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         ) : (
           <div className="overflow-x-auto max-h-[580px]">
             <table className="w-full text-left text-base border-collapse">
-              <thead className="bg-[#f0f5fa] dark:bg-[#0a274c] text-sm font-bold text-[#0a3461] dark:text-[#93c5fd] uppercase tracking-wider border-b-2 border-slate-200 dark:border-slate-700 sticky top-0 z-10">
+              <thead className="bg-th-table-head text-sm font-bold text-th-table-head-fg uppercase tracking-wider border-b-2 border-th-border sticky top-0 z-10">
                 <tr>
                   {isSelectMultipleMode && (() => {
                     const selectableLedgerIds = ledgerAccountsList
@@ -1846,7 +1822,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                           type="checkbox"
                           checked={allSelectableSelected}
                           onChange={() => {}}
-                          className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
+                          className="w-5 h-5 rounded border-white/40 text-th-accent accent-th-accent focus:ring-th-accent cursor-pointer pointer-events-none"
                           aria-label="Select all recorded balances"
                         />
                       </th>
@@ -1858,7 +1834,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   <th className="py-3.5 px-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-th-border">
                 {ledgerAccountsList.map((item) => {
                   const amt = currentDbEntries[item.id] || 0;
                   const hasValue = currentDbEntries[item.id] !== undefined && currentDbEntries[item.id] !== 0;
@@ -1879,10 +1855,10 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                             : [...prev, item.id]
                         );
                       }}
-                      className={`hover:bg-[#f4f8fc] dark:hover:bg-slate-800/60 transition-colors ${
+                      className={`hover:bg-th-subtle transition-colors ${
                         isSelectMultipleMode && !isAutoComputedCashFlow ? 'cursor-pointer select-none' : ''
                       } ${
-                        hasValue ? 'bg-[#f8fbfd] dark:bg-[#0a274c]/15' : ''
+                        hasValue ? 'bg-th-subtle/40' : ''
                       }`}
                     >
                       {isSelectMultipleMode && (
@@ -1892,71 +1868,71 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               type="checkbox"
                               checked={selectedRecordedIds.includes(item.id)}
                               onChange={() => {}}
-                              className="w-5 h-5 rounded border-slate-300 text-[#0072ce] accent-[#0072ce] focus:ring-[#0072ce] cursor-pointer pointer-events-none"
+                              className="w-5 h-5 rounded border-th-border-strong text-th-accent accent-th-accent focus:ring-th-accent cursor-pointer pointer-events-none"
                               aria-label={`Select ${item.name}`}
                             />
                           )}
                         </td>
                       )}
-                      <td className="py-3.5 px-6 font-medium text-slate-900 dark:text-slate-100">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-base font-bold text-slate-900 dark:text-slate-100">{item.name}</span>
+                      <td className="py-3.5 px-6 font-medium text-th-text">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className="text-base font-bold text-th-text">{item.name}</span>
                           {item.id === 'cf-sum-beg-cash' && (
-                            <span className="text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
+                            <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Default: Prior Dec 31'}
                             </span>
                           )}
                           {item.id === 'cf-sum-end-cash' && (
-                            <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
+                            <span className="text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2.5 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
                               Auto: Jan 1 + Net Change
                             </span>
                           )}
                           {item.id === 'cf-sum-net-inc-dec' && (
-                            <span className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md font-bold border border-indigo-300 dark:border-indigo-700">
+                            <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               Auto: Net Inflows - Outflows
                             </span>
                           )}
                           {item.id === 'na-beg-balance' && (
-                            <span className="text-xs text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-2 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
+                            <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Auto: Prior Dec 31'}
                             </span>
                           )}
                           {item.id === 'na-restated-balance' && (
-                            <span className="text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 px-2 py-0.5 rounded-md font-bold border border-indigo-300 dark:border-indigo-700">
+                            <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               Auto: Jan 1 + Adjustments
                             </span>
                           )}
                           {item.id === 'na-end-balance' && (
-                            <span className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
+                            <span className="text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 px-2.5 py-0.5 rounded-md font-bold border border-emerald-300 dark:border-emerald-700">
                               Auto: Restated + CY Changes
                             </span>
                           )}
                           {item.isContra && (
-                            <span className="text-xs text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md font-bold border border-slate-300 dark:border-slate-700">
+                            <span className="text-xs text-th-muted bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border">
                               Contra
                             </span>
                           )}
                           {!hasValue && (
-                            <span className="text-xs text-slate-400 dark:text-slate-500 font-mono font-medium">
+                            <span className="text-xs text-th-muted font-mono font-semibold">
                               (Zero)
                             </span>
                           )}
                         </div>
                         {item.subgroup && (
-                          <div className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                          <div className="text-sm text-th-muted font-medium mt-0.5">
                             Subgroup: {item.subgroup}
                           </div>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-6 text-sm text-slate-600 dark:text-slate-400">
-                        <div className="font-bold text-slate-800 dark:text-slate-200">{item.subsection}</div>
-                        <div className="text-sm text-slate-500 dark:text-slate-400">{item.group}</div>
+                      <td className="py-3.5 px-6 text-sm text-th-muted">
+                        <div className="font-bold text-th-text">{item.subsection}</div>
+                        <div className="text-sm text-th-muted">{item.group}</div>
                       </td>
 
                       <td
                         className={`py-3.5 px-6 text-right font-mono tabular-nums text-base ${
-                          hasValue ? 'font-bold text-slate-950 dark:text-white' : 'text-slate-400 dark:text-slate-500'
+                          hasValue ? 'font-bold text-th-text' : 'text-th-muted font-medium'
                         }`}
                       >
                         {isEditable2024Jan1 && isEditingJan1_2024 ? (
@@ -1973,7 +1949,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               }
                             }}
                             placeholder="0.00"
-                            className="w-44 ml-auto px-3 py-1.5 text-right font-mono font-bold bg-white dark:bg-slate-800 border-2 border-[#0072ce] rounded-lg text-slate-900 dark:text-white focus:outline-hidden"
+                            className="w-44 ml-auto px-3 py-1.5 text-right font-mono font-bold bg-th-input border-2 border-th-accent rounded-lg text-th-text focus:outline-hidden"
                           />
                         ) : item.isContra && amt > 0 ? (
                           `(${formatAccounting(amt)})`
@@ -1984,7 +1960,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
                       <td className="py-3.5 px-6 text-right">
                         {isAutoComputedCashFlow ? (
-                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-bold bg-th-subtle text-th-muted border border-th-border-strong">
                             Auto-Computed
                           </span>
                         ) : isEditable2024Jan1 ? (
@@ -1993,7 +1969,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <button
                                 type="button"
                                 onClick={handleSaveJan1_2024}
-                                className="inline-flex items-center gap-1 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
+                                className="inline-flex items-center gap-1 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
                               >
                                 <Check className="w-4 h-4" />
                                 <span>Save</span>
@@ -2001,7 +1977,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setIsEditingJan1_2024(false)}
-                                className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 transition-colors cursor-pointer"
+                                className="inline-flex items-center gap-1 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 py-2 rounded-xl border border-th-border-strong transition-colors cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -2011,7 +1987,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <button
                                 type="button"
                                 onClick={handleStartEditJan1_2024}
-                                className="text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white px-3.5 py-2 rounded-xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border border-[#b9d9f5] dark:border-[#1d4677] transition-colors cursor-pointer"
+                                className="text-sm font-bold text-th-text hover:text-th-primary-fg hover:bg-th-primary px-3.5 py-2 rounded-xl bg-th-subtle border border-th-border-strong transition-colors cursor-pointer"
                               >
                                 {hasValue ? 'Adjust Amount' : 'Set Jan 1 Balance'}
                               </button>
@@ -2019,7 +1995,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setPendingDeleteRecordedItem(item)}
-                                  className="text-slate-400 hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                  className="text-th-muted hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
                                   title="Reset to zero"
                                 >
                                   <Trash2 className="w-5 h-5" />
@@ -2038,7 +2014,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                                 ]);
                                 window.scrollTo({ top: 220, behavior: 'smooth' });
                               }}
-                              className="text-sm font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#005ea8] dark:hover:text-white px-3.5 py-2 rounded-xl bg-[#f0f5fa] dark:bg-[#0a274c]/50 hover:bg-[#e1edf8] border border-[#b9d9f5] dark:border-[#1d4677] transition-colors cursor-pointer"
+                              className="text-sm font-bold text-th-text hover:text-th-primary-fg hover:bg-th-primary px-3.5 py-2 rounded-xl bg-th-subtle border border-th-border-strong transition-colors cursor-pointer"
                             >
                               {hasValue ? 'Edit Amount' : 'Add Amount'}
                             </button>
@@ -2046,7 +2022,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setPendingDeleteRecordedItem(item)}
-                                className="text-slate-400 hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                className="text-th-muted hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
                                 title="Reset to zero"
                               >
                                 <Trash2 className="w-5 h-5" />
@@ -2125,10 +2101,10 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
       {/* Quick Add Division Text Input Prompt Dialog */}
       {isQuickAddDivOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border-2 border-slate-300 dark:border-slate-700 p-6">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">Add New Division</h3>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-th-surface rounded-2xl shadow-2xl border-2 border-th-border-strong p-6">
+            <h3 className="text-lg font-bold text-th-text mb-1">Add New Division</h3>
+            <p className="text-sm font-medium text-th-muted mb-4">
               Enter the division office name. You will be prompted for confirmation before it is created.
             </p>
             <input
@@ -2136,14 +2112,14 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               placeholder="Enter division office name"
               value={newDivName}
               onChange={(e) => setNewDivName(e.target.value)}
-              className="w-full px-4 py-3 text-base bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 font-bold focus:outline-hidden focus:border-[#0072ce] focus:ring-2 focus:ring-[#0072ce]/20 mb-4"
+              className="w-full px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-bold focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 mb-4"
               autoFocus
             />
             <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setIsQuickAddDivOpen(false)}
-                className="px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover cursor-pointer"
               >
                 Cancel
               </button>
@@ -2157,7 +2133,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     setIsQuickAddDivOpen(false);
                   }
                 }}
-                className="px-5 py-2.5 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] disabled:opacity-50 rounded-xl shadow-sm cursor-pointer"
+                className="px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer"
               >
                 Confirm & Add Division
               </button>
@@ -2180,17 +2156,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
       {/* Prompt Modal: Option to save all except the line items that are highlighted red / erroneous */}
       {erroneousModalState.isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-th-surface border-2 border-th-border-strong rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3.5">
               <div className="p-3 bg-red-100 dark:bg-red-950/80 text-red-600 dark:text-red-400 rounded-xl shrink-0">
                 <AlertCircle className="w-7 h-7" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                <h3 className="text-lg font-bold text-th-text">
                   Unrecognized Line Items ({erroneousModalState.invalidCount})
                 </h3>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                <p className="text-sm font-medium text-th-muted">
                   {erroneousModalState.invalidCount} line item(s) highlighted in red do not exist in the official line items database.
                 </p>
               </div>
@@ -2206,8 +2182,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </div>
 
             {/* List of erroneous rows */}
-            <div className="max-h-48 overflow-y-auto space-y-2 border-2 border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50 dark:bg-slate-800/50">
-              <div className="text-xs uppercase font-bold text-slate-500 dark:text-slate-400 px-1">
+            <div className="max-h-48 overflow-y-auto space-y-2 border-2 border-th-border-strong rounded-xl p-3 bg-th-subtle">
+              <div className="text-xs uppercase font-bold text-th-muted px-1">
                 Erroneous Items (Not in Database):
               </div>
               {erroneousModalState.invalidRows.map((row, idx) => (
@@ -2226,17 +2202,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </div>
 
             {/* Summary Counters */}
-            <div className="flex items-center justify-between text-sm px-1 text-slate-700 dark:text-slate-300 font-semibold">
-              <span>Valid items to be saved: <strong className="text-[#0072ce] dark:text-[#38bdf8] text-base">{erroneousModalState.validCount}</strong></span>
+            <div className="flex items-center justify-between text-sm px-1 text-th-text font-semibold">
+              <span>Valid items to be saved: <strong className="text-th-text text-base font-bold">{erroneousModalState.validCount}</strong></span>
               <span>Erroneous items to exclude: <strong className="text-red-700 dark:text-red-400 text-base">{erroneousModalState.invalidCount}</strong></span>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-3 border-t-2 border-slate-200 dark:border-slate-800">
+            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-3 border-t-2 border-th-border">
               <button
                 type="button"
                 onClick={handleCancelErroneousModal}
-                className="px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+                className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors cursor-pointer"
               >
                 Cancel & Fix Entries
               </button>
@@ -2245,7 +2221,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 type="button"
                 disabled={erroneousModalState.validCount === 0}
                 onClick={handleSaveValidExceptErroneous}
-                className="px-5 py-2.5 text-sm font-bold text-white bg-[#0072ce] hover:bg-[#005ea8] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Check className="w-5 h-5" />
                 <span>Save All Except Erroneous ({erroneousModalState.validCount})</span>

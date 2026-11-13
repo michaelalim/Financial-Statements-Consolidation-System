@@ -226,30 +226,30 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         <div className="flex-1 min-w-0 w-full space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Line Items Master Catalog</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <h2 className="text-xl sm:text-2xl font-bold text-th-text">Line Items Master Catalog</h2>
+          <p className="text-sm text-th-muted mt-1 leading-relaxed">
             Official line items benchmarked against DepEd Regional Office VI Final Statement of Financial Position.
           </p>
         </div>
         <button
           onClick={() => setIsResetConfirmOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors self-start"
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-surface border border-th-border-strong rounded-lg shadow-2xs hover:bg-th-subtle transition-colors self-start cursor-pointer"
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-4 h-4 text-th-muted" />
           Reset to Benchmark Line Items
         </button>
       </div>
 
       {/* Add Line Item Form Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <Plus className="w-4 h-4 text-sky-700 dark:text-sky-400" />
+      <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
+        <h3 className="text-lg font-bold text-th-text mb-4 flex items-center gap-2">
+          <Plus className="w-5 h-5 text-th-muted" />
           Add Custom Line Item
         </h3>
         <form onSubmit={handleInitiateAdd} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              <label className="block text-sm font-bold text-th-text mb-1.5">
                 Line Item Name *
               </label>
               <input
@@ -258,12 +258,12 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter line item name"
-                className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+                className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              <label className="block text-sm font-bold text-th-text mb-1.5">
                 Statement Classification *
               </label>
               {isCustomSubsection ? (
@@ -275,7 +275,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                     onChange={(e) => setCustomSubsection(e.target.value)}
                     placeholder="Enter new classification name"
                     autoFocus
-                    className="flex-1 px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-sky-500 dark:border-sky-600 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+                    className="flex-1 px-3.5 py-2.5 text-sm bg-th-input border border-th-accent text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
                   />
                   <button
                     type="button"
@@ -283,7 +283,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                       setIsCustomSubsection(false);
                       setCustomSubsection('');
                     }}
-                    className="px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700"
+                    className="px-3 py-2 text-xs font-medium text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-lg border border-th-border-strong cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -306,7 +306,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                       setCustomGroup('');
                     }
                   }}
-                  className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+                  className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
                 >
                   {subsectionOptions.map((sub) => (
                     <option key={sub} value={sub}>
@@ -319,7 +319,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              <label className="block text-sm font-bold text-th-text mb-1.5">
                 Account Group *
               </label>
               {isCustomGroup || availableGroups.length === 0 ? (
@@ -330,7 +330,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                     value={customGroup}
                     onChange={(e) => setCustomGroup(e.target.value)}
                     placeholder="Enter new account group"
-                    className="flex-1 px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-sky-500 dark:border-sky-600 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+                    className="flex-1 px-3.5 py-2.5 text-sm bg-th-input border border-th-accent text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
                   />
                   {availableGroups.length > 0 && (
                     <button
@@ -340,7 +340,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                         setCustomGroup('');
                         setGroup(availableGroups[0]);
                       }}
-                      className="px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-300 dark:border-slate-700"
+                      className="px-3 py-2 text-xs font-medium text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-lg border border-th-border-strong cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -358,7 +358,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                       setGroup(val);
                     }
                   }}
-                  className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+                  className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
                 >
                   {availableGroups.map((g) => (
                     <option key={g} value={g}>
@@ -371,7 +371,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              <label className="block text-sm font-bold text-th-text mb-1.5">
                 Sub-Group (Optional)
               </label>
               <input
@@ -379,7 +379,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                 value={subgroup}
                 onChange={(e) => setSubgroup(e.target.value)}
                 placeholder="Enter sub-group (optional)"
-                className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+                className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
               />
             </div>
           </div>
@@ -390,9 +390,9 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                 type="checkbox"
                 checked={isContra}
                 onChange={(e) => setIsContra(e.target.checked)}
-                className="w-4 h-4 text-sky-700 rounded border-slate-300 dark:border-slate-600 focus:ring-sky-600"
+                className="w-4 h-4 text-th-accent accent-th-accent rounded border-th-border-strong focus:ring-th-accent"
               />
-              <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+              <span className="text-sm text-th-text font-medium">
                 This is a contra-account (e.g. Allowance for Impairment or Accumulated Depreciation)
               </span>
             </label>
@@ -400,7 +400,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             <button
               type="submit"
               disabled={!name.trim()}
-              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-sky-800 dark:bg-sky-700 hover:bg-sky-900 dark:hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs transition-colors self-start sm:self-auto"
+              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-sm font-semibold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs transition-colors self-start sm:self-auto cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Add Line Item
@@ -410,24 +410,24 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+      <div className="bg-th-surface border border-th-border rounded-xl p-4 shadow-xs flex flex-col sm:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search line items by name or group..."
-            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-sky-600 focus:border-sky-600"
+            className="w-full pl-10 pr-4 py-2.5 text-sm bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+          <SlidersHorizontal className="w-4 h-4 text-th-muted shrink-0" />
           <select
             value={selectedSubsectionFilter}
             onChange={(e) => setSelectedSubsectionFilter(e.target.value)}
-            className="w-full sm:w-auto px-3.5 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-600"
+            className="w-full sm:w-auto px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
           >
             <option value="all">All Classifications ({statementLineItems.length})</option>
             {subsectionOptions.map((sub) => (
@@ -440,50 +440,50 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
       </div>
 
       {/* Items List Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-        <div className="px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+      <div className="bg-th-surface border border-th-border rounded-xl overflow-hidden shadow-xs">
+        <div className="px-6 py-3.5 border-b border-th-border bg-th-table-head flex items-center justify-between text-xs font-bold text-th-table-head-fg uppercase tracking-wider">
           <span>Account Title / Line Item</span>
-          <span>Classification & Group</span>
+          <span>Classification &amp; Group</span>
         </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[600px] overflow-y-auto">
+        <div className="divide-y divide-th-border max-h-[600px] overflow-y-auto">
           {filteredItems.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+            <div className="p-8 text-center text-sm text-th-muted">
               No line items match your search.
             </div>
           ) : (
             filteredItems.map((item) => (
               <div
                 key={item.id}
-                className="px-6 py-3.5 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors text-sm"
+                className="px-6 py-3.5 flex items-center justify-between hover:bg-th-subtle transition-colors text-sm"
               >
                 <div className="pr-4">
-                  <div className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <span className="text-sm font-semibold">{item.name}</span>
+                  <div className="font-medium text-th-text flex items-center gap-2">
+                    <span className="text-base font-semibold">{item.name}</span>
                     {item.isContra && (
-                      <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-normal">
+                      <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
                         Contra Account
                       </span>
                     )}
                     {item.isCustom && (
-                      <span className="text-xs text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded font-normal">
+                      <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2 py-0.5 rounded font-semibold">
                         Custom
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  <div className="text-xs text-th-muted mt-0.5">
                     {item.group} {item.subgroup ? `· ${item.subgroup}` : ''}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">
+                  <span className="text-xs text-th-muted hidden sm:inline">
                     {item.subsection}
                   </span>
                   <button
                     type="button"
                     onClick={() => setItemToDelete(item)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors"
+                    className="p-1.5 text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors cursor-pointer"
                     title={`Delete line item: ${item.name}`}
                   >
                     <Trash2 className="w-4 h-4" />

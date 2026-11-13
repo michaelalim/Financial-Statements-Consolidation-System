@@ -1,18 +1,692 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  
-  /* NCWM Institutional Navy & Royal Blue Scheme */
-  --brand-primary: #0a3461;
-  --brand-accent: #0072ce;
-  --brand-surface: #ffffff;
-  --brand-ice: #f0f5fa;
+@theme inline {
+  --color-th-canvas: var(--t-canvas);
+  --color-th-surface: var(--t-surface);
+  --color-th-subtle: var(--t-subtle);
+  --color-th-subtle-hover: var(--t-subtle-hover);
+  --color-th-input: var(--t-input);
+  --color-th-border: var(--t-border);
+  --color-th-border-strong: var(--t-border-strong);
+  --color-th-text: var(--t-text);
+  --color-th-muted: var(--t-muted);
+  --color-th-primary: var(--t-primary);
+  --color-th-primary-fg: var(--t-primary-fg);
+  --color-th-table-head: var(--t-table-head);
+  --color-th-table-head-fg: var(--t-table-head-fg);
+  --color-th-accent: var(--t-accent);
+  --color-th-accent-hover: var(--t-accent-hover);
+  --color-th-accent-fg: var(--t-accent-fg);
+  --color-th-accent-text: var(--t-accent-text);
+  --color-th-accent-soft: var(--t-accent-soft);
+  --color-th-accent-soft-hover: var(--t-accent-soft-hover);
+  --color-th-hero-from: var(--t-hero-from);
+  --color-th-hero-via: var(--t-hero-via);
+  --color-th-hero-to: var(--t-hero-to);
 }
 
-.dark {
+:root,
+[data-theme="midnight-magenta"] {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Midnight Magenta — Light Mode (#0f1b3d, #ffffff, #ff3d8b) */
+  --t-canvas: #f6f8fd;
+  --t-surface: #ffffff;
+  --t-subtle: #eff3fb;
+  --t-subtle-hover: #e3eaf7;
+  --t-input: #ffffff;
+  --t-border: #d5ddf0;
+  --t-border-strong: #bcc8e4;
+  --t-text: #0f1b3d;
+  --t-muted: #38466d;
+  --t-primary: #0f1b3d;
+  --t-primary-fg: #ffffff;
+  --t-table-head: #0f1b3d;
+  --t-table-head-fg: #ffffff;
+  --t-accent: #e8357d;
+  --t-accent-hover: #cc2367;
+  --t-accent-fg: #ffffff;
+  --t-accent-text: #a81854;
+  --t-accent-soft: #fdf4f8;
+  --t-accent-soft-hover: #fae8f0;
+  --t-hero-from: #f4f6fc;
+  --t-hero-via: #ffffff;
+  --t-hero-to: #f6f8fd;
+}
+
+.dark,
+.dark[data-theme="midnight-magenta"] {
   color-scheme: dark;
+
+  /* Midnight Magenta — Dark Mode (#0f1b3d, #ffffff, #ff3d8b) */
+  --t-canvas: #0a132c;
+  --t-surface: #0f1b3d;
+  --t-subtle: #162552;
+  --t-subtle-hover: #1e316a;
+  --t-input: #0a132c;
+  --t-border: #263a75;
+  --t-border-strong: #354d91;
+  --t-text: #ffffff;
+  --t-muted: #d6dff7;
+  --t-primary: #1a2d63;
+  --t-primary-fg: #ffffff;
+  --t-table-head: #162552;
+  --t-table-head-fg: #ffffff;
+  --t-accent: #e64889;
+  --t-accent-hover: #f25d9a;
+  --t-accent-fg: #ffffff;
+  --t-accent-text: #f594bc;
+  --t-accent-soft: #1b2247;
+  --t-accent-soft-hover: #242c59;
+  --t-hero-from: #0f1b3d;
+  --t-hero-via: #162552;
+  --t-hero-to: #0f1b3d;
+}
+
+/* Oxford Coral (#14213D, #F4EDE0, #FF6B5B) */
+[data-theme="oxford-coral"] {
+  --t-canvas: #F4EDE0;
+  --t-surface: #FBF8F2;
+  --t-subtle: #ECE3D2;
+  --t-subtle-hover: #E2D6C0;
+  --t-input: #FFFFFF;
+  --t-border: #DDD2BC;
+  --t-border-strong: #C4B79D;
+  --t-text: #14213D;
+  --t-muted: #39445B;
+  --t-primary: #14213D;
+  --t-primary-fg: #F4EDE0;
+  --t-table-head: #14213D;
+  --t-table-head-fg: #F4EDE0;
+  --t-accent: #E86254;
+  --t-accent-hover: #D45042;
+  --t-accent-fg: #14213D;
+  --t-accent-text: #9C291E;
+  --t-accent-soft: #FAF1EE;
+  --t-accent-soft-hover: #F4E4DF;
+  --t-hero-from: #F5F0E6;
+  --t-hero-via: #FBF8F2;
+  --t-hero-to: #F4EDE0;
+}
+
+.dark[data-theme="oxford-coral"] {
+  --t-canvas: #0D1629;
+  --t-surface: #14213D;
+  --t-subtle: #1C2D52;
+  --t-subtle-hover: #243866;
+  --t-input: #0D1629;
+  --t-border: #2A3F6E;
+  --t-border-strong: #39538A;
+  --t-text: #F4EDE0;
+  --t-muted: #DDD6C8;
+  --t-primary: #1F325C;
+  --t-primary-fg: #F4EDE0;
+  --t-table-head: #1C2D52;
+  --t-table-head-fg: #F4EDE0;
+  --t-accent: #E86B5E;
+  --t-accent-hover: #F27F73;
+  --t-accent-fg: #14213D;
+  --t-accent-text: #F59D93;
+  --t-accent-soft: #212842;
+  --t-accent-soft-hover: #2B3352;
+  --t-hero-from: #14213D;
+  --t-hero-via: #1C2D52;
+  --t-hero-to: #14213D;
+}
+
+/* Forest Violet (#1F3D2B, #E8DCC4, #8B5CF6) */
+[data-theme="forest-violet"] {
+  --t-canvas: #E8DCC4;
+  --t-surface: #F5EFE2;
+  --t-subtle: #DFD1B5;
+  --t-subtle-hover: #D4C3A2;
+  --t-input: #FAF6ED;
+  --t-border: #D0C0A0;
+  --t-border-strong: #B8A582;
+  --t-text: #1A3324;
+  --t-muted: #354E3F;
+  --t-primary: #1F3D2B;
+  --t-primary-fg: #E8DCC4;
+  --t-table-head: #1F3D2B;
+  --t-table-head-fg: #E8DCC4;
+  --t-accent: #7D52DE;
+  --t-accent-hover: #6D42CF;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #5B23B8;
+  --t-accent-soft: #F2EFF9;
+  --t-accent-soft-hover: #E7E1F5;
+  --t-hero-from: #EFE8D8;
+  --t-hero-via: #F5EFE2;
+  --t-hero-to: #E8DCC4;
+}
+
+.dark[data-theme="forest-violet"] {
+  --t-canvas: #14281C;
+  --t-surface: #1F3D2B;
+  --t-subtle: #294E38;
+  --t-subtle-hover: #325E44;
+  --t-input: #14281C;
+  --t-border: #335F45;
+  --t-border-strong: #437758;
+  --t-text: #F0E6D2;
+  --t-muted: #D8CEBA;
+  --t-primary: #294E38;
+  --t-primary-fg: #F0E6D2;
+  --t-table-head: #294E38;
+  --t-table-head-fg: #F0E6D2;
+  --t-accent: #8B68E3;
+  --t-accent-hover: #9D7EEB;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #C4ACFF;
+  --t-accent-soft: #273D38;
+  --t-accent-soft-hover: #314C46;
+  --t-hero-from: #1F3D2B;
+  --t-hero-via: #294E38;
+  --t-hero-to: #1F3D2B;
+}
+
+/* Espresso Sky (#3B2418, #F2E8DA, #8EC5FF) */
+[data-theme="espresso-sky"] {
+  --t-canvas: #F2E8DA;
+  --t-surface: #FAF6EF;
+  --t-subtle: #E8DAC6;
+  --t-subtle-hover: #DECBB2;
+  --t-input: #FFFFFF;
+  --t-border: #D9C9B2;
+  --t-border-strong: #C2AD91;
+  --t-text: #2F1C12;
+  --t-muted: #563C2E;
+  --t-primary: #3B2418;
+  --t-primary-fg: #F2E8DA;
+  --t-table-head: #3B2418;
+  --t-table-head-fg: #F2E8DA;
+  --t-accent: #7AB4F0;
+  --t-accent-hover: #62A2E6;
+  --t-accent-fg: #26160E;
+  --t-accent-text: #164F8A;
+  --t-accent-soft: #EFF5FB;
+  --t-accent-soft-hover: #E1ECF7;
+  --t-hero-from: #F3EBDF;
+  --t-hero-via: #FAF6EF;
+  --t-hero-to: #F2E8DA;
+}
+
+.dark[data-theme="espresso-sky"] {
+  --t-canvas: #26170F;
+  --t-surface: #3B2418;
+  --t-subtle: #4D3122;
+  --t-subtle-hover: #5E3D2B;
+  --t-input: #26170F;
+  --t-border: #5E3D2B;
+  --t-border-strong: #78503A;
+  --t-text: #F7EFE4;
+  --t-muted: #E0D3C3;
+  --t-primary: #523323;
+  --t-primary-fg: #F7EFE4;
+  --t-table-head: #4D3122;
+  --t-table-head-fg: #F7EFE4;
+  --t-accent: #82B7ED;
+  --t-accent-hover: #9AC6F2;
+  --t-accent-fg: #26160E;
+  --t-accent-text: #A8D1FA;
+  --t-accent-soft: #363336;
+  --t-accent-soft-hover: #423E42;
+  --t-hero-from: #3B2418;
+  --t-hero-via: #4D3122;
+  --t-hero-to: #3B2418;
+}
+
+/* Charcoal Gold (#2B2D31, #D9DADC, #FFC93C) */
+[data-theme="charcoal-gold"] {
+  --t-canvas: #D9DADC;
+  --t-surface: #F2F3F5;
+  --t-subtle: #E4E5E7;
+  --t-subtle-hover: #D3D5D8;
+  --t-input: #FFFFFF;
+  --t-border: #C1C4C9;
+  --t-border-strong: #A6AAB1;
+  --t-text: #1E2023;
+  --t-muted: #42464D;
+  --t-primary: #2B2D31;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #2B2D31;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #EAB734;
+  --t-accent-hover: #D9A420;
+  --t-accent-fg: #1E2023;
+  --t-accent-text: #7A5000;
+  --t-accent-soft: #F7F3E6;
+  --t-accent-soft-hover: #EFE9D5;
+  --t-hero-from: #EAECEF;
+  --t-hero-via: #F2F3F5;
+  --t-hero-to: #D9DADC;
+}
+
+.dark[data-theme="charcoal-gold"] {
+  --t-canvas: #1E2023;
+  --t-surface: #2B2D31;
+  --t-subtle: #383A40;
+  --t-subtle-hover: #43464D;
+  --t-input: #1E2023;
+  --t-border: #44474F;
+  --t-border-strong: #585C66;
+  --t-text: #FFFFFF;
+  --t-muted: #E0E1E3;
+  --t-primary: #3F4248;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #383A40;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #E8BA43;
+  --t-accent-hover: #F2C75A;
+  --t-accent-fg: #1E2023;
+  --t-accent-text: #F7D472;
+  --t-accent-soft: #38362D;
+  --t-accent-soft-hover: #454236;
+  --t-hero-from: #2B2D31;
+  --t-hero-via: #383A40;
+  --t-hero-to: #2B2D31;
+}
+
+/* Sage Linen (#3F5E52, #F6F4EE, #C97A63) */
+[data-theme="sage-linen"] {
+  --t-canvas: #F6F4EE;
+  --t-surface: #FCFBF8;
+  --t-subtle: #EDE9DE;
+  --t-subtle-hover: #E2DDD0;
+  --t-input: #FFFFFF;
+  --t-border: #D8D2C2;
+  --t-border-strong: #C0B8A4;
+  --t-text: #1F3029;
+  --t-muted: #3B5248;
+  --t-primary: #3F5E52;
+  --t-primary-fg: #FCFBF8;
+  --t-table-head: #3F5E52;
+  --t-table-head-fg: #FCFBF8;
+  --t-accent: #BD725B;
+  --t-accent-hover: #AB614B;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #7D3B28;
+  --t-accent-soft: #F7F1EE;
+  --t-accent-soft-hover: #EFE4E0;
+  --t-hero-from: #F2EFE6;
+  --t-hero-via: #FCFBF8;
+  --t-hero-to: #F6F4EE;
+}
+
+.dark[data-theme="sage-linen"] {
+  --t-canvas: #1A2621;
+  --t-surface: #22322B;
+  --t-subtle: #2B3F36;
+  --t-subtle-hover: #354D43;
+  --t-input: #1A2621;
+  --t-border: #375146;
+  --t-border-strong: #49695B;
+  --t-text: #F4F1E8;
+  --t-muted: #D2DCD6;
+  --t-primary: #324A40;
+  --t-primary-fg: #F4F1E8;
+  --t-table-head: #2B3F36;
+  --t-table-head-fg: #F4F1E8;
+  --t-accent: #C7826E;
+  --t-accent-hover: #D49481;
+  --t-accent-fg: #1A2621;
+  --t-accent-text: #E5AA98;
+  --t-accent-soft: #313330;
+  --t-accent-soft-hover: #3D403C;
+  --t-hero-from: #22322B;
+  --t-hero-via: #2B3F36;
+  --t-hero-to: #22322B;
+}
+
+/* Slate Breeze (#334E68, #F4F7F9, #D99B43) */
+[data-theme="slate-breeze"] {
+  --t-canvas: #F4F7F9;
+  --t-surface: #FFFFFF;
+  --t-subtle: #E8EEF2;
+  --t-subtle-hover: #DCE5EC;
+  --t-input: #FFFFFF;
+  --t-border: #D0DCE5;
+  --t-border-strong: #B4C4D2;
+  --t-text: #182A3B;
+  --t-muted: #3B5166;
+  --t-primary: #334E68;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #334E68;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #CA8E3B;
+  --t-accent-hover: #B67D2C;
+  --t-accent-fg: #182736;
+  --t-accent-text: #7A4C0E;
+  --t-accent-soft: #F9F4EA;
+  --t-accent-soft-hover: #F2E8D8;
+  --t-hero-from: #EFF3F7;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F4F7F9;
+}
+
+.dark[data-theme="slate-breeze"] {
+  --t-canvas: #16222E;
+  --t-surface: #1F3040;
+  --t-subtle: #283D52;
+  --t-subtle-hover: #314B64;
+  --t-input: #16222E;
+  --t-border: #344E68;
+  --t-border-strong: #466685;
+  --t-text: #F4F7FA;
+  --t-muted: #CEDAE4;
+  --t-primary: #2D455C;
+  --t-primary-fg: #F4F7FA;
+  --t-table-head: #283D52;
+  --t-table-head-fg: #F4F7FA;
+  --t-accent: #CFA054;
+  --t-accent-hover: #DDB068;
+  --t-accent-fg: #16222E;
+  --t-accent-text: #EAC07A;
+  --t-accent-soft: #2E343B;
+  --t-accent-soft-hover: #3A424B;
+  --t-hero-from: #1F3040;
+  --t-hero-via: #283D52;
+  --t-hero-to: #1F3040;
+}
+
+/* Plum Parchment (#4A3548, #F7F3F5, #4F7D79) */
+[data-theme="plum-parchment"] {
+  --t-canvas: #F7F3F5;
+  --t-surface: #FDFBFC;
+  --t-subtle: #EDE5E9;
+  --t-subtle-hover: #E2D7DD;
+  --t-input: #FFFFFF;
+  --t-border: #DBD0D6;
+  --t-border-strong: #C4B4BD;
+  --t-text: #2E1F2C;
+  --t-muted: #523E4F;
+  --t-primary: #4A3548;
+  --t-primary-fg: #FDFBFC;
+  --t-table-head: #4A3548;
+  --t-table-head-fg: #FDFBFC;
+  --t-accent: #4F7D79;
+  --t-accent-hover: #426B67;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #325754;
+  --t-accent-soft: #EFF4F3;
+  --t-accent-soft-hover: #E2ECEB;
+  --t-hero-from: #F2ECF0;
+  --t-hero-via: #FDFBFC;
+  --t-hero-to: #F7F3F5;
+}
+
+.dark[data-theme="plum-parchment"] {
+  --t-canvas: #231822;
+  --t-surface: #312230;
+  --t-subtle: #3E2C3D;
+  --t-subtle-hover: #4B364A;
+  --t-input: #231822;
+  --t-border: #4E394D;
+  --t-border-strong: #664C64;
+  --t-text: #FAF7F9;
+  --t-muted: #DFD4DD;
+  --t-primary: #4A3548;
+  --t-primary-fg: #FAF7F9;
+  --t-table-head: #3E2C3D;
+  --t-table-head-fg: #FAF7F9;
+  --t-accent: #74A8A3;
+  --t-accent-hover: #89B9B4;
+  --t-accent-fg: #172423;
+  --t-accent-text: #A2CCC8;
+  --t-accent-soft: #2E3838;
+  --t-accent-soft-hover: #384545;
+  --t-hero-from: #312230;
+  --t-hero-via: #3E2C3D;
+  --t-hero-to: #312230;
+}
+
+/* Soft Stone Monochromatic (#4A4742, #F5F4F0, #736E66) */
+[data-theme="soft-stone"] {
+  --t-canvas: #F5F4F0;
+  --t-surface: #FAF9F6;
+  --t-subtle: #EAE7E1;
+  --t-subtle-hover: #DFDBD2;
+  --t-input: #FFFFFF;
+  --t-border: #D8D3C9;
+  --t-border-strong: #C0B9AD;
+  --t-text: #2C2925;
+  --t-muted: #4E4A43;
+  --t-primary: #4A4742;
+  --t-primary-fg: #FAF9F6;
+  --t-table-head: #4A4742;
+  --t-table-head-fg: #FAF9F6;
+  --t-accent: #6E6961;
+  --t-accent-hover: #5A564F;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #45423D;
+  --t-accent-soft: #EFECE6;
+  --t-accent-soft-hover: #E4E0D8;
+  --t-hero-from: #EFEDE8;
+  --t-hero-via: #FAF9F6;
+  --t-hero-to: #F5F4F0;
+}
+
+.dark[data-theme="soft-stone"] {
+  --t-canvas: #201F1D;
+  --t-surface: #2B2926;
+  --t-subtle: #373430;
+  --t-subtle-hover: #433F3A;
+  --t-input: #201F1D;
+  --t-border: #47443E;
+  --t-border-strong: #5E5951;
+  --t-text: #F5F3EF;
+  --t-muted: #D6D1C8;
+  --t-primary: #3D3A35;
+  --t-primary-fg: #F5F3EF;
+  --t-table-head: #373430;
+  --t-table-head-fg: #F5F3EF;
+  --t-accent: #ACA69C;
+  --t-accent-hover: #BEB8AE;
+  --t-accent-fg: #201F1D;
+  --t-accent-text: #D6D1C7;
+  --t-accent-soft: #383530;
+  --t-accent-soft-hover: #45413B;
+  --t-hero-from: #2B2926;
+  --t-hero-via: #373430;
+  --t-hero-to: #2B2926;
+}
+
+/* ============================================================================
+   Tonal Primary-Shade Mode (data-contrast-accent="false")
+   Replaces each theme's 3rd contrasting accent color with a shade of the 1st color
+   ============================================================================ */
+
+/* Midnight Magenta — Tonal Shade of #0f1b3d */
+:root[data-contrast-accent="false"],
+[data-theme="midnight-magenta"][data-contrast-accent="false"] {
+  --t-accent: #1e3575;
+  --t-accent-hover: #294696;
+  --t-accent-fg: #ffffff;
+  --t-accent-text: #16295c;
+  --t-accent-soft: #e8eefb;
+  --t-accent-soft-hover: #d6e1f7;
+  --t-hero-from: #eef2fc;
+}
+
+.dark[data-contrast-accent="false"],
+.dark[data-theme="midnight-magenta"][data-contrast-accent="false"] {
+  --t-accent: #5c7ee6;
+  --t-accent-hover: #7695f0;
+  --t-accent-fg: #0a132c;
+  --t-accent-text: #9cb4f5;
+  --t-accent-soft: #1c2f66;
+  --t-accent-soft-hover: #243b7d;
+  --t-hero-from: #152554;
+}
+
+/* Oxford Coral — Tonal Shade of #14213D */
+[data-theme="oxford-coral"][data-contrast-accent="false"] {
+  --t-accent: #243966;
+  --t-accent-hover: #304b85;
+  --t-accent-fg: #F4EDE0;
+  --t-accent-text: #1a2b4f;
+  --t-accent-soft: #e6e4de;
+  --t-accent-soft-hover: #d9d6ce;
+  --t-hero-from: #ece8df;
+}
+
+.dark[data-theme="oxford-coral"][data-contrast-accent="false"] {
+  --t-accent: #6b88c7;
+  --t-accent-hover: #859fd6;
+  --t-accent-fg: #0D1629;
+  --t-accent-text: #a6bbe6;
+  --t-accent-soft: #1f325c;
+  --t-accent-soft-hover: #273f73;
+  --t-hero-from: #19294d;
+}
+
+/* Forest Violet — Tonal Shade of #1F3D2B */
+[data-theme="forest-violet"][data-contrast-accent="false"] {
+  --t-accent: #2e593f;
+  --t-accent-hover: #3a704f;
+  --t-accent-fg: #E8DCC4;
+  --t-accent-text: #1f3d2b;
+  --t-accent-soft: #dfe5d6;
+  --t-accent-soft-hover: #d0dac4;
+  --t-hero-from: #e4e6d8;
+}
+
+.dark[data-theme="forest-violet"][data-contrast-accent="false"] {
+  --t-accent: #67a880;
+  --t-accent-hover: #80bd98;
+  --t-accent-fg: #14281C;
+  --t-accent-text: #9cd1b0;
+  --t-accent-soft: #294e38;
+  --t-accent-soft-hover: #325e44;
+  --t-hero-from: #244532;
+}
+
+/* Espresso Sky — Tonal Shade of #3B2418 */
+[data-theme="espresso-sky"][data-contrast-accent="false"] {
+  --t-accent: #5c3927;
+  --t-accent-hover: #704630;
+  --t-accent-fg: #F2E8DA;
+  --t-accent-text: #452a1c;
+  --t-accent-soft: #eae0d3;
+  --t-accent-soft-hover: #ded0be;
+  --t-hero-from: #ede3d5;
+}
+
+.dark[data-theme="espresso-sky"][data-contrast-accent="false"] {
+  --t-accent: #c79274;
+  --t-accent-hover: #d6a68b;
+  --t-accent-fg: #26170F;
+  --t-accent-text: #e3bba4;
+  --t-accent-soft: #4d3122;
+  --t-accent-soft-hover: #5e3d2b;
+  --t-hero-from: #452b1d;
+}
+
+/* Charcoal Gold — Tonal Shade of #2B2D31 */
+[data-theme="charcoal-gold"][data-contrast-accent="false"] {
+  --t-accent: #43464d;
+  --t-accent-hover: #52565e;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #2b2d31;
+  --t-accent-soft: #e1e2e5;
+  --t-accent-soft-hover: #d2d4d8;
+  --t-hero-from: #e5e6e8;
+}
+
+.dark[data-theme="charcoal-gold"][data-contrast-accent="false"] {
+  --t-accent: #a6abb5;
+  --t-accent-hover: #bcc0c9;
+  --t-accent-fg: #1E2023;
+  --t-accent-text: #d9dadc;
+  --t-accent-soft: #3f4248;
+  --t-accent-soft-hover: #4d5158;
+  --t-hero-from: #34373d;
+}
+
+/* Sage Linen — Tonal Shade of #3F5E52 */
+[data-theme="sage-linen"][data-contrast-accent="false"] {
+  --t-accent: #4D7364;
+  --t-accent-hover: #5D8776;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #2F493F;
+  --t-accent-soft: #E5ECE8;
+  --t-accent-soft-hover: #D6E2DC;
+  --t-hero-from: #EAF0EC;
+}
+
+.dark[data-theme="sage-linen"][data-contrast-accent="false"] {
+  --t-accent: #88B3A1;
+  --t-accent-hover: #9EC4B4;
+  --t-accent-fg: #16221D;
+  --t-accent-text: #AED0C2;
+  --t-accent-soft: #2B3F36;
+  --t-accent-soft-hover: #354D43;
+  --t-hero-from: #273A32;
+}
+
+/* Slate Breeze — Tonal Shade of #334E68 */
+[data-theme="slate-breeze"][data-contrast-accent="false"] {
+  --t-accent: #486888;
+  --t-accent-hover: #587BA0;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #283E54;
+  --t-accent-soft: #E5ECF3;
+  --t-accent-soft-hover: #D6E1EC;
+  --t-hero-from: #EAF0F6;
+}
+
+.dark[data-theme="slate-breeze"][data-contrast-accent="false"] {
+  --t-accent: #87A8C9;
+  --t-accent-hover: #9EBAD6;
+  --t-accent-fg: #15212D;
+  --t-accent-text: #B0C9E2;
+  --t-accent-soft: #283D52;
+  --t-accent-soft-hover: #314B64;
+  --t-hero-from: #24374A;
+}
+
+/* Plum Parchment — Tonal Shade of #4A3548 */
+[data-theme="plum-parchment"][data-contrast-accent="false"] {
+  --t-accent: #654962;
+  --t-accent-hover: #785875;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #442F42;
+  --t-accent-soft: #EFE8EE;
+  --t-accent-soft-hover: #E3D7E1;
+  --t-hero-from: #F1EBF0;
+}
+
+.dark[data-theme="plum-parchment"][data-contrast-accent="false"] {
+  --t-accent: #B896B5;
+  --t-accent-hover: #C8ABC5;
+  --t-accent-fg: #231822;
+  --t-accent-text: #D3B8D0;
+  --t-accent-soft: #3E2C3D;
+  --t-accent-soft-hover: #4B364A;
+  --t-hero-from: #382737;
+}
+
+
+/* Soft Stone — Tonal Shade of #4A4742 */
+[data-theme="soft-stone"][data-contrast-accent="false"] {
+  --t-accent: #5C5851;
+  --t-accent-hover: #4A4742;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #3F3C37;
+  --t-accent-soft: #EAE7E1;
+  --t-accent-soft-hover: #DFDBD2;
+  --t-hero-from: #EEEDE8;
+}
+
+.dark[data-theme="soft-stone"][data-contrast-accent="false"] {
+  --t-accent: #9D978E;
+  --t-accent-hover: #B0AAA1;
+  --t-accent-fg: #201F1D;
+  --t-accent-text: #C4BEB4;
+  --t-accent-soft: #373430;
+  --t-accent-soft-hover: #433F3A;
+  --t-hero-from: #2F2D29;
 }
 
 @layer base {
@@ -22,15 +696,19 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-800 antialiased selection:bg-sky-500/20 selection:text-sky-900;
+    background-color: var(--t-canvas);
+    color: var(--t-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  .dark body {
-    @apply bg-slate-950 text-slate-100 selection:bg-sky-500/30 selection:text-sky-200;
+  body ::selection {
+    background-color: color-mix(in oklab, var(--t-accent) 25%, transparent);
+    color: var(--t-text);
   }
 }
 
-/* Custom scrollbars for clean government accounting sheets */
+/* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -39,17 +717,11 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--t-border-strong);
   border-radius: 9999px;
 }
-.dark ::-webkit-scrollbar-thumb {
-  background: #334155;
-}
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--t-accent);
 }
 
 @media print {

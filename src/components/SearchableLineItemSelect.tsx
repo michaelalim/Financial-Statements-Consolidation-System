@@ -396,17 +396,17 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           isInvalid
             ? 'bg-red-50/90 dark:bg-red-950/50 border-2 border-red-500 dark:border-red-500 ring-2 ring-red-500/25'
             : isOpen
-            ? 'bg-white dark:bg-slate-800 border-2 border-[#0072ce] ring-2 ring-[#0072ce]/20 shadow-xs'
+            ? 'bg-th-input border-2 border-th-accent ring-2 ring-th-accent/20 shadow-xs'
             : selectedItem
-            ? 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 hover:border-[#0072ce] dark:hover:border-[#38bdf8] shadow-xs'
-            : 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 shadow-xs'
+            ? 'bg-th-input border-2 border-th-border-strong hover:border-th-accent shadow-xs'
+            : 'bg-th-input border-2 border-th-border-strong hover:border-th-accent/60 shadow-xs'
         }`}
       >
         <Search
           className={`w-5 h-5 shrink-0 ${
             isInvalid
               ? 'text-red-600 dark:text-red-400'
-              : 'text-slate-400 dark:text-slate-400'
+              : 'text-th-muted'
           }`}
         />
 
@@ -451,8 +451,8 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           placeholder={placeholder}
           className={`flex-1 bg-transparent border-none outline-hidden text-base min-w-0 font-bold ${
             isInvalid
-              ? 'text-red-950 dark:text-red-100 placeholder:text-red-400 dark:placeholder:text-red-400'
-              : 'text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500'
+              ? 'text-red-950 dark:text-red-100 placeholder:text-red-500 dark:placeholder:text-red-400'
+              : 'text-th-text placeholder:text-th-muted'
           }`}
         />
 
@@ -470,7 +470,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           )}
 
           {selectedItem?.isContra && (
-            <span className="text-xs text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md font-bold border border-slate-300 dark:border-slate-700">
+            <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
               Contra
             </span>
           )}
@@ -479,7 +479,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
             <button
               type="button"
               onClick={handleClear}
-              className="text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 p-1.5 rounded-md cursor-pointer"
+              className="text-th-muted hover:text-th-text p-1.5 rounded-md cursor-pointer"
               title="Clear line item"
             >
               <X className="w-4 h-4" />
@@ -498,7 +498,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                   ? 'Switch dropdown to open downward'
                   : 'Switch dropdown to open upward (on top)'
               }
-              className="text-xs text-slate-600 hover:text-[#0072ce] dark:hover:text-[#38bdf8] px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 cursor-pointer font-bold"
+              className="text-xs text-th-text hover:text-th-accent-text px-2 py-1 rounded-md border border-th-border-strong cursor-pointer font-bold"
             >
               {computedPlacement === 'top' ? (
                 <ArrowUp className="w-4 h-4" />
@@ -509,8 +509,8 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           )}
 
           <ChevronDown
-            className={`w-5 h-5 text-slate-400 shrink-0 transition-transform ${
-              isOpen ? 'rotate-180 text-[#0072ce] dark:text-[#38bdf8]' : ''
+            className={`w-5 h-5 text-th-muted shrink-0 transition-transform ${
+              isOpen ? 'rotate-180 text-th-accent-text' : ''
             }`}
           />
         </div>
@@ -520,16 +520,16 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
       {isOpen && (
         <div
           ref={listRef}
-          className={`absolute z-[100] left-0 right-0 max-h-84 overflow-y-auto bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl shadow-2xl divide-y divide-slate-200 dark:divide-slate-800 animate-in fade-in zoom-in-95 duration-100 ${
+          className={`absolute z-[100] left-0 right-0 max-h-84 overflow-y-auto bg-th-surface border-2 border-th-border-strong rounded-2xl shadow-2xl divide-y divide-th-border animate-in fade-in zoom-in-95 duration-100 ${
             computedPlacement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
           }`}
         >
           {/* Header Info & Helper Bar */}
-          <div className="p-3 bg-[#f0f5fa] dark:bg-[#0a274c] text-sm font-semibold text-[#0a3461] dark:text-[#93c5fd] border-b-2 border-slate-200 dark:border-slate-700 flex items-center justify-between sticky top-0 backdrop-blur-xs z-10">
+          <div className="p-3 bg-th-table-head text-sm font-semibold text-th-table-head-fg border-b border-th-border flex items-center justify-between sticky top-0 z-10">
             <div className="flex items-center gap-2">
               {searchQuery ? (
                 <span>
-                  Matches for: <strong className="text-slate-900 dark:text-white font-bold">"{searchQuery}"</strong>
+                  Matches for: <strong className="underline font-bold">&quot;{searchQuery}&quot;</strong>
                 </span>
               ) : (
                 <span className="font-bold">
@@ -538,23 +538,23 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-xs font-bold text-th-table-head-fg">
               <span className="hidden sm:inline">Use ↑ ↓ then Tab / Enter to select</span>
-              <span className="bg-white/80 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-300 dark:border-slate-700">({filteredItems.length})</span>
+              <span className="bg-white/15 px-2 py-0.5 rounded-md border border-white/25">({filteredItems.length})</span>
             </div>
           </div>
 
           {filteredItems.length === 0 ? (
-            <div className="p-6 text-center text-base text-slate-600 dark:text-slate-400 space-y-1.5">
+            <div className="p-6 text-center text-base text-th-muted space-y-1.5">
               <div className="font-semibold">No official line item found matching "{searchQuery}".</div>
-              <div className="text-sm font-bold text-slate-500 dark:text-slate-400">
+              <div className="text-sm font-bold text-th-muted">
                 Accounts not in the database will be highlighted in red.
               </div>
             </div>
           ) : (
             Object.entries(groupedItems).map(([groupTitle, items]) => (
               <div key={groupTitle} className="p-2.5">
-                <div className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <div className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-th-text bg-th-subtle rounded-lg">
                   {groupTitle}
                 </div>
                 <div className="mt-1.5 space-y-1">
@@ -580,19 +580,19 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                         onClick={() => handleSelect(item.id, true)}
                         className={`w-full text-left px-3.5 py-2.5 rounded-xl text-base flex items-center justify-between transition-colors cursor-pointer ${
                           isHighlighted
-                            ? 'bg-[#edf4fb] dark:bg-[#0a3461]/60 text-[#0a3461] dark:text-white font-bold ring-2 ring-[#0072ce]/40'
+                            ? 'bg-th-subtle text-th-text font-bold ring-2 ring-th-border-strong'
                             : isSelected
-                            ? 'bg-[#f0f5fa] dark:bg-[#0a3461]/40 text-[#0072ce] dark:text-[#60a5fa] font-bold'
-                            : 'text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 font-semibold'
+                            ? 'bg-th-subtle text-th-text font-bold'
+                            : 'text-th-text hover:bg-th-subtle font-semibold'
                         }`}
                       >
                         <div className="truncate mr-2 flex items-center gap-2.5">
                           {isHighlighted && (
-                            <CornerDownLeft className="w-4 h-4 text-[#0072ce] dark:text-[#38bdf8] shrink-0" />
+                            <CornerDownLeft className="w-4 h-4 text-th-text shrink-0" />
                           )}
                           <span className="truncate">{item.name}</span>
                           {item.subgroup && (
-                            <span className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1 truncate">
+                            <span className="text-sm font-medium text-th-muted ml-1 truncate">
                               ({item.subgroup})
                             </span>
                           )}
@@ -600,12 +600,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
                         <div className="flex items-center gap-2 shrink-0">
                           {item.isContra && (
-                            <span className="text-xs text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md font-bold border border-slate-300 dark:border-slate-700">
+                            <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
                               Contra
                             </span>
                           )}
                           {isSelected && (
-                            <Check className="w-5 h-5 text-[#0072ce] dark:text-[#38bdf8]" />
+                            <Check className="w-5 h-5 text-th-text" />
                           )}
                         </div>
                       </button>

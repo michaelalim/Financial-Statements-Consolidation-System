@@ -41,9 +41,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       case 'primary':
       default:
         return {
-          icon: <Check className="w-6 h-6 text-[#0072ce] dark:text-[#38bdf8]" />,
-          button: 'bg-[#0072ce] hover:bg-[#005ea8] text-white focus:ring-[#0072ce]',
-          badgeBg: 'bg-[#f0f5fa] dark:bg-[#0a274c] text-[#0a3461] dark:text-[#93c5fd] border-2 border-[#b9d9f5] dark:border-[#1d4677]',
+          icon: <Check className="w-6 h-6 text-th-text" />,
+          button: 'bg-th-accent hover:bg-th-accent-hover text-th-accent-fg focus:ring-th-accent',
+          badgeBg: 'bg-th-subtle text-th-text border-2 border-th-border-strong',
         };
     }
   };
@@ -51,9 +51,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   const styles = getVariantStyles();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
-      <div 
-        className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border-2 border-stone-300 dark:border-stone-700 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-150"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs">
+      <div
+        className="w-full max-w-lg bg-th-surface rounded-2xl shadow-2xl border-2 border-th-border overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-headline"
@@ -64,16 +64,16 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
               {styles.icon}
             </div>
             <div className="flex-1">
-              <h3 id="modal-headline" className="text-lg font-bold text-stone-900 dark:text-stone-100">
+              <h3 id="modal-headline" className="text-lg font-bold text-th-text">
                 {title}
               </h3>
-              <p className="mt-2 text-base font-medium text-stone-600 dark:text-stone-300 leading-relaxed">
+              <p className="mt-2 text-base font-medium text-th-muted leading-relaxed">
                 {message}
               </p>
             </div>
             <button
               onClick={onCancel}
-              className="text-stone-400 hover:text-stone-600 dark:text-stone-400 dark:hover:text-stone-200 p-1.5 rounded-lg transition-colors cursor-pointer"
+              className="text-th-muted hover:text-th-text p-1.5 rounded-lg transition-colors cursor-pointer"
               aria-label="Close"
             >
               <X className="w-5 h-5" />
@@ -81,11 +81,11 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </div>
         </div>
 
-        <div className="px-6 py-4 bg-stone-50 dark:bg-stone-800/60 border-t-2 border-stone-200 dark:border-stone-700 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 bg-th-subtle border-t border-th-border flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onCancel}
-            className="px-5 py-2.5 text-base font-bold text-stone-700 dark:text-stone-300 bg-white dark:bg-stone-800 border-2 border-stone-300 dark:border-stone-700 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors cursor-pointer"
+            className="px-5 py-2.5 text-base font-bold text-th-text bg-th-surface border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover transition-colors cursor-pointer"
           >
             {cancelLabel}
           </button>

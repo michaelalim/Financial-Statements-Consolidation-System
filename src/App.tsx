@@ -22,8 +22,7 @@ import { ConsolidatedFSView } from './components/ConsolidatedFSView';
 import { ConsolidatedMatrixView } from './components/ConsolidatedMatrixView';
 import { OptionsView, OptionsSubTab } from './components/OptionsView';
 import { ConfirmModal } from './components/ConfirmModal';
-import { TransferDivisionModal } from './components/TransferDivisionModal';
-import { ArrowLeftRight, CheckCircle2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY_DATA = 'deped_ro6_fs_data_v1';
 const LOCAL_STORAGE_KEY_DIVISIONS = 'deped_ro6_divisions_v1';
@@ -129,8 +128,7 @@ export default function App() {
     return currentStore;
   });
 
-  // Transfer & Reassign Modal State
-  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  // Transfer notification toast state
   const [transferToastMessage, setTransferToastMessage] = useState<string | null>(
     'FY 2024 financial details from Iloilo Division have been transferred to Iloilo City Division.'
   );
@@ -340,7 +338,7 @@ export default function App() {
   const isBalanced = Math.abs(liveChecksReport.totalAssets - liabilitiesPlusEquity) < 0.01;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col antialiased selection:bg-sky-100 selection:text-sky-900 transition-colors">
+    <div className="min-h-screen bg-th-canvas text-th-text flex flex-col antialiased transition-colors">
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -352,39 +350,29 @@ export default function App() {
       />
 
       {/* Contextual Institutional Ribbon */}
-      <div className="bg-[#f0f5fa] dark:bg-[#0a2038] border-b border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 py-2 px-4 sm:px-6 lg:px-8 no-print transition-colors">
+      <div className="bg-th-surface border-b border-th-border text-sm text-th-muted py-2.5 px-4 sm:px-6 lg:px-8 no-print transition-colors">
         <div className="max-w-[1780px] mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-[#0a3461] dark:text-[#93c5fd]">Entity:</span>
-            <span className="font-semibold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-300 dark:border-slate-700">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="font-bold text-th-muted">Entity:</span>
+            <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
               {currentEntityName}
             </span>
-            <span className="text-slate-400">·</span>
-            <span className="font-bold text-[#0a3461] dark:text-[#93c5fd]">Fiscal Year:</span>
-            <span className="font-semibold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-md border border-slate-300 dark:border-slate-700">
+            <span className="text-th-muted">·</span>
+            <span className="font-bold text-th-muted">Fiscal Year:</span>
+            <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
               FY {selectedYear}
             </span>
-            <span className="text-slate-400">·</span>
-            <span className="text-slate-500 dark:text-slate-400">COA Government Accounting Manual (GAM) for NGAs</span>
+            <span className="text-th-muted">·</span>
+            <span className="text-th-muted font-medium">COA Government Accounting Manual (GAM) for NGAs</span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsTransferModalOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0072ce] dark:text-[#38bdf8] hover:text-[#0a3461] dark:hover:text-white bg-white dark:bg-slate-800 px-2.5 py-1 rounded-md border border-[#b9d9f5] dark:border-[#1d4677] shadow-2xs transition-colors cursor-pointer"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              <span>Transfer / Reassign Data</span>
-            </button>
-            <span className="text-slate-400">·</span>
-            <span className="font-bold text-slate-700 dark:text-slate-300">Live Equation:</span>
-            <span className={`inline-flex items-center gap-1.5 font-bold px-2.5 py-0.5 rounded-full text-xs ${
+          <div className="flex items-center gap-2.5">
+            <span className="font-bold text-th-muted">Live Equation:</span>
+            <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-lg text-sm border ${
               isBalanced
-                ? 'bg-[#e1edf8] dark:bg-[#0a3461] text-[#0a3461] dark:text-[#38bdf8] border border-[#0072ce]/40'
-                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                ? 'bg-th-subtle text-th-text border-th-border-strong'
+                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isBalanced ? 'bg-[#0072ce]' : 'bg-amber-500 animate-pulse'}`} />
               {isBalanced ? 'A = L + E (Balanced)' : 'Variance Detected'}
             </span>
           </div>
@@ -393,25 +381,18 @@ export default function App() {
 
       {/* Transfer Notification Banner */}
       {transferToastMessage && (
-        <div className="bg-[#e1edf8] dark:bg-[#0a274c] border-b-2 border-[#0072ce]/40 px-4 sm:px-6 lg:px-8 py-2.5 transition-colors no-print">
-          <div className="max-w-[1780px] mx-auto flex items-center justify-between gap-3 text-sm font-bold text-[#0a3461] dark:text-[#93c5fd]">
+        <div className="bg-th-subtle border-b border-th-border-strong px-4 sm:px-6 lg:px-8 py-3 transition-colors no-print">
+          <div className="max-w-[1780px] mx-auto flex items-center justify-between gap-3 text-sm font-bold text-th-text">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#0072ce] text-white text-xs font-black">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">
                 ✓
               </span>
               <span>{transferToastMessage}</span>
-              <button
-                type="button"
-                onClick={() => setIsTransferModalOpen(true)}
-                className="underline hover:text-[#0072ce] dark:hover:text-white cursor-pointer ml-1"
-              >
-                Review or Reassign Data
-              </button>
             </div>
             <button
               type="button"
               onClick={() => setTransferToastMessage(null)}
-              className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 p-1 rounded-md cursor-pointer"
+              className="text-th-muted hover:text-th-text p-1 rounded-md cursor-pointer"
               title="Dismiss"
             >
               <X className="w-4 h-4" />
@@ -441,7 +422,6 @@ export default function App() {
                 onAddDivisionPrompt={(name) => setPendingAddDivName(name)}
                 onAddLineItemPrompt={(name, group) => setPendingAddLineItem({ name, group })}
                 onDeleteLineItemPrompt={(item) => setPendingDeleteLineItem(item)}
-                onOpenTransferModal={() => setIsTransferModalOpen(true)}
               />
             )}
 
@@ -493,7 +473,7 @@ export default function App() {
                 dataStore={dataStore}
                 onSaveAmount={handleSaveAmount}
                 onResetBenchmark={handleResetBenchmark}
-                onOpenTransferModal={() => setIsTransferModalOpen(true)}
+                onTransferDivisionData={handleTransferDivisionData}
               />
             )}
           </main>
@@ -518,12 +498,12 @@ export default function App() {
       </div>
 
       {/* Footer (No-Print) */}
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-6 text-xs text-slate-500 dark:text-slate-400 no-print mt-auto transition-colors">
-        <div className="max-w-[1700px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
+      <footer className="bg-th-surface border-t border-th-border py-6 text-sm text-th-muted no-print mt-auto transition-colors">
+        <div className="max-w-[1780px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="font-medium">
             Department of Education · Region VI Western Visayas · Financial Statement Management
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 font-medium">
             <span>All Funds Statement of Financial Position</span>
             <span>·</span>
             <span>COA GAM Framework</span>
@@ -598,18 +578,6 @@ export default function App() {
           }
         }}
         onCancel={() => setPendingDeleteLineItem(null)}
-      />
-
-      {/* Transfer & Reassign Financial Details Modal */}
-      <TransferDivisionModal
-        isOpen={isTransferModalOpen}
-        onClose={() => setIsTransferModalOpen(false)}
-        divisions={divisions}
-        dataStore={dataStore}
-        onTransfer={handleTransferDivisionData}
-        initialFromDivId="iloilo-div"
-        initialToDivId="iloilo-city-div"
-        initialYear="2024"
       />
     </div>
   );
