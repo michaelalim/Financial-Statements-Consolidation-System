@@ -15,7 +15,10 @@ export type ColorThemeId =
   | 'instagram'
   | 'reddit'
   | 'youtube'
-  | 'telegram';
+  | 'telegram'
+  | 'zoom'
+  | 'gmail'
+  | 'outlook';
 
 export interface ColorThemeDefinition {
   id: ColorThemeId;
@@ -250,10 +253,58 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
       dark: '#78A7D6',
     },
   },
+  {
+    id: 'zoom',
+    name: 'Zoom',
+    description: 'Deep meeting slate-navy, clean white canvas, and signature Zoom blue.',
+    recommended: true,
+    colors: {
+      primary: '#1C2B45',
+      light: '#F4F7FC',
+      accent: '#0B5CFF',
+    },
+    tonalAccent: {
+      light: '#2A4166',
+      dark: '#7DA1D9',
+    },
+  },
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    description: 'Crisp workspace ink, inbox ice-white, and classic Gmail crimson red.',
+    recommended: true,
+    colors: {
+      primary: '#202124',
+      light: '#F6F8FC',
+      accent: '#D93025',
+    },
+    tonalAccent: {
+      light: '#3C4043',
+      dark: '#9AA0A6',
+    },
+  },
+  {
+    id: 'outlook',
+    name: 'Outlook',
+    description: 'Fluent cobalt navy, cool neutral surface, and classic Outlook azure blue.',
+    recommended: true,
+    colors: {
+      primary: '#0F3B6E',
+      light: '#F3F6FA',
+      accent: '#0078D4',
+    },
+    tonalAccent: {
+      light: '#1A4E8A',
+      dark: '#70A6E0',
+    },
+  },
 ];
+
+export type TextScaleMode = 'xs' | 'small' | 'standard' | 'large' | 'xlarge';
 
 export interface ThemeConfig {
   mode: ThemeMode;
   themeId: ColorThemeId;
   useContrastAccent: boolean;
+  textScale?: TextScaleMode;
 }

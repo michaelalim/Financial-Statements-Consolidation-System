@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { LineItemDefinition } from '../types/fs';
+import { LineItemDefinition, StatementType } from '../types/fs';
+import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { YEAR_RANGE } from './yearUtils';
 
 export interface DetectedYearColumn {
@@ -45,6 +46,7 @@ export interface ExtractedPositionRow {
   cleanedName: string;
   sourceColIndex: number;
   sourceColLetter: string;
+  indentScore?: number;
   amountsByTargetId: Record<string, number | null>;
   isSummaryRow: boolean;
   isLumpedDepreciation?: boolean;
@@ -54,6 +56,14 @@ export interface ExtractedPositionRow {
     | 'total_liabilities'
     | 'total_equity'
     | 'total_liabilities_equity'
+    | 'total_revenue'
+    | 'total_expenses'
+    | 'surplus_deficit'
+    | 'cash_inflows_outflows'
+    | 'net_cash_activity'
+    | 'cash_increase_decrease'
+    | 'cash_beginning_ending'
+    | 'net_assets_summary'
     | 'subtotal'
     | 'hierarchy_group'
     | 'net_value'
@@ -67,9 +77,16 @@ export interface ExtractedPositionRow {
 
 export const EXCEL_ALIAS_STORAGE_KEY = 'deped_ro6_position_excel_aliases_v1';
 
-export function loadSavedPositionAliases(): Record<string, string> {
+export function getAliasStorageKey(statementType: StatementType = 'position'): string {
+  if (statementType === 'position') return EXCEL_ALIAS_STORAGE_KEY;
+  return `deped_ro6_${statementType}_excel_aliases_v1`;
+}
+
+export function loadSavedPositionAliases(
+  statementType: StatementType = 'position'
+): Record<string, string> {
   try {
-    const raw = localStorage.getItem(EXCEL_ALIAS_STORAGE_KEY);
+    const raw = localStorage.getItem(getAliasStorageKey(statementType));
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return typeof parsed === 'object' && parsed !== null ? parsed : {};
@@ -78,13 +95,17 @@ export function loadSavedPositionAliases(): Record<string, string> {
   }
 }
 
-export function savePositionAlias(excelLabel: string, lineItemId: string): Record<string, string> {
+export function savePositionAlias(
+  excelLabel: string,
+  lineItemId: string,
+  statementType: StatementType = 'position'
+): Record<string, string> {
   const key = normalizeAliasKey(excelLabel);
-  const current = loadSavedPositionAliases();
+  const current = loadSavedPositionAliases(statementType);
   if (!key) return current;
   const next = { ...current, [key]: lineItemId };
   try {
-    localStorage.setItem(EXCEL_ALIAS_STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(getAliasStorageKey(statementType), JSON.stringify(next));
   } catch {
     // ignore storage quota errors
   }
@@ -113,6 +134,24 @@ function getFormattedCellText(sheet: XLSX.WorkSheet, r: number, c: number, rawVa
   }
   if (rawVal === null || rawVal === undefined) return '';
   return String(rawVal).trim();
+}
+
+function getCellLeadingIndentSpaces(sheet: XLSX.WorkSheet, r: number, c: number, rawVal: unknown): number {
+  const addr = XLSX.utils.encode_cell({ r, c });
+  const cell = sheet[addr];
+  const rawStr =
+    cell && typeof cell.w === 'string' && cell.w.trim() !== ''
+      ? cell.w
+      : rawVal !== null && rawVal !== undefined
+      ? String(rawVal)
+      : '';
+  const match = rawStr.match(/^([ \t]+)/);
+  if (!match) return 0;
+  let spaces = 0;
+  for (const ch of match[1]) {
+    spaces += ch === '\t' ? 4 : 1;
+  }
+  return spaces;
 }
 
 function getCellFormula(sheet: XLSX.WorkSheet, r: number, c: number): string | undefined {
@@ -172,14 +211,19 @@ export function parseExcelNumericCell(rawVal: unknown, formattedText?: string): 
     return { hasValue: true, value: rawVal };
   }
 
-  const text = (formattedText ?? String(rawVal ?? '')).trim();
+  const text = (formattedText ?? String(rawVal ?? '')).replace(/\u00A0/g, ' ').trim();
   if (!text) return { hasValue: false, value: 0 };
 
-  if (/^[-–—]+$/.test(text) || /^[₱$]\s*[-–—]+$/.test(text)) {
+  // Recognize accounting dashes and currency-prefixed dashes such as "-", "₱ -", "Php -", "( - )"
+  const strippedCurrencyDash = text
+    .replace(/^(?:php|ph[p]?|[₱$€£])\s*/i, '')
+    .replace(/^\(\s*([-–—]+)\s*\)$/, '$1')
+    .trim();
+  if (/^[-–—]+$/.test(strippedCurrencyDash)) {
     return { hasValue: true, value: 0 };
   }
 
-  let clean = text.replace(/[₱$,\s]/g, '');
+  let clean = text.replace(/(?:php|[₱$,\s])/gi, '');
   let negative = false;
   if (clean.startsWith('(') && clean.endsWith(')')) {
     negative = true;
@@ -192,6 +236,7 @@ export function parseExcelNumericCell(rawVal: unknown, formattedText?: string): 
 
   const parsed = parseFloat(clean);
   if (Number.isNaN(parsed)) return { hasValue: false, value: 0 };
+  if (Math.abs(parsed) < 0.005) return { hasValue: true, value: 0 };
   return { hasValue: true, value: negative ? -Math.abs(parsed) : parsed };
 }
 
@@ -309,25 +354,71 @@ export function inspectPositionWorksheet(
 }
 
 /**
- * Picks the most likely Statement of Financial Position sheet in a multi-sheet workbook.
+ * Picks the most likely worksheet matching the requested financial statement in a multi-sheet workbook.
  */
-export function pickBestPositionSheetName(workbook: XLSX.WorkBook): string {
+export function pickBestPositionSheetName(
+  workbook: XLSX.WorkBook,
+  statementType: StatementType = 'position'
+): string {
   const names = workbook.SheetNames;
   if (names.length <= 1) return names[0] || '';
 
-  const sfpRegex = /(position|balance\s*sheet|\bsfp\b|\bbs\b)/i;
-  const directHit = names.find((n) => sfpRegex.test(n));
+  const sheetMatchesName = (name: string): boolean => {
+    if (statementType === 'performance') {
+      return /(performance|income\s*statement|\bsfpe\b)/i.test(name);
+    }
+    if (statementType === 'cash_flows') {
+      return /(cash\s*flow|\bscf\b)/i.test(name);
+    }
+    if (statementType === 'net_assets') {
+      return /(net\s*assets|changes\s*in\s*(?:net\s*assets|equity)|\bscnae\b)/i.test(name);
+    }
+    return (
+      /(position|balance\s*sheet|\bsfp\b|\bbs\b)/i.test(name) &&
+      !/(performance|\bsfpe\b)/i.test(name)
+    );
+  };
+
+  const directHit = names.find(sheetMatchesName);
   if (directHit) return directHit;
 
   for (const name of names) {
     const sheet = workbook.Sheets[name];
     const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
     const topText = rows
-      .slice(0, 12)
+      .slice(0, 14)
       .flat()
       .map((v) => String(v ?? ''))
       .join(' ');
-    if (/statement of financial position|total assets|current assets/i.test(topText)) {
+
+    if (statementType === 'performance') {
+      if (
+        /statement of financial performance|service and business income|current operating expenses|surplus\/?\(deficit\)\s*from\s*current\s*operations/i.test(
+          topText
+        )
+      ) {
+        return name;
+      }
+    } else if (statementType === 'cash_flows') {
+      if (
+        /statement of cash flows|cash flows from operating|cash inflows|cash outflows/i.test(
+          topText
+        )
+      ) {
+        return name;
+      }
+    } else if (statementType === 'net_assets') {
+      if (
+        /statement of changes in net assets|changes in net assets\/equity|restated balance|changes in accounting policy/i.test(
+          topText
+        )
+      ) {
+        return name;
+      }
+    } else if (
+      /statement of financial position|total assets|current assets/i.test(topText) &&
+      !/statement of financial performance/i.test(topText)
+    ) {
       return name;
     }
   }
@@ -344,6 +435,7 @@ const ABBREVIATION_MAP: Record<string, string> = {
   accts: 'accounts',
   accum: 'accumulated',
   acc: 'accumulated',
+  acquistion: 'acquisition',
   admin: 'administrative',
   ag: 'agricultural',
   agri: 'agricultural',
@@ -359,6 +451,9 @@ const ABBREVIATION_MAP: Record<string, string> = {
   dev: 'development',
   devt: 'development',
   dist: 'distribution',
+  drrmf: 'disaster risk reduction and management fund',
+  ecc: 'ecc contributions',
+  ecip: 'ecc contributions',
   educ: 'education',
   elect: 'electricity',
   emp: 'employees',
@@ -367,19 +462,23 @@ const ABBREVIATION_MAP: Record<string, string> = {
   equips: 'equipment',
   equiv: 'equivalents',
   fixt: 'fixtures',
+  fom: 'from',
   furn: 'furniture',
   gen: 'general',
+  goccs: 'government owned and controlled corporations',
   govt: 'government',
   imp: 'impairment',
   impair: 'impairment',
   impr: 'improvements',
   infra: 'infrastructure',
+  inocme: 'income',
   inst: 'instructional',
   int: 'interest',
   intl: 'international',
   inv: 'inventory',
   invs: 'inventories',
   lab: 'laboratory',
+  lgus: 'local government units',
   liab: 'liabilities',
   loc: 'local',
   mach: 'machinery',
@@ -388,23 +487,34 @@ const ABBREVIATION_MAP: Record<string, string> = {
   mats: 'materials',
   med: 'medical',
   misc: 'miscellaneous',
+  mooe: 'maintenance and other operating expenses',
   natl: 'national',
+  nca: 'notice of cash allocation',
+  ngas: 'national government agencies',
+  ntca: 'notice of transfer of cash allocation',
   off: 'officer',
   offs: 'officers',
   op: 'operating',
   oper: 'operating',
   pay: 'payable',
+  pera: 'personnel economic relief allowance',
+  ppe: 'property plant and equipment',
+  ra: 'representation allowance',
   rec: 'receivable',
   recv: 'receivable',
   recvble: 'receivable',
   reg: 'regular',
   rep: 'repairs',
+  rlip: 'life and retirement insurance contributions',
   sav: 'savings',
   sch: 'school',
   semiexp: 'semi expendable',
+  sudsidy: 'subsidy',
   supp: 'supplies',
   sup: 'supplies',
+  ta: 'transportation allowance',
   tech: 'technical',
+  tra: 'tax remittance advice',
   trans: 'transportation',
   transp: 'transportation',
   treas: 'treasury',
@@ -593,8 +703,67 @@ function scoreStringSimilarity(rawQuery: string, targetLabel: string): number {
   return Math.max(0, Math.min(94, Math.round((tokenF1 * 0.62 + bigramSim * 0.22 + fullEditSim * 0.16) * 94)));
 }
 
-function scoreLineItemMatch(rawQuery: string, item: LineItemDefinition): number {
+type PerfSectionContext =
+  | 'REVENUE'
+  | 'PS'
+  | 'MOOE'
+  | 'FIN_EXP'
+  | 'NON_CASH'
+  | 'TRANSFERS_FROM'
+  | 'TRANSFERS_TO'
+  | 'NON_OP'
+  | 'LOSSES';
+
+const PERFORMANCE_SYNONYM_GROUPS: string[][] = [
+  ['retirementandlifeinsurancepremiums', 'lifeandretirementinsurancecontributions'],
+  ['employeescompensationinsurancepremiums', 'ecccontributions'],
+  ['incomefromgrantsanddonationsincash', 'donationsincash'],
+  ['incomefromgrantsanddonationsinkind', 'donationsinkind'],
+];
+
+function arePerformanceSynonyms(a: string, b: string): boolean {
+  const normA = normalizeAliasKey(a);
+  const normB = normalizeAliasKey(b);
+  if (!normA || !normB) return false;
+  return PERFORMANCE_SYNONYM_GROUPS.some(
+    (grp) => grp.includes(normA) && grp.includes(normB)
+  );
+}
+
+function itemMatchesPerfContext(item: LineItemDefinition, ctx: PerfSectionContext): boolean {
+  switch (ctx) {
+    case 'REVENUE':
+      return item.section === 'REVENUE';
+    case 'PS':
+      return item.group === 'Personnel Services';
+    case 'MOOE':
+      return item.group === 'Maintenance and Other Operating Expenses';
+    case 'FIN_EXP':
+      return item.group === 'Financial Expenses';
+    case 'NON_CASH':
+      return item.group === 'Non-Cash Expenses';
+    case 'TRANSFERS_FROM':
+      return item.section === 'TRANSFERS' && !item.group.startsWith('Less:');
+    case 'TRANSFERS_TO':
+      return item.section === 'TRANSFERS' && item.group.startsWith('Less:');
+    case 'NON_OP':
+      return item.section === 'NON_OPERATING';
+    case 'LOSSES':
+      return item.section === 'LOSSES';
+  }
+}
+
+const NON_OP_DEFAULT_AMBIGUOUS_KEYS = new Set(['miscellaneousincome', 'othergains']);
+
+function scoreLineItemMatch(
+  rawQuery: string,
+  item: LineItemDefinition,
+  sectionContext?: PerfSectionContext
+): number {
   let score = scoreStringSimilarity(rawQuery, item.name);
+  if (arePerformanceSynonyms(rawQuery, item.name)) {
+    score = Math.max(score, 95);
+  }
   if (score === 0) return 0;
 
   const qTokensAll = tokenizeAndExpand(cleanAccountLabel(rawQuery));
@@ -620,18 +789,38 @@ function scoreLineItemMatch(rawQuery: string, item: LineItemDefinition): number 
     score -= 12;
   }
 
+  const isNonOpDefaultDualItem =
+    item.statementType === 'performance' &&
+    NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(normalizeAliasKey(item.name));
+
+  if (sectionContext && item.statementType === 'performance' && !isNonOpDefaultDualItem) {
+    if (itemMatchesPerfContext(item, sectionContext)) {
+      score = Math.min(100, score + 4);
+    } else {
+      score = Math.max(0, score - 8);
+    }
+  }
+
   return Math.max(0, Math.min(100, score));
 }
 
 export function matchLineItemWithRecommendation(
   rawName: string,
   encodableItems: LineItemDefinition[],
-  savedAliases: Record<string, string> = {}
+  savedAliases: Record<string, string> = {},
+  sectionContext?: PerfSectionContext
 ): LineItemRecommendation {
   const aliasKey = normalizeAliasKey(rawName);
   if (aliasKey && savedAliases[aliasKey]) {
     const aliasItem = encodableItems.find((i) => i.id === savedAliases[aliasKey]);
-    if (aliasItem) {
+    const exactInContext = sectionContext
+      ? encodableItems.find(
+          (i) =>
+            normalizeAliasKey(i.name) === aliasKey &&
+            itemMatchesPerfContext(i, sectionContext)
+        )
+      : undefined;
+    if (aliasItem && (!exactInContext || exactInContext.id === aliasItem.id)) {
       return {
         bestItem: aliasItem,
         confidence: 100,
@@ -641,13 +830,27 @@ export function matchLineItemWithRecommendation(
     }
   }
 
+  const allowAggregatedDepMatch =
+    isLumpedAccumulatedDepreciation(rawName) || /\baggregated\b/i.test(rawName);
+
   const scored = encodableItems
+    .filter((item) => allowAggregatedDepMatch || item.id !== AGGREGATED_ACCUMULATED_DEPRECIATION_ID)
     .map((item) => ({
       item,
-      confidence: scoreLineItemMatch(rawName, item),
+      confidence: scoreLineItemMatch(rawName, item, sectionContext),
     }))
     .filter((entry) => entry.confidence >= 35)
-    .sort((a, b) => b.confidence - a.confidence || a.item.order - b.item.order);
+    .sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      const aNorm = normalizeAliasKey(a.item.name);
+      const bNorm = normalizeAliasKey(b.item.name);
+      if (aNorm === bNorm && NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(aNorm)) {
+        const aNonOp = a.item.section === 'NON_OPERATING' ? 0 : 1;
+        const bNonOp = b.item.section === 'NON_OPERATING' ? 0 : 1;
+        if (aNonOp !== bNonOp) return aNonOp - bNonOp;
+      }
+      return a.item.order - b.item.order;
+    });
 
   if (scored.length === 0) {
     return {
@@ -679,9 +882,13 @@ export function matchLineItemWithRecommendation(
 interface HierarchyClassifier {
   strictHierarchyLabels: string[];   // Group/Subgroup/Subsection names that NEVER match a leaf item name
   ambiguousHierarchyLabels: string[]; // Labels that exist BOTH as a group/subgroup header AND as a leaf item name
+  leafNormSet: Set<string>;
 }
 
-function buildHierarchyClassifier(encodableItems: LineItemDefinition[]): HierarchyClassifier {
+function buildHierarchyClassifier(
+  encodableItems: LineItemDefinition[],
+  statementType: StatementType = 'position'
+): HierarchyClassifier {
   const leafNormSet = new Set(encodableItems.map((i) => normalizeAliasKey(i.name)));
   const allHierarchyRaw = new Map<string, string>();
 
@@ -701,13 +908,45 @@ function buildHierarchyClassifier(encodableItems: LineItemDefinition[]): Hierarc
   });
 
   // Common alternative phrasings in division Excel sheets
-  [
-    'Property and Equipment',
-    'Loans and Receivables',
-    'Other Receivables',
-    'Semi-Expendable Machinery and Equipment',
-    'Semi-Expendable Furniture, Fixtures and Books',
-  ].forEach(register);
+  if (statementType === 'position') {
+    [
+      'Property and Equipment',
+      'Loans and Receivables',
+      'Other Receivables',
+      'Semi-Expendable Machinery and Equipment',
+      'Semi-Expendable Furniture, Fixtures and Books',
+    ].forEach(register);
+  } else if (statementType === 'performance') {
+    [
+      'Service Income',
+      'Business Income',
+      'Shares, Grants and Donation',
+      'Shares, Grants and Donations',
+      'Donations',
+      'Training and Scholarship',
+      'Training and Scholarship Expenses',
+      'Taxes, Insurance Premiums and Other Fees',
+      'Transfers, Assistance and Subsidy',
+      'Less: Current Operating Expenses',
+      'Financial Assistance/Subsidy',
+      'Financial Assistance/Subsidy from NGAs, LGUs, GOCCs',
+      'Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs',
+      'Other Non-Operating Income',
+      'Sale of Assets',
+      'Gains',
+      'Losses',
+    ].forEach(register);
+  } else if (statementType === 'cash_flows') {
+    [
+      'Operating Activities',
+      'Investing Activities',
+      'Financing Activities',
+      'Add: Cash Inflows',
+      'Less: Cash Outflows',
+      'Receipt of Assistance/Subsidy',
+      'Collection of Income/Revenue',
+    ].forEach(register);
+  }
 
   const strictHierarchyLabels: string[] = [];
   const ambiguousHierarchyLabels: string[] = [];
@@ -720,33 +959,88 @@ function buildHierarchyClassifier(encodableItems: LineItemDefinition[]): Hierarc
     }
   });
 
-  return { strictHierarchyLabels, ambiguousHierarchyLabels };
+  return { strictHierarchyLabels, ambiguousHierarchyLabels, leafNormSet };
 }
 
 export function detectSummaryRowKind(
-  rawName: string
+  rawName: string,
+  statementType: StatementType = 'position'
 ): ExtractedPositionRow['summaryKind'] | undefined {
   const cleaned = cleanAccountLabel(rawName).toLowerCase().replace(/\s+/g, ' ').trim();
   if (!cleaned) return undefined;
 
-  if (/^net\s+(?:book\s+)?value\b|^carrying\s+(?:amount|value)\b/.test(cleaned)) {
-    return 'net_value';
+  if (statementType === 'position') {
+    if (/^net\s+(?:book\s+)?value\b|^carrying\s+(?:amount|value)\b/.test(cleaned)) {
+      return 'net_value';
+    }
+    if (/^total\s+assets\b/.test(cleaned) || cleaned === 'assets') {
+      return 'total_assets';
+    }
+    if (/^total\s+liabilities\s+and\s+(?:net\s+assets|equity)/.test(cleaned)) {
+      return 'total_liabilities_equity';
+    }
+    if (/^total\s+liabilities\b/.test(cleaned)) {
+      return 'total_liabilities';
+    }
+    if (/^total\s+(?:net\s+assets|equity|government\s+equity)\b/.test(cleaned)) {
+      return 'total_equity';
+    }
+  } else if (statementType === 'performance') {
+    if (/^total\s+(?:revenue|revenues|income)\b/.test(cleaned)) {
+      return 'total_revenue';
+    }
+    if (
+      /^current\s+operating\s+expenses$/.test(cleaned) ||
+      /^total\s+(?:current\s+)?(?:operating\s+)?expenses?\b/.test(cleaned)
+    ) {
+      return 'total_expenses';
+    }
+    if (
+      /^(?:net\s+)?surplus\s*\/?\s*\(?deficit\)?\s+(?:from\s+current\s+operations|before\s+transfers|for\s+the\s+period|after\s+transfers)\b/.test(
+        cleaned
+      ) ||
+      /^surplus\s*\/?\s*\(deficit\)$/.test(cleaned)
+    ) {
+      return 'surplus_deficit';
+    }
+    if (/^net\s+financial\s+assistance\s*\/?\s*subsidy\b/.test(cleaned)) {
+      return 'subtotal';
+    }
+  } else if (statementType === 'cash_flows') {
+    if (
+      /^(?:total\s+)?(?:add\s*:\s*|less\s*:\s*)?cash\s+(?:inflows|outflows)\b/.test(cleaned)
+    ) {
+      return 'cash_inflows_outflows';
+    }
+    if (/^net\s+cash\s+(?:provided|generated|used|from)\b/.test(cleaned)) {
+      return 'net_cash_activity';
+    }
+    if (/^(?:net\s+)?increase\s*\/?\s*\(?decrease\)?\s+in\s+cash\b/.test(cleaned)) {
+      return 'cash_increase_decrease';
+    }
+    if (
+      /^cash\s+(?:and\s+cash\s+equivalents|balance)[,\s]+(?:at\s+)?(?:january\s*1|jan\s*1|beginning|december\s*31|dec\s*31|ending)\b/.test(
+        cleaned
+      )
+    ) {
+      return 'cash_beginning_ending';
+    }
+  } else if (statementType === 'net_assets') {
+    if (
+      /^balance\s+(?:at|of|as\s+(?:at|of))\s+(?:january\s*1|jan\s*1|beginning|december\s*31|dec\s*31|end)\b/.test(
+        cleaned
+      ) ||
+      /^restated\s+balance\b/.test(cleaned) ||
+      /^total\s+(?:adjustments|changes\s+in\s+net\s+assets)\b/.test(cleaned)
+    ) {
+      return 'net_assets_summary';
+    }
   }
-  if (/^total\s+assets\b/.test(cleaned) || cleaned === 'assets') {
-    return 'total_assets';
-  }
-  if (/^total\s+liabilities\s+and\s+(?:net\s+assets|equity)/.test(cleaned)) {
-    return 'total_liabilities_equity';
-  }
-  if (/^total\s+liabilities\b/.test(cleaned)) {
-    return 'total_liabilities';
-  }
-  if (/^total\s+(?:net\s+assets|equity|government\s+equity)\b/.test(cleaned)) {
-    return 'total_equity';
-  }
+
   if (
     /^(?:sub-?total|total\b|grand\s+total\b|net\s+assets\/equity$)/.test(cleaned) ||
-    /\bsubtotal\b/.test(cleaned)
+    /\bsubtotal\b/.test(cleaned) ||
+    /(?:^|[\s,\-–—(])total\)?$/.test(cleaned)
   ) {
     return 'subtotal';
   }
@@ -774,6 +1068,88 @@ function isSumFormulaString(formula?: string): boolean {
   // Same-sheet SUM(...) or + / - between cell references (e.g. "SUM(E10:E12)" or "E10+E11")
   if (/\bSUM\s*\(/.test(f) && !f.includes('!')) return true;
   if (/^[A-Z]{1,3}\d+(?:\s*[+-]\s*[A-Z]{1,3}\d+)+$/.test(f.replace(/\s+/g, ''))) return true;
+  return false;
+}
+
+/**
+ * Checks whether an Excel formula is a same-sheet rollup summing 2+ rows strictly below
+ * `parentExcelRow` and within the parent's block (before `blockEndExcelRow`).
+ * Prevents leaf accounts that share a group name (e.g. "Other Current Assets" under Deposits)
+ * from being skipped as group totals when they compute from cells above or external schedules.
+ */
+function isDownwardBlockSumFormula(
+  formula: string | undefined,
+  parentExcelRow: number,
+  blockEndExcelRow: number | null,
+  lastBlockExcelRow: number | null
+): boolean {
+  if (!formula || !isSumFormulaString(formula)) return false;
+  const f = formula.toUpperCase().replace(/\$/g, '').replace(/\s+/g, '');
+  if (f.includes('!')) return false;
+
+  const isRowInDownwardBlock = (rowNum: number): boolean => {
+    if (rowNum <= parentExcelRow) return false;
+    if (blockEndExcelRow !== null) return rowNum < blockEndExcelRow;
+    return lastBlockExcelRow !== null && rowNum <= lastBlockExcelRow;
+  };
+
+  const referencedRows = new Set<number>();
+  let hasInvalidReference = false;
+
+  // Inspect SUM(...) argument expressions
+  const sumMatch = f.match(/\bSUM\(([^()]+)\)/);
+  if (sumMatch) {
+    const args = sumMatch[1].split(',').filter(Boolean);
+    if (args.length === 0) return false;
+    for (const arg of args) {
+      const rangeMatch = arg.match(/^([A-Z]{1,3})(\d+):([A-Z]{1,3})(\d+)$/);
+      if (rangeMatch) {
+        const startRow = parseInt(rangeMatch[2], 10);
+        const endRow = parseInt(rangeMatch[4], 10);
+        const lo = Math.min(startRow, endRow);
+        const hi = Math.max(startRow, endRow);
+        if (!isRowInDownwardBlock(lo) || !isRowInDownwardBlock(hi)) {
+          hasInvalidReference = true;
+          break;
+        }
+        referencedRows.add(lo);
+        referencedRows.add(hi);
+      } else {
+        const cellMatch = arg.match(/^([A-Z]{1,3})(\d+)$/);
+        if (!cellMatch) {
+          hasInvalidReference = true;
+          break;
+        }
+        const rowNum = parseInt(cellMatch[2], 10);
+        if (!isRowInDownwardBlock(rowNum)) {
+          hasInvalidReference = true;
+          break;
+        }
+        referencedRows.add(rowNum);
+      }
+    }
+    return !hasInvalidReference && referencedRows.size >= 2;
+  }
+
+  // Inspect direct cell addition/subtraction (e.g. E98+E105+E110)
+  if (/^[A-Z]{1,3}\d+(?:[+-][A-Z]{1,3}\d+)+$/.test(f)) {
+    const refs = f.match(/[A-Z]{1,3}(\d+)/g) || [];
+    for (const ref of refs) {
+      const numMatch = ref.match(/(\d+)$/);
+      if (!numMatch) {
+        hasInvalidReference = true;
+        break;
+      }
+      const rowNum = parseInt(numMatch[1], 10);
+      if (!isRowInDownwardBlock(rowNum)) {
+        hasInvalidReference = true;
+        break;
+      }
+      referencedRows.add(rowNum);
+    }
+    return !hasInvalidReference && referencedRows.size >= 2;
+  }
+
   return false;
 }
 
@@ -826,6 +1202,9 @@ export function isLumpedAccumulatedDepreciation(rawName: string): boolean {
     'all',
     'total',
     'ppe',
+    'aggregated',
+    'combined',
+    'lumped',
   ]);
 
   const remainingSpecific = tokens.filter((t) => {
@@ -837,6 +1216,104 @@ export function isLumpedAccumulatedDepreciation(rawName: string): boolean {
   });
 
   return remainingSpecific.length === 0;
+}
+
+/**
+ * Detects summary net PPE subtotal rows (e.g. "Property, Plant, and Equipment (Net)",
+ * "PPE - Net", "Net Property, Plant and Equipment") so they are cleanly skipped as
+ * auto-computed net summary rows without triggering a lumped-depreciation error.
+ */
+export function isNetPPESummaryRow(rawName: string): boolean {
+  const cleaned = cleanAccountLabel(rawName)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return false;
+
+  // Individual class rows like "Net Value - Other Property, Plant and Equipment" or "Other PPE" must not trigger
+  if (/\bother\b/.test(cleaned)) return false;
+  if (/\b(?:accumulated|accum|depr|depreciation|impairment)\b/.test(cleaned)) return false;
+
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  const hasNetOrCarrying =
+    tokens.includes('net') ||
+    (tokens.includes('carrying') && (tokens.includes('amount') || tokens.includes('value')));
+  if (!hasNetOrCarrying) return false;
+
+  // Reject specific PPE sub-classes (e.g., "Net Value - School Buildings", "Net Value - Office Equipment")
+  const SPECIFIC_PPE_CLASSES = new Set([
+    'land',
+    'building',
+    'buildings',
+    'school',
+    'office',
+    'ict',
+    'information',
+    'communications',
+    'technical',
+    'scientific',
+    'medical',
+    'sports',
+    'printing',
+    'military',
+    'police',
+    'disaster',
+    'rescue',
+    'agricultural',
+    'forestry',
+    'marine',
+    'fishery',
+    'airport',
+    'motor',
+    'vehicle',
+    'vehicles',
+    'furniture',
+    'fixtures',
+    'books',
+    'leased',
+    'heritage',
+    'biological',
+    'intangible',
+    'machinery',
+    'structures',
+    'infrastructure',
+    'road',
+    'water',
+    'power',
+    'sewer',
+    'parks',
+    'plazas',
+    'construction',
+    'progress',
+  ]);
+  if (tokens.some((t) => SPECIFIC_PPE_CLASSES.has(t))) {
+    return false;
+  }
+
+  // Matches "PPE - Net" / "Net PPE" / "Total PPE, Net"
+  if (tokens.includes('ppe')) {
+    const allowedPpeTokens = new Set(['ppe', 'net', 'total', 'carrying', 'amount', 'value', 'and']);
+    return tokens.every((t) => allowedPpeTokens.has(t));
+  }
+
+  // Matches "Property, Plant, and Equipment - Net" / "Total Property, Plant and Equipment, Net"
+  const hasProperty = tokens.some((t) => t === 'property' || tokenSimilarity(t, 'property') >= 0.78);
+  const hasPlant = tokens.some((t) => t === 'plant' || tokenSimilarity(t, 'plant') >= 0.8);
+  const hasEquipment = tokens.some((t) => t === 'equipment' || tokenSimilarity(t, 'equipment') >= 0.78);
+
+  if (hasProperty && hasPlant && hasEquipment) {
+    return tokens.every((t) => {
+      if (['and', 'net', 'total', 'carrying', 'amount', 'value'].includes(t)) return true;
+      if (t === 'property' || tokenSimilarity(t, 'property') >= 0.78) return true;
+      if (t === 'plant' || tokenSimilarity(t, 'plant') >= 0.8) return true;
+      if (t === 'equipment' || tokenSimilarity(t, 'equipment') >= 0.78) return true;
+      return false;
+    });
+  }
+
+  return false;
 }
 
 type EquityRowRole =
@@ -908,26 +1385,126 @@ interface InternalRawRow {
   cleanedName: string;
   sourceColIndex: number;
   sourceColLetter: string;
+  indentScore: number;
+  isContraName: boolean;
   amountsByTargetId: Record<string, number | null>;
+  formulas: string[];
   hasSumFormula: boolean;
   strictSummaryKind?: ExtractedPositionRow['summaryKind'];
   isLumpedDep: boolean;
+  isNetPpeSummary: boolean;
   inEquitySection: boolean;
   equityRole?: EquityRowRole;
+  perfContext?: PerfSectionContext;
   matchesStrictHierarchy: boolean;
   matchesAmbiguousHierarchy: boolean;
   fuzzyHierarchyScore: number;
 }
 
+function findAmbiguousBlockEndExcelRow(
+  allRows: InternalRawRow[],
+  parentIdx: number
+): {
+  blockEndExcelRow: number | null;
+  lastBlockExcelRow: number | null;
+  hasCandidateChildRows: boolean;
+} {
+  const parent = allRows[parentIdx];
+  let enteredIndented = false;
+  let hasCandidateChildRows = false;
+  let lastBlockExcelRow: number | null = null;
+
+  for (let j = parentIdx + 1; j < allRows.length; j++) {
+    const child = allRows[j];
+    if (child.strictSummaryKind) {
+      return {
+        blockEndExcelRow: child.excelRowNumber,
+        lastBlockExcelRow,
+        hasCandidateChildRows,
+      };
+    }
+    if (child.indentScore < parent.indentScore) {
+      return {
+        blockEndExcelRow: child.excelRowNumber,
+        lastBlockExcelRow,
+        hasCandidateChildRows,
+      };
+    }
+    if (child.indentScore === parent.indentScore && enteredIndented) {
+      return {
+        blockEndExcelRow: child.excelRowNumber,
+        lastBlockExcelRow,
+        hasCandidateChildRows,
+      };
+    }
+    if (child.indentScore > parent.indentScore) {
+      enteredIndented = true;
+    }
+    hasCandidateChildRows = true;
+    lastBlockExcelRow = child.excelRowNumber;
+  }
+
+  return { blockEndExcelRow: null, lastBlockExcelRow, hasCandidateChildRows };
+}
+
+const MAJOR_SECTION_BOUNDARY_KINDS = new Set<
+  NonNullable<ExtractedPositionRow['summaryKind']>
+>([
+  'total_assets',
+  'total_liabilities',
+  'total_equity',
+  'total_liabilities_equity',
+  'total_revenue',
+  'total_expenses',
+  'surplus_deficit',
+  'cash_inflows_outflows',
+  'net_cash_activity',
+  'cash_increase_decrease',
+  'cash_beginning_ending',
+  'net_assets_summary',
+]);
+
+/**
+ * Returns true if `parentIdx` is immediately followed by at least one strictly more-indented
+ * non-contra row before indentation returns to `<= parent.indentScore` or a major total boundary.
+ */
+function hasIndentedNonContraChild(allRows: InternalRawRow[], parentIdx: number): boolean {
+  const parent = allRows[parentIdx];
+  for (let j = parentIdx + 1; j < allRows.length; j++) {
+    const child = allRows[j];
+    if (child.indentScore <= parent.indentScore) {
+      break;
+    }
+    if (child.strictSummaryKind) {
+      if (
+        MAJOR_SECTION_BOUNDARY_KINDS.has(child.strictSummaryKind) ||
+        child.strictSummaryKind === 'subtotal'
+      ) {
+        break;
+      }
+      if (child.strictSummaryKind === 'net_value') {
+        continue;
+      }
+    }
+    if (child.isContraName) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Checks whether `parentRow` equals the sum of consecutive leaf/non-summary rows below it
- * across all enabled numeric columns (handling both signed sums and contra deductions).
+ * across all enabled numeric columns, respecting spreadsheet indentation so indented items
+ * (even those sharing a group name like Other Payables) are included inside their parent's block.
  */
 function checkIfRollupOfRowsBelow(
   allRows: InternalRawRow[],
   parentIdx: number,
   activeTargetIds: string[],
-  maxLookahead = 25
+  maxLookahead = 25,
+  depth = 0
 ): { isRollup: boolean; childCount: number } {
   const parent = allRows[parentIdx];
   const nonZeroTargets = activeTargetIds.filter((tid) => {
@@ -942,30 +1519,61 @@ function checkIfRollupOfRowsBelow(
     sums[tid] = 0;
   });
 
+  const parentIndent = parent.indentScore;
+  let hasEnteredIndentedBlock = false;
   let leafChildrenCount = 0;
   const limit = Math.min(allRows.length, parentIdx + 1 + maxLookahead);
 
   for (let j = parentIdx + 1; j < limit; j++) {
     const child = allRows[j];
 
+    // Stop early if we hit a major section/total boundary
+    if (child.strictSummaryKind && MAJOR_SECTION_BOUNDARY_KINDS.has(child.strictSummaryKind)) {
+      break;
+    }
+
+    // Stop if indentation steps back out above parent's level
+    if (child.indentScore < parentIndent) {
+      break;
+    }
+
+    // If we already entered an indented child block under parent and returned to parent's indent level, the block has ended
+    if (child.indentScore === parentIndent && hasEnteredIndentedBlock) {
+      break;
+    }
+
+    if (child.indentScore > parentIndent) {
+      hasEnteredIndentedBlock = true;
+    }
+
+    // Stop if a subtotal closes this block at the parent's indentation level or shallower
+    if (child.strictSummaryKind === 'subtotal' && child.indentScore <= parentIndent) {
+      break;
+    }
+
     // Skip nested sub-headers / subtotals / net-value rows while accumulating leaf items underneath
     if (child.strictSummaryKind || child.matchesStrictHierarchy) {
-      // Stop early if we hit a major section/total boundary
-      if (
-        child.strictSummaryKind === 'total_assets' ||
-        child.strictSummaryKind === 'total_liabilities' ||
-        child.strictSummaryKind === 'total_equity' ||
-        child.strictSummaryKind === 'total_liabilities_equity'
-      ) {
-        break;
-      }
       continue;
     }
 
-    // If child itself is a subgroup header that matches a collision name AND has no account code when parent had none, skip it as a nested header
-    if (child.matchesAmbiguousHierarchy && !child.accountCode && leafChildrenCount > 0) {
-      // Check if we already matched before hitting the next sibling group
-      break;
+    if (child.matchesAmbiguousHierarchy && !child.accountCode) {
+      const childHasIndentedChildren = hasIndentedNonContraChild(allRows, j);
+      const childIsNestedRollup =
+        depth < 1 &&
+        checkIfRollupOfRowsBelow(allRows, j, activeTargetIds, Math.max(1, limit - j), depth + 1)
+          .isRollup;
+
+      if (child.indentScore > parentIndent) {
+        // Inside parent's indented block: skip only if this row itself is an intermediate subgroup header
+        if (childHasIndentedChildren || childIsNestedRollup) {
+          continue;
+        }
+      } else if (leafChildrenCount > 0) {
+        // Same indentation level: break if this looks like the next sibling group header
+        if (childHasIndentedChildren || childIsNestedRollup) {
+          break;
+        }
+      }
     }
 
     leafChildrenCount++;
@@ -1004,26 +1612,58 @@ export function extractPositionRowsFromSheet(
   startRowIndex: number,
   lineItemColOverride: number | 'auto',
   encodableItems: LineItemDefinition[],
-  savedAliases: Record<string, string>
+  savedAliases: Record<string, string>,
+  statementType: StatementType = 'position'
 ): ExtractedPositionRow[] {
-  const activeTargets = yearTargets.filter((t) => t.colIndex >= 0);
+  const activeTargets = yearTargets.filter((t) => t.enabled && t.colIndex >= 0);
   if (activeTargets.length === 0) return [];
 
+  const isPositionStatement = statementType === 'position';
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
   const earliestAmountCol = Math.min(...activeTargets.map((t) => t.colIndex));
-  const hierarchy = buildHierarchyClassifier(encodableItems);
+  const hierarchy = buildHierarchyClassifier(encodableItems, statementType);
 
-  // Pass 1: Extract raw candidate rows with metadata & track entry into the Equity section
+  // Pass 1: Extract raw candidate rows with metadata & section context
   const rawExtracted: InternalRawRow[] = [];
   let inEquitySection = false;
   let passedTotalLiabilities = false;
+  let currentPerfContext: PerfSectionContext | undefined =
+    statementType === 'performance' ? 'REVENUE' : undefined;
+
+  const updatePerfContextFromText = (txt: string) => {
+    const low = cleanAccountLabel(txt).toLowerCase();
+    if (!low) return;
+    if (/^revenue\b|^service and business income\b|^shares,\s*grants/.test(low)) {
+      currentPerfContext = 'REVENUE';
+    } else if (/^personnel services\b/.test(low)) {
+      currentPerfContext = 'PS';
+    } else if (/^(?:less:\s*)?maintenance and other operating expenses\b/.test(low)) {
+      currentPerfContext = 'MOOE';
+    } else if (/^financial expenses\b/.test(low)) {
+      currentPerfContext = 'FIN_EXP';
+    } else if (/^non-cash expenses\b/.test(low)) {
+      currentPerfContext = 'NON_CASH';
+    } else if (/^less:\s*financial assistance\/subsidy to\b/.test(low)) {
+      currentPerfContext = 'TRANSFERS_TO';
+    } else if (/^financial assistance\/subsidy from\b/.test(low)) {
+      currentPerfContext = 'TRANSFERS_FROM';
+    } else if (
+      /^other\s+non[-\s]?operating\s+income\b|^non[-\s]?operating\s+income\b|^sale of assets\b|^gains$/.test(
+        low
+      )
+    ) {
+      currentPerfContext = 'NON_OP';
+    } else if (/^losses\b|^loss on sale\b/.test(low)) {
+      currentPerfContext = 'LOSSES';
+    }
+  };
 
   for (let r = Math.max(0, startRowIndex); r < rows.length; r++) {
     const row = rows[r];
     if (!Array.isArray(row)) continue;
 
     // Inspect descriptive text before the earliest amount column first (so amount-less section headers
-    // like "NET ASSETS/EQUITY" or "GOVERNMENT EQUITY" still trigger equity-section tracking!)
+    // like "NET ASSETS/EQUITY" or "Financial Expenses" still update section context)
     let accountCode: string | undefined;
     for (let c = 0; c < earliestAmountCol; c++) {
       const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
@@ -1056,8 +1696,13 @@ export function extractPositionRowsFromSheet(
       } else if (candidateCells.length > 1) {
         let bestCandidateScore = -1;
         for (const cand of candidateCells) {
-          const isSum = Boolean(detectSummaryRowKind(cand.text));
-          const rec = matchLineItemWithRecommendation(cand.text, encodableItems, savedAliases);
+          const isSum = Boolean(detectSummaryRowKind(cand.text, statementType));
+          const rec = matchLineItemWithRecommendation(
+            cand.text,
+            encodableItems,
+            savedAliases,
+            currentPerfContext
+          );
           const effectiveScore = isSum ? 98 : rec.confidence;
           if (effectiveScore >= bestCandidateScore) {
             bestCandidateScore = effectiveScore;
@@ -1068,16 +1713,30 @@ export function extractPositionRowsFromSheet(
       }
     }
 
-    if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+    if (statementType === 'performance') {
+      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+        updatePerfContextFromText(chosenText);
+      } else {
+        for (let c = 0; c < earliestAmountCol; c++) {
+          const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
+          if (cellTxt && !looksLikeNoteOrCodeOnly(cellTxt)) {
+            updatePerfContextFromText(cellTxt);
+          }
+        }
+      }
+    }
+
+    if (isPositionStatement && chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
       if (isEquitySectionEntryText(chosenText) || passedTotalLiabilities) {
         inEquitySection = true;
       }
-      if (detectSummaryRowKind(chosenText) === 'total_liabilities') {
+      if (detectSummaryRowKind(chosenText, statementType) === 'total_liabilities') {
         passedTotalLiabilities = true;
       }
     }
 
     const amountsByTargetId: Record<string, number | null> = {};
+    const formulas: string[] = [];
     let hasAnyNonZeroAmount = false;
     let hasAnyNumericCell = false;
     let hasSumFormula = false;
@@ -1086,6 +1745,9 @@ export function extractPositionRowsFromSheet(
       const fmt = getFormattedCellText(sheet, r, target.colIndex, row[target.colIndex]);
       const parsed = parseExcelNumericCell(row[target.colIndex], fmt);
       const formula = getCellFormula(sheet, r, target.colIndex);
+      if (formula) {
+        formulas.push(formula);
+      }
       if (isSumFormulaString(formula)) {
         hasSumFormula = true;
       }
@@ -1112,9 +1774,15 @@ export function extractPositionRowsFromSheet(
     }
 
     const cleanedName = cleanAccountLabel(chosenText);
-    const strictSummaryKind = detectSummaryRowKind(chosenText);
-    const isLumpedDep = isLumpedAccumulatedDepreciation(chosenText);
-    const equityRole = inEquitySection ? classifyEquityRow(chosenText) : undefined;
+    const leadingSpaces =
+      chosenCol >= 0 ? getCellLeadingIndentSpaces(sheet, r, chosenCol, row[chosenCol]) : 0;
+    const indentScore = Math.max(0, chosenCol) * 100 + Math.min(99, leadingSpaces);
+    const isContraName = hasContraKeywords(tokenizeAndExpand(cleanedName));
+    const strictSummaryKind = detectSummaryRowKind(chosenText, statementType);
+    const isLumpedDep = isPositionStatement && isLumpedAccumulatedDepreciation(chosenText);
+    const isNetPpeSummary = isPositionStatement && isNetPPESummaryRow(chosenText);
+    const equityRole =
+      isPositionStatement && inEquitySection ? classifyEquityRow(chosenText) : undefined;
 
     let maxStrictScore = 0;
     for (const hLabel of hierarchy.strictHierarchyLabels) {
@@ -1128,7 +1796,11 @@ export function extractPositionRowsFromSheet(
       if (s > maxAmbiguousScore) maxAmbiguousScore = s;
     }
 
-    const matchesStrictHierarchy = maxStrictScore >= 86;
+    const isExactLeafName = hierarchy.leafNormSet.has(normalizeAliasKey(chosenText));
+    const matchesStrictHierarchy =
+      !isExactLeafName &&
+      maxStrictScore >= 86 &&
+      !(maxAmbiguousScore >= 90 && maxAmbiguousScore >= maxStrictScore);
     const matchesAmbiguousHierarchy = maxAmbiguousScore >= 90;
     const fuzzyHierarchyScore = Math.max(maxStrictScore, maxAmbiguousScore);
 
@@ -1139,12 +1811,17 @@ export function extractPositionRowsFromSheet(
       cleanedName,
       sourceColIndex: chosenCol,
       sourceColLetter: chosenCol >= 0 ? colIndexToLetter(chosenCol) : '?',
+      indentScore,
+      isContraName,
       amountsByTargetId,
+      formulas,
       hasSumFormula,
       strictSummaryKind,
       isLumpedDep,
-      inEquitySection,
+      isNetPpeSummary,
+      inEquitySection: isPositionStatement && inEquitySection,
       equityRole,
+      perfContext: currentPerfContext,
       matchesStrictHierarchy,
       matchesAmbiguousHierarchy,
       fuzzyHierarchyScore,
@@ -1156,15 +1833,16 @@ export function extractPositionRowsFromSheet(
   const sheetUsesAccountCodes = codedRowCount >= 3;
   const activeTargetIds = activeTargets.map((t) => t.id);
 
-  // Check if Equity portion has an explicit "Accumulated Surplus/(Deficit, end)" row
-  const hasExplicitEndingSurplus = rawExtracted.some(
-    (r) => r.inEquitySection && r.equityRole === 'ending_surplus_explicit'
-  );
-  const equityLineItemDef =
-    encodableItems.find((i) => i.id === 'accumulated_surplus_deficit') ||
-    encodableItems.find((i) => /accumulated\s+surplus/i.test(i.name));
+  // Check if Equity portion has an explicit "Accumulated Surplus/(Deficit, end)" row (SFP only)
+  const hasExplicitEndingSurplus =
+    isPositionStatement &&
+    rawExtracted.some((r) => r.inEquitySection && r.equityRole === 'ending_surplus_explicit');
+  const equityLineItemDef = isPositionStatement
+    ? encodableItems.find((i) => i.id === 'accumulated_surplus_deficit') ||
+      encodableItems.find((i) => /accumulated\s+surplus/i.test(i.name))
+    : undefined;
 
-  // Pass 2: Enforce lowest-level leaf extraction, Equity rule, and Lumped Depreciation guard
+  // Pass 2: Enforce lowest-level leaf extraction, statement-specific summary rules, and SFP guards
   const finalRows: ExtractedPositionRow[] = [];
 
   for (let i = 0; i < rawExtracted.length; i++) {
@@ -1174,7 +1852,7 @@ export function extractPositionRowsFromSheet(
     let summaryReason: string | undefined;
     let isLumpedDepreciation = false;
 
-    if (raw.inEquitySection) {
+    if (isPositionStatement && raw.inEquitySection) {
       const isChosenEndingSurplus =
         raw.equityRole === 'ending_surplus_explicit' ||
         (!hasExplicitEndingSurplus && raw.equityRole === 'surplus_unqualified');
@@ -1189,40 +1867,100 @@ export function extractPositionRowsFromSheet(
             ? 'Superseded by Accumulated Surplus/(Deficit, end)'
             : 'Equity section row (only Accumulated Surplus/(Deficit) needed)';
       }
-    } else if (raw.isLumpedDep) {
-      isSummaryRow = true;
+    } else if (isPositionStatement && raw.isLumpedDep) {
       isLumpedDepreciation = true;
-      summaryKind = 'lumped_depreciation';
-      summaryReason = 'Lumped Accumulated Depreciation — request breakdown per PPE';
+      const hasAggregatedTarget = encodableItems.some(
+        (i) => i.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+      );
+      if (hasAggregatedTarget) {
+        isSummaryRow = false;
+        summaryReason =
+          'Temporarily mapped to Aggregated Accumulated Depreciation — breakdown per PPE recommended';
+      } else {
+        isSummaryRow = true;
+        summaryKind = 'lumped_depreciation';
+        summaryReason = 'Lumped Accumulated Depreciation — request breakdown per PPE';
+      }
+    } else if (isPositionStatement && raw.isNetPpeSummary) {
+      isSummaryRow = true;
+      summaryKind = 'net_value';
+      summaryReason = 'Net PPE summary row (auto-computed)';
     } else if (raw.strictSummaryKind) {
       isSummaryRow = true;
       summaryReason =
         raw.strictSummaryKind === 'net_value'
           ? 'Net Value row (auto-computed)'
+          : raw.strictSummaryKind === 'cash_beginning_ending' ||
+            raw.strictSummaryKind === 'cash_increase_decrease' ||
+            raw.strictSummaryKind === 'net_cash_activity'
+          ? 'Cash Flow reconciliation / net activity row (auto-computed)'
+          : raw.strictSummaryKind === 'cash_inflows_outflows'
+          ? 'Cash Inflows / Outflows subtotal row (auto-computed)'
+          : raw.strictSummaryKind === 'net_assets_summary'
+          ? 'Beginning / Restated / Ending Balance row (auto-computed)'
+          : raw.strictSummaryKind === 'surplus_deficit'
+          ? 'Surplus/(Deficit) summary row (auto-computed)'
           : 'Total / Subtotal row (skipped)';
     } else if (raw.matchesStrictHierarchy) {
       isSummaryRow = true;
       summaryKind = 'hierarchy_group';
       summaryReason = 'Higher-level group total (auto-computed)';
     } else if (raw.matchesAmbiguousHierarchy) {
-      const rollup = checkIfRollupOfRowsBelow(rawExtracted, i, activeTargetIds);
       const nextRow = rawExtracted[i + 1];
-      const noCodeWhileSheetHasCodes =
-        sheetUsesAccountCodes && !raw.accountCode && Boolean(nextRow && nextRow.accountCode);
+      const nextSubtotalBase =
+        nextRow?.strictSummaryKind === 'subtotal'
+          ? nextRow.cleanedName.replace(/^(?:sub-?total|total)\s+/i, '').trim()
+          : '';
+      const immediatelyFollowedByOwnSubtotal = Boolean(
+        nextSubtotalBase && scoreStringSimilarity(nextSubtotalBase, raw.cleanedName) >= 75
+      );
 
-      if (rollup.isRollup || noCodeWhileSheetHasCodes || (raw.hasSumFormula && !raw.accountCode)) {
-        isSummaryRow = true;
-        summaryKind = 'hierarchy_group';
-        summaryReason = rollup.isRollup
-          ? `Higher-level rollup of ${rollup.childCount} item${rollup.childCount > 1 ? 's' : ''} below`
-          : 'Higher-level group total (no account code)';
+      if (!immediatelyFollowedByOwnSubtotal) {
+        const rollup = checkIfRollupOfRowsBelow(rawExtracted, i, activeTargetIds);
+        const hasIndentedChildren = !raw.accountCode && hasIndentedNonContraChild(rawExtracted, i);
+        const noCodeWhileSheetHasCodes =
+          sheetUsesAccountCodes &&
+          !raw.accountCode &&
+          Boolean(nextRow && nextRow.accountCode && nextRow.indentScore > raw.indentScore);
+        const { blockEndExcelRow, lastBlockExcelRow, hasCandidateChildRows } =
+          findAmbiguousBlockEndExcelRow(rawExtracted, i);
+        const hasDownwardSumFormula =
+          !raw.accountCode &&
+          hasCandidateChildRows &&
+          raw.formulas.some((f) =>
+            isDownwardBlockSumFormula(
+              f,
+              raw.excelRowNumber,
+              blockEndExcelRow,
+              lastBlockExcelRow
+            )
+          );
+
+        if (
+          rollup.isRollup ||
+          hasIndentedChildren ||
+          noCodeWhileSheetHasCodes ||
+          hasDownwardSumFormula
+        ) {
+          isSummaryRow = true;
+          summaryKind = 'hierarchy_group';
+          summaryReason = rollup.isRollup
+            ? `Higher-level rollup of ${rollup.childCount} item${rollup.childCount > 1 ? 's' : ''} below`
+            : hasIndentedChildren
+            ? 'Higher-level group/subgroup total (indented items below)'
+            : 'Higher-level group total (no account code)';
+        }
       }
     } else if (!raw.accountCode) {
       const rollup = checkIfRollupOfRowsBelow(rawExtracted, i, activeTargetIds);
+      const hasIndentedChildren = hasIndentedNonContraChild(rawExtracted, i);
       if (
         rollup.isRollup &&
         rollup.childCount >= 2 &&
-        (raw.hasSumFormula || sheetUsesAccountCodes || raw.fuzzyHierarchyScore >= 72)
+        (raw.hasSumFormula ||
+          sheetUsesAccountCodes ||
+          raw.fuzzyHierarchyScore >= 72 ||
+          hasIndentedChildren)
       ) {
         isSummaryRow = true;
         summaryKind = 'hierarchy_group';
@@ -1233,8 +1971,20 @@ export function extractPositionRowsFromSheet(
     let recommendation: LineItemRecommendation;
     let autoSelectedId = '';
 
+    const aggregatedDepItem = encodableItems.find(
+      (i) => i.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+    );
+
     if (isSummaryRow) {
       recommendation = { bestItem: null, confidence: 0, matchType: 'none', alternatives: [] };
+    } else if (isLumpedDepreciation && aggregatedDepItem) {
+      recommendation = {
+        bestItem: aggregatedDepItem,
+        confidence: 100,
+        matchType: 'exact',
+        alternatives: [],
+      };
+      autoSelectedId = aggregatedDepItem.id;
     } else if (raw.inEquitySection && equityLineItemDef) {
       recommendation = {
         bestItem: equityLineItemDef,
@@ -1244,7 +1994,12 @@ export function extractPositionRowsFromSheet(
       };
       autoSelectedId = equityLineItemDef.id;
     } else {
-      recommendation = matchLineItemWithRecommendation(raw.rawName, encodableItems, savedAliases);
+      recommendation = matchLineItemWithRecommendation(
+        raw.rawName,
+        encodableItems,
+        savedAliases,
+        raw.perfContext
+      );
       autoSelectedId =
         recommendation.bestItem && recommendation.confidence >= 66 ? recommendation.bestItem.id : '';
     }
@@ -1257,6 +2012,7 @@ export function extractPositionRowsFromSheet(
       cleanedName: raw.cleanedName,
       sourceColIndex: raw.sourceColIndex,
       sourceColLetter: raw.sourceColLetter,
+      indentScore: raw.indentScore,
       amountsByTargetId: raw.amountsByTargetId,
       isSummaryRow,
       isLumpedDepreciation,
@@ -1276,3 +2032,224 @@ export function resolveTargetFiscalYear(detectedYear: string, fallbackYear: stri
   if (YEAR_RANGE.includes(detectedYear)) return detectedYear;
   return YEAR_RANGE.includes(fallbackYear) ? fallbackYear : detectedYear;
 }
+
+export type DatabaseDiffStatus = 'amount_mismatch' | 'missing_in_upload' | 'new_in_upload';
+
+export interface DatabaseLineItemDiff {
+  lineItemId: string;
+  itemName: string;
+  section: LineItemDefinition['section'];
+  subsection: string;
+  group: string;
+  isContra?: boolean;
+  uploadedAmount: number;
+  databaseAmount: number;
+  difference: number; // uploadedAmount - databaseAmount
+  status: DatabaseDiffStatus;
+}
+
+export interface DatabaseSectionSummary {
+  key: string;
+  label: string;
+  uploaded: number;
+  db: number;
+  variance: number;
+}
+
+export interface DatabaseTargetComparison {
+  target: YearImportColumnTarget;
+  hasExistingData: boolean;
+  databaseItemCount: number;
+  uploadedMappedItemCount: number;
+  exactMatchCount: number;
+  unmatchedNonZeroCount: number;
+  isFullMatch: boolean;
+  differences: DatabaseLineItemDiff[];
+  dbTotals: {
+    assets: number;
+    liabilities: number;
+    equity: number;
+  };
+  uploadedTotals: {
+    assets: number;
+    liabilities: number;
+    equity: number;
+  };
+  sectionSummaries: DatabaseSectionSummary[];
+  diffByLineItemId: Record<string, DatabaseLineItemDiff>;
+}
+
+/**
+ * Compares the extracted & matched values for a spreadsheet year column against
+ * the balances already saved in the database (`dataStore[year][divisionId]`).
+ */
+export function compareTargetAgainstDatabase(
+  target: YearImportColumnTarget,
+  rows: ExtractedPositionRow[],
+  encodableItems: LineItemDefinition[],
+  existingYearDivisionData?: Record<string, number>,
+  statementType: StatementType = 'position'
+): DatabaseTargetComparison {
+  const itemById = new Map<string, LineItemDefinition>();
+  encodableItems.forEach((item) => itemById.set(item.id, item));
+
+  const uploadedMap = new Map<string, number>();
+  let unmatchedNonZeroCount = 0;
+
+  rows.forEach((r) => {
+    if (!r.included) return;
+    const rawAmt = r.amountsByTargetId[target.id];
+    if (rawAmt === null || rawAmt === undefined || Math.abs(rawAmt) < 0.005) return;
+
+    if (!r.selectedLineItemId) {
+      unmatchedNonZeroCount++;
+      return;
+    }
+
+    const def = itemById.get(r.selectedLineItemId);
+    if (!def) return;
+    const normalizedAmt = def.isContra ? Math.abs(rawAmt) : rawAmt;
+    uploadedMap.set(def.id, normalizedAmt);
+  });
+
+  let databaseItemCount = 0;
+  let uploadedMappedItemCount = 0;
+  let exactMatchCount = 0;
+  const differences: DatabaseLineItemDiff[] = [];
+  const diffByLineItemId: Record<string, DatabaseLineItemDiff> = {};
+
+  const dbTotals = { assets: 0, liabilities: 0, equity: 0 };
+  const uploadedTotals = { assets: 0, liabilities: 0, equity: 0 };
+
+  const sectionBucketsDb: Record<string, number> = { s1: 0, s2: 0, s3: 0 };
+  const sectionBucketsUp: Record<string, number> = { s1: 0, s2: 0, s3: 0 };
+
+  const addSectionTotal = (
+    totals: { assets: number; liabilities: number; equity: number },
+    buckets: Record<string, number>,
+    item: LineItemDefinition,
+    normalizedVal: number
+  ) => {
+    const effective = item.isContra ? -Math.abs(normalizedVal) : normalizedVal;
+    if (statementType === 'performance') {
+      if (item.section === 'REVENUE') buckets.s1 += effective;
+      else if (item.section === 'EXPENSES') buckets.s2 += effective;
+      else if (item.section === 'TRANSFERS') {
+        buckets.s3 += item.group.startsWith('Less:') ? -effective : effective;
+      } else if (item.section === 'NON_OPERATING') {
+        buckets.s3 += effective;
+      } else if (item.section === 'LOSSES') {
+        buckets.s3 -= Math.abs(effective);
+      }
+    } else if (statementType === 'cash_flows') {
+      const signed = item.subgroup === 'Cash Outflows' ? -effective : effective;
+      if (item.section === 'CASH_OPERATING') buckets.s1 += signed;
+      else if (item.section === 'CASH_INVESTING') buckets.s2 += signed;
+      else if (item.section === 'CASH_FINANCING') buckets.s3 += signed;
+    } else if (statementType === 'net_assets') {
+      if (item.group === 'Adjustments to Beginning Balance') buckets.s1 += effective;
+      else if (item.group === 'Changes in Net Assets/Equity for the Calendar Year') {
+        buckets.s2 += effective;
+      }
+      buckets.s3 += effective;
+    } else {
+      if (item.section === 'ASSETS') {
+        totals.assets += effective;
+        buckets.s1 += effective;
+      } else if (item.section === 'LIABILITIES') {
+        totals.liabilities += effective;
+        buckets.s2 += effective;
+      } else if (item.section === 'EQUITY' || item.subsection === 'Net Assets/Equity') {
+        totals.equity += effective;
+        buckets.s3 += effective;
+      }
+    }
+  };
+
+  encodableItems.forEach((item) => {
+    const dbRaw = existingYearDivisionData?.[item.id] ?? 0;
+    const dbNormalized = item.isContra ? Math.abs(dbRaw) : dbRaw;
+    const uploadedVal = uploadedMap.get(item.id) ?? 0;
+
+    const hasDb = Math.abs(dbNormalized) >= 0.005;
+    const hasUpload = Math.abs(uploadedVal) >= 0.005;
+
+    if (hasDb) {
+      databaseItemCount++;
+      addSectionTotal(dbTotals, sectionBucketsDb, item, dbNormalized);
+    }
+    if (hasUpload) {
+      uploadedMappedItemCount++;
+      addSectionTotal(uploadedTotals, sectionBucketsUp, item, uploadedVal);
+    }
+
+    if (!hasDb && !hasUpload) return;
+
+    const diff = uploadedVal - dbNormalized;
+    if (Math.abs(diff) < 0.01) {
+      exactMatchCount++;
+      return;
+    }
+
+    const status: DatabaseDiffStatus =
+      hasDb && !hasUpload
+        ? 'missing_in_upload'
+        : !hasDb && hasUpload
+        ? 'new_in_upload'
+        : 'amount_mismatch';
+
+    const entry: DatabaseLineItemDiff = {
+      lineItemId: item.id,
+      itemName: item.name,
+      section: item.section,
+      subsection: item.subsection,
+      group: item.group,
+      isContra: item.isContra,
+      uploadedAmount: uploadedVal,
+      databaseAmount: dbNormalized,
+      difference: diff,
+      status,
+    };
+    differences.push(entry);
+    diffByLineItemId[item.id] = entry;
+  });
+
+  const sectionLabels: [string, string, string] =
+    statementType === 'performance'
+      ? ['Total Revenue', 'Operating Expenses', 'Transfers & Subsidy']
+      : statementType === 'cash_flows'
+      ? ['Net Operating Cash', 'Net Investing Cash', 'Net Financing Cash']
+      : statementType === 'net_assets'
+      ? ['Beginning Adjustments', 'Calendar Year Changes', 'Total Net Change']
+      : ['Total Assets', 'Total Liabilities', 'Net Assets / Equity'];
+
+  const sectionSummaries: DatabaseSectionSummary[] = (['s1', 's2', 's3'] as const).map(
+    (k, idx) => ({
+      key: k,
+      label: sectionLabels[idx],
+      uploaded: sectionBucketsUp[k],
+      db: sectionBucketsDb[k],
+      variance: sectionBucketsUp[k] - sectionBucketsDb[k],
+    })
+  );
+
+  const hasExistingData = databaseItemCount > 0;
+  const isFullMatch =
+    hasExistingData && differences.length === 0 && unmatchedNonZeroCount === 0;
+
+  return {
+    target,
+    hasExistingData,
+    databaseItemCount,
+    uploadedMappedItemCount,
+    exactMatchCount,
+    unmatchedNonZeroCount,
+    isFullMatch,
+    differences,
+    dbTotals,
+    uploadedTotals,
+    sectionSummaries,
+    diffByLineItemId,
+  };
+}
+

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from './types/fs';
 import { INITIAL_DIVISIONS } from './data/defaultDivisions';
 import {
@@ -11,6 +11,7 @@ import {
   DEFAULT_PERFORMANCE_LINE_ITEMS,
   DEFAULT_CASH_FLOWS_LINE_ITEMS,
   DEFAULT_NET_ASSETS_LINE_ITEMS,
+  AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM,
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
 import { calculateReport } from './utils/calculations';
@@ -23,12 +24,21 @@ import { ConsolidatedFSView } from './components/ConsolidatedFSView';
 import { ConsolidatedMatrixView } from './components/ConsolidatedMatrixView';
 import { OptionsView, OptionsSubTab } from './components/OptionsView';
 import { ConfirmModal } from './components/ConfirmModal';
-import { X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  useTheme,
+  SECOND_NAV_MIN_HEIGHT,
+  SECOND_NAV_MAX_HEIGHT,
+} from './context/ThemeContext';
+import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY_DATA = 'deped_ro6_fs_data_v1';
 const LOCAL_STORAGE_KEY_DIVISIONS = 'deped_ro6_divisions_v1';
 const LOCAL_STORAGE_KEY_LINE_ITEMS = 'deped_ro6_line_items_v1';
 const LOCAL_STORAGE_KEY_ILOILO_MIGRATED = 'deped_ro6_transferred_iloilo_2024_v1';
+const LOCAL_STORAGE_KEY_SEMI_EXP_MIGRATED = 'deped_ro6_semi_exp_inventory_consumption_v1';
+const LOCAL_STORAGE_KEY_PERF_LINE_ITEMS_V2 = 'deped_ro6_perf_line_items_hierarchy_v2';
+const LOCAL_STORAGE_KEY_SELECTED_DIVISION = 'deped_ro6_selected_division_v1';
+const LOCAL_STORAGE_KEY_SELECTED_YEAR = 'deped_ro6_selected_year_v1';
 const SESSION_STORAGE_KEY_YEAR = 'deped_ro6_selected_year_session_v1';
 
 export default function App() {
@@ -49,7 +59,7 @@ export default function App() {
       if (saved) {
         const parsed: Division[] = JSON.parse(saved);
         const validIds = new Set(INITIAL_DIVISIONS.map((d) => d.id));
-        const cleaned = parsed.filter((d) => validIds.has(d.id));
+        const cleaned = parsed.filter((d) => validIds.has(d.id) || !d.isDefault);
         return cleaned.length > 0 ? cleaned : INITIAL_DIVISIONS;
       }
     } catch {
@@ -58,18 +68,30 @@ export default function App() {
     return INITIAL_DIVISIONS;
   });
 
-  // Selected Division: Default to Iloilo City Division as requested
+  // Selected Division: Restore last cached Office across refreshes and browser restarts
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>(() => {
-    const hasIloiloCity = INITIAL_DIVISIONS.some((d) => d.id === 'iloilo-city-div');
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_SELECTED_DIVISION);
+      if (saved && divisions.some((d) => d.id === saved)) {
+        return saved;
+      }
+    } catch {
+      // fallback
+    }
+    const hasIloiloCity = divisions.some((d) => d.id === 'iloilo-city-div');
     return hasIloiloCity ? 'iloilo-city-div' : (divisions[0]?.id || 'ro-vi');
   });
 
-  // Selected Fiscal Year: Default to current calendar year; retain user choice within the session
+  // Selected Fiscal Year: Restore last cached Fiscal Year across refreshes and browser restarts
   const [selectedYear, setSelectedYear] = useState<string>(() => {
     try {
-      const saved = sessionStorage.getItem(SESSION_STORAGE_KEY_YEAR);
-      if (saved && YEAR_RANGE.includes(saved)) {
-        return saved;
+      const savedLocal = localStorage.getItem(LOCAL_STORAGE_KEY_SELECTED_YEAR);
+      if (savedLocal && YEAR_RANGE.includes(savedLocal)) {
+        return savedLocal;
+      }
+      const savedSession = sessionStorage.getItem(SESSION_STORAGE_KEY_YEAR);
+      if (savedSession && YEAR_RANGE.includes(savedSession)) {
+        return savedSession;
       }
     } catch {
       // fallback
@@ -82,7 +104,90 @@ export default function App() {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY_LINE_ITEMS);
       if (saved) {
-        const parsed: LineItemDefinition[] = JSON.parse(saved);
+        let parsed: LineItemDefinition[] = JSON.parse(saved);
+
+        // One-time migration: Move all Current Assets -> Inventories Semi-Expendable items
+        // under "Inventory Held for Consumption" and add "Semi-Expendable Machinery and Equipment"
+        if (localStorage.getItem(LOCAL_STORAGE_KEY_SEMI_EXP_MIGRATED) !== 'true') {
+          parsed = parsed.map((item) => {
+            const isSemiExpInventory =
+              (item.statementType || 'position') === 'position' &&
+              item.subsection === 'Current Assets' &&
+              item.group === 'Inventories' &&
+              (item.id.startsWith('semi_exp_') ||
+                item.name.toLowerCase().startsWith('semi-expendable') ||
+                item.subgroup === 'Semi-Expendable Machinery and Equipment' ||
+                item.subgroup === 'Semi-Expendable Furniture, Fixtures & Books');
+            return isSemiExpInventory
+              ? { ...item, subgroup: 'Inventory Held for Consumption' }
+              : item;
+          });
+
+          const newSemiExpItem = DEFAULT_LINE_ITEMS.find((i) => i.id === 'semi_exp_machinery_equip');
+          if (newSemiExpItem && !parsed.some((i) => i.id === newSemiExpItem.id)) {
+            const insertIdx = parsed.findIndex(
+              (i) => i.id === 'semi_exp_office_equip' || i.subgroup === 'Inventory Held for Consumption' && i.id.startsWith('semi_exp_')
+            );
+            if (insertIdx >= 0) {
+              parsed = [
+                ...parsed.slice(0, insertIdx),
+                newSemiExpItem,
+                ...parsed.slice(insertIdx),
+              ];
+            } else {
+              const afterSuppliesIdx = parsed.findIndex((i) => i.id === 'other_supplies_materials_inv');
+              if (afterSuppliesIdx >= 0) {
+                parsed = [
+                  ...parsed.slice(0, afterSuppliesIdx + 1),
+                  newSemiExpItem,
+                  ...parsed.slice(afterSuppliesIdx + 1),
+                ];
+              } else {
+                parsed = [...parsed, newSemiExpItem];
+              }
+            }
+          }
+
+          try {
+            localStorage.setItem(LOCAL_STORAGE_KEY_SEMI_EXP_MIGRATED, 'true');
+          } catch {
+            // ignore storage write error
+          }
+        }
+
+        if (!parsed.some((i) => i.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM.id)) {
+          let lastPpeIdx = -1;
+          parsed.forEach((item, idx) => {
+            if (
+              (item.statementType || 'position') === 'position' &&
+              item.group === 'Property, Plant and Equipment'
+            ) {
+              lastPpeIdx = idx;
+            }
+          });
+          if (lastPpeIdx >= 0) {
+            parsed = [
+              ...parsed.slice(0, lastPpeIdx + 1),
+              AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM,
+              ...parsed.slice(lastPpeIdx + 1),
+            ];
+          } else {
+            parsed = [...parsed, AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM];
+          }
+        }
+
+        if (localStorage.getItem(LOCAL_STORAGE_KEY_PERF_LINE_ITEMS_V2) !== 'true') {
+          const nonPerfOrCustomPerf = parsed.filter(
+            (i) => i.statementType !== 'performance' || i.isCustom === true
+          );
+          parsed = [...nonPerfOrCustomPerf, ...DEFAULT_PERFORMANCE_LINE_ITEMS];
+          try {
+            localStorage.setItem(LOCAL_STORAGE_KEY_PERF_LINE_ITEMS_V2, 'true');
+          } catch {
+            // ignore storage write error
+          }
+        }
+
         const existingIds = new Set(parsed.map((i) => i.id));
         const missingPerf = DEFAULT_PERFORMANCE_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingCashFlows = DEFAULT_CASH_FLOWS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
@@ -145,9 +250,6 @@ export default function App() {
 
   // Global Confirmation Modals for Cross-Component Prompting
   const [isResetBenchmarkModalOpen, setIsResetBenchmarkModalOpen] = useState(false);
-  const [isQuickAddDivOpen, setIsQuickAddDivOpen] = useState(false);
-  const [newDivName, setNewDivName] = useState('');
-  const [pendingAddDivName, setPendingAddDivName] = useState<string | null>(null);
   const [pendingAddLineItem, setPendingAddLineItem] = useState<{ name: string; group: string } | null>(null);
   const [pendingDeleteLineItem, setPendingDeleteLineItem] = useState<LineItemDefinition | null>(null);
 
@@ -177,7 +279,20 @@ export default function App() {
   }, [dataStore]);
 
   useEffect(() => {
+    if (divisions.length > 0 && !divisions.some((d) => d.id === selectedDivisionId)) {
+      setSelectedDivisionId(divisions[0].id);
+      return;
+    }
     try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_SELECTED_DIVISION, selectedDivisionId);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [selectedDivisionId, divisions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_SELECTED_YEAR, selectedYear);
       sessionStorage.setItem(SESSION_STORAGE_KEY_YEAR, selectedYear);
     } catch (e) {
       console.error(e);
@@ -249,6 +364,7 @@ export default function App() {
     const newDiv: Division = {
       id: `${id}-${Date.now().toString().slice(-4)}`,
       name,
+      isDefault: false,
     };
     setDivisions((prev) => [...prev, newDiv]);
     setSelectedDivisionId(newDiv.id);
@@ -278,6 +394,15 @@ export default function App() {
       order: lineItems.length * 10 + 10,
     };
     setLineItems((prev) => [...prev, newItem]);
+  };
+
+  const handleUpdateLineItem = (
+    id: string,
+    updates: Omit<LineItemDefinition, 'id' | 'order'>
+  ) => {
+    setLineItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
   };
 
   const handleDeleteLineItem = (id: string) => {
@@ -357,113 +482,214 @@ export default function App() {
   const liabilitiesPlusEquity = liveChecksReport.totalLiabilities + liveChecksReport.totalEquity;
   const isBalanced = Math.abs(liveChecksReport.totalAssets - liabilitiesPlusEquity) < 0.01;
 
+  const currentDivisionIndex = divisions.findIndex((d) => d.id === selectedDivisionId);
+  const hasPrevDivision = currentDivisionIndex > 0;
+  const hasNextDivision = currentDivisionIndex >= 0 && currentDivisionIndex < divisions.length - 1;
+
+  const { secondNavHeight, setSecondNavHeight, resetSecondNavHeight } = useTheme();
+  const [isResizingSecondNav, setIsResizingSecondNav] = useState(false);
+  const secondNavRef = useRef<HTMLDivElement>(null);
+
+  const handleStartResizeSecondNav = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight =
+      secondNavRef.current?.getBoundingClientRect().height || secondNavHeight;
+    setIsResizingSecondNav(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      setSecondNavHeight(startHeight + deltaY);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizingSecondNav(false);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const isSecondNavCompact = secondNavHeight <= 54;
+  const navControlHeightClass = isSecondNavCompact ? 'min-h-[34px] py-1' : 'min-h-[42px] py-2';
+  const navIconButtonClass = isSecondNavCompact ? 'min-w-[34px] min-h-[34px]' : 'min-w-[42px] min-h-[42px]';
+
   return (
     <div className="min-h-screen bg-th-canvas text-th-text flex flex-col antialiased transition-colors">
-      {/* Top Navbar */}
-      <Navbar
-        activeTab={activeTab}
-        onTabChange={(tab) => setActiveTab(tab)}
-        onPrint={() => window.print()}
-        isAuditOpen={isAuditOpen}
-        onToggleAudit={() => setIsAuditOpen((prev) => !prev)}
-        isBalanced={isBalanced}
-      />
+      {/* Unified Sticky Dual Navigation Bars (Main Navbar + Contextual Institutional Ribbon) */}
+      <div className="sticky top-0 z-40 no-print shadow-md">
+        <Navbar
+          activeTab={activeTab}
+          onTabChange={(tab) => setActiveTab(tab)}
+          onPrint={() => window.print()}
+          isAuditOpen={isAuditOpen}
+          onToggleAudit={() => setIsAuditOpen((prev) => !prev)}
+          isBalanced={isBalanced}
+        />
 
-      {/* Contextual Institutional Ribbon */}
-      <div className="bg-th-surface border-b border-th-border text-sm text-th-muted py-2.5 px-4 sm:px-6 lg:px-8 no-print transition-colors">
-        <div className="max-w-[1780px] mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-bold text-th-muted">Entity:</span>
-            {activeTab === 'consolidated' || activeTab === 'matrix' ? (
-              <span className="font-bold text-th-text bg-th-subtle px-3 py-1 rounded-lg border border-th-border">
-                {currentEntityName}
-              </span>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 flex-wrap">
-                <select
-                  value={selectedDivisionId}
-                  onChange={(e) => setSelectedDivisionId(e.target.value)}
-                  aria-label="Reporting Office / Schools Division"
-                  className="font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 py-1.5 rounded-lg border border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors"
+        {/* Contextual Institutional Ribbon (Frozen + Vertically Adjustable Height) */}
+        <div
+          ref={secondNavRef}
+          style={{ minHeight: `${secondNavHeight}px` }}
+          className={`relative group bg-th-surface border-b border-th-border text-sm sm:text-base text-th-muted px-4 sm:px-6 lg:px-8 flex items-center transition-colors ${
+            isSecondNavCompact ? 'py-1.5' : 'py-2.5'
+          }`}
+        >
+          <div className="max-w-[1780px] w-full mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-bold text-th-muted">Office:</span>
+              {activeTab === 'consolidated' || activeTab === 'matrix' ? (
+                <span
+                  className={`font-bold text-th-text bg-th-subtle px-3.5 rounded-xl border border-th-border flex items-center ${navControlHeightClass}`}
                 >
-                  {divisions.map((div) => (
-                    <option key={div.id} value={div.id}>
-                      {div.name}
+                  {currentEntityName}
+                </span>
+              ) : (
+                <div className="inline-flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasPrevDivision) {
+                        setSelectedDivisionId(divisions[currentDivisionIndex - 1].id);
+                      }
+                    }}
+                    disabled={!hasPrevDivision}
+                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
+                    title="Previous Division"
+                    aria-label="Previous Division"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <select
+                    value={selectedDivisionId}
+                    onChange={(e) => setSelectedDivisionId(e.target.value)}
+                    aria-label="Reporting Office / Schools Division"
+                    className={`${navControlHeightClass} font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
+                  >
+                    {divisions.map((div) => (
+                      <option key={div.id} value={div.id}>
+                        {div.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasNextDivision) {
+                        setSelectedDivisionId(divisions[currentDivisionIndex + 1].id);
+                      }
+                    }}
+                    disabled={!hasNextDivision}
+                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
+                    title="Next Division"
+                    aria-label="Next Division"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
+
+              <span className="text-th-muted" aria-hidden="true">·</span>
+
+              <span className="font-bold text-th-muted">Fiscal Year:</span>
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prevYr = String(Number(selectedYear) - 1);
+                    if (YEAR_RANGE.includes(prevYr)) setSelectedYear(prevYr);
+                  }}
+                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
+                  className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
+                  title="Previous Fiscal Year"
+                  aria-label="Previous Fiscal Year"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  aria-label="Fiscal Year"
+                  className={`${navControlHeightClass} font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
+                >
+                  {YEAR_RANGE.map((yr) => (
+                    <option key={yr} value={yr}>
+                      FY {yr}
                     </option>
                   ))}
                 </select>
                 <button
                   type="button"
-                  onClick={() => setIsQuickAddDivOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-th-text hover:text-th-accent-text bg-th-subtle hover:bg-th-subtle-hover px-2.5 py-1.5 rounded-lg border border-th-border-strong transition-colors cursor-pointer"
-                  title="Add New Division"
+                  onClick={() => {
+                    const nextYr = String(Number(selectedYear) + 1);
+                    if (YEAR_RANGE.includes(nextYr)) setSelectedYear(nextYr);
+                  }}
+                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
+                  className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
+                  title="Next Fiscal Year"
+                  aria-label="Next Fiscal Year"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Division</span>
+                  <ChevronRight className="w-5 h-5" />
                 </button>
               </div>
-            )}
-
-            <span className="text-th-muted">·</span>
-
-            <span className="font-bold text-th-muted">Fiscal Year:</span>
-            <div className="inline-flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  const prevYr = String(Number(selectedYear) - 1);
-                  if (YEAR_RANGE.includes(prevYr)) setSelectedYear(prevYr);
-                }}
-                disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-                className="p-1.5 rounded-lg bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border border-th-border-strong text-th-text transition-colors cursor-pointer"
-                title="Previous Fiscal Year"
-                aria-label="Previous Fiscal Year"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                aria-label="Fiscal Year"
-                className="font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 py-1.5 rounded-lg border border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors"
-              >
-                {YEAR_RANGE.map((yr) => (
-                  <option key={yr} value={yr}>
-                    FY {yr}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextYr = String(Number(selectedYear) + 1);
-                  if (YEAR_RANGE.includes(nextYr)) setSelectedYear(nextYr);
-                }}
-                disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-                className="p-1.5 rounded-lg bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border border-th-border-strong text-th-text transition-colors cursor-pointer"
-                title="Next Fiscal Year"
-                aria-label="Next Fiscal Year"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              <span className="text-sm font-mono font-semibold text-th-muted">
+                Prior: FY {getComparativeYear(selectedYear)}
+              </span>
             </div>
-            <span className="text-xs font-mono font-semibold text-th-muted bg-th-subtle px-2 py-1 rounded-md border border-th-border">
-              Comp: {getComparativeYear(selectedYear)}
-            </span>
 
-            <span className="hidden xl:inline text-th-muted">·</span>
-            <span className="hidden xl:inline text-th-muted font-medium">COA Government Accounting Manual (GAM) for NGAs</span>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span
+                className={`inline-flex items-center gap-1.5 font-bold px-3.5 rounded-xl text-sm border-2 whitespace-nowrap shrink-0 ${navControlHeightClass} ${
+                  isBalanced
+                    ? 'bg-th-subtle text-th-text border-th-border-strong'
+                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-800'
+                }`}
+              >
+                {isBalanced ? 'Balanced (A = L + E)' : 'Balance Variance'}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="font-bold text-th-muted">Live Equation:</span>
-            <span className={`inline-flex items-center gap-1.5 font-bold px-3 py-1 rounded-lg text-sm border ${
-              isBalanced
-                ? 'bg-th-subtle text-th-text border-th-border-strong'
-                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-800'
-            }`}>
-              {isBalanced ? 'A = L + E (Balanced)' : 'Variance Detected'}
-            </span>
+          {/* Bottom-edge Drag Handle to Adjust Second Nav Height */}
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Drag to adjust second navigation bar height"
+            aria-valuemin={SECOND_NAV_MIN_HEIGHT}
+            aria-valuemax={SECOND_NAV_MAX_HEIGHT}
+            aria-valuenow={secondNavHeight}
+            tabIndex={0}
+            onPointerDown={handleStartResizeSecondNav}
+            onDoubleClick={resetSecondNavHeight}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSecondNavHeight(secondNavHeight + 4);
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSecondNavHeight(secondNavHeight - 4);
+              } else if (e.key === 'Home') {
+                e.preventDefault();
+                resetSecondNavHeight();
+              }
+            }}
+            title="Drag up/down to adjust bar height (double-click to reset)"
+            className="absolute bottom-0 inset-x-0 h-2.5 cursor-ns-resize flex items-center justify-center touch-none select-none focus:outline-hidden group/resize"
+          >
+            <span
+              className={`h-1 w-12 rounded-full transition-all ${
+                isResizingSecondNav
+                  ? 'bg-th-accent w-16 opacity-100'
+                  : 'bg-th-border-strong/70 opacity-0 group-hover:opacity-100 group-hover/resize:bg-th-accent group-focus-visible/resize:opacity-100 group-focus-visible/resize:bg-th-accent'
+              }`}
+            />
+            {isResizingSecondNav && (
+              <span className="ml-2 px-1.5 py-0.5 rounded bg-th-primary text-th-primary-fg text-[10px] font-mono font-bold shadow-xs">
+                {secondNavHeight}px
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -552,6 +778,7 @@ export default function App() {
                 onResetDivisions={handleResetDivisionsToDefault}
                 lineItems={lineItems}
                 onAddLineItem={handleAddLineItem}
+                onUpdateLineItem={handleUpdateLineItem}
                 onDeleteLineItem={handleDeleteLineItem}
                 onResetLineItems={handleResetLineItemsToDefault}
                 selectedYear={selectedYear}
@@ -607,69 +834,6 @@ export default function App() {
         variant="warning"
         onConfirm={handleResetBenchmark}
         onCancel={() => setIsResetBenchmarkModalOpen(false)}
-      />
-
-      {/* Quick Add Division Text Input Dialog */}
-      {isQuickAddDivOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-th-surface rounded-2xl shadow-2xl border-2 border-th-border-strong p-6">
-            <h3 className="text-lg font-bold text-th-text mb-1">Add New Division</h3>
-            <p className="text-sm font-medium text-th-muted mb-4">
-              Enter the division office name. You will be prompted for confirmation before it is created.
-            </p>
-            <input
-              type="text"
-              placeholder="Enter division office name"
-              value={newDivName}
-              onChange={(e) => setNewDivName(e.target.value)}
-              className="w-full px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-bold focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 mb-4"
-              autoFocus
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsQuickAddDivOpen(false);
-                  setNewDivName('');
-                }}
-                className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!newDivName.trim()}
-                onClick={() => {
-                  if (newDivName.trim()) {
-                    setPendingAddDivName(newDivName.trim());
-                    setNewDivName('');
-                    setIsQuickAddDivOpen(false);
-                  }
-                }}
-                className="px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Prompt for Adding Division */}
-      <ConfirmModal
-        isOpen={pendingAddDivName !== null}
-        title="Add Division Confirmation"
-        message={`Are you sure you want to add "${pendingAddDivName}" to the division list?`}
-        confirmLabel="Yes, Add Division"
-        cancelLabel="Cancel"
-        variant="primary"
-        onConfirm={() => {
-          if (pendingAddDivName) {
-            handleAddDivision(pendingAddDivName);
-            setPendingAddDivName(null);
-          }
-        }}
-        onCancel={() => setPendingAddDivName(null)}
       />
 
       {/* Prompt for Adding Line Item */}

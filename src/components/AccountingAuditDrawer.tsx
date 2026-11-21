@@ -58,16 +58,16 @@ export const AccountingAuditDrawer: React.FC<AccountingAuditDrawerProps> = ({
       <button
         type="button"
         onClick={onToggle}
-        className="fixed right-5 bottom-7 z-40 bg-th-primary text-th-primary-fg hover:opacity-95 px-4 py-3 rounded-full shadow-2xl flex items-center gap-2.5 text-sm font-bold transition-all hover:scale-105 no-print border-2 border-th-border-strong cursor-pointer"
+        className="fixed right-5 bottom-7 z-40 bg-th-primary text-th-primary-fg hover:opacity-95 px-5 py-3.5 min-h-[48px] rounded-full shadow-2xl flex items-center gap-2.5 text-base font-bold transition-all hover:scale-105 no-print border-2 border-th-border-strong cursor-pointer"
         title="Open Accounting Checks & Verification Console"
       >
         <Scale className="w-5 h-5" />
-        <span>Audit Checks</span>
-        <span
-          className={`w-2.5 h-2.5 rounded-full ${
-            isBalanced ? 'bg-emerald-400' : 'bg-amber-400'
-          }`}
-        />
+        <span>Balance Check</span>
+        {isBalanced ? (
+          <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
+        ) : (
+          <AlertTriangle className="w-5 h-5 text-amber-300 shrink-0" />
+        )}
       </button>
     );
   }
@@ -180,7 +180,7 @@ export const AccountingAuditDrawer: React.FC<AccountingAuditDrawerProps> = ({
                 </span>
               </div>
 
-              <div className="pl-2.5 space-y-1 text-xs text-th-muted border-l-2 border-th-border-strong">
+              <div className="pl-3 space-y-1.5 text-sm text-th-muted">
                 <div className="flex justify-between">
                   <span>Current Assets:</span>
                   <span className="font-mono tabular-nums font-semibold text-th-text">₱ {formatAccounting(totalCurrentAssets)}</span>
@@ -198,7 +198,7 @@ export const AccountingAuditDrawer: React.FC<AccountingAuditDrawerProps> = ({
                 </span>
               </div>
 
-              <div className="pl-2.5 space-y-1 text-xs text-th-muted border-l-2 border-th-border-strong">
+              <div className="pl-3 space-y-1.5 text-sm text-th-muted">
                 <div className="flex justify-between">
                   <span>Current Liabilities:</span>
                   <span className="font-mono tabular-nums font-semibold text-th-text">₱ {formatAccounting(totalCurrentLiabilities)}</span>

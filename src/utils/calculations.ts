@@ -1,4 +1,24 @@
 import { LineItemDefinition, FinancialDataStore, Division } from '../types/fs';
+import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
+
+export function divisionHasAggregatedDepreciation(
+  dataStore: FinancialDataStore,
+  year: string,
+  divisionId: string
+): boolean {
+  const val = dataStore[year]?.[divisionId]?.[AGGREGATED_ACCUMULATED_DEPRECIATION_ID] || 0;
+  return Math.abs(val) >= 0.005;
+}
+
+export function getExcludedAggregatedDepDivisionIds(
+  dataStore: FinancialDataStore,
+  year: string
+): string[] {
+  const yearData = dataStore[year] || {};
+  return Object.keys(yearData).filter((divKey) =>
+    divisionHasAggregatedDepreciation(dataStore, year, divKey)
+  );
+}
 
 export interface CalculatedReport {
   // Individual line item values (gross / contra / net)
@@ -41,14 +61,19 @@ export function calculateReport(
   const values: { [lineItemId: string]: number } = {};
   const yearData = dataStore[year] || {};
 
+  const excludedDivIds = divisionId
+    ? new Set<string>()
+    : new Set(getExcludedAggregatedDepDivisionIds(dataStore, year));
+
   // 1. Gather all line item values
   lineItems.forEach((item) => {
     if (divisionId) {
       values[item.id] = (yearData[divisionId] && yearData[divisionId][item.id]) || 0;
     } else {
-      // Consolidated across all divisions in this year
+      // Consolidated across all compliant divisions in this year (exclude divisions with Aggregated Accumulated Depreciation)
       let sum = 0;
       Object.keys(yearData).forEach((divKey) => {
+        if (excludedDivIds.has(divKey)) return;
         sum += (yearData[divKey] && yearData[divKey][item.id]) || 0;
       });
       values[item.id] = sum;
@@ -132,6 +157,7 @@ export function buildDivisionalMatrix(
   year: string
 ): DivisionalMatrixRow[] {
   const yearData = dataStore[year] || {};
+  const excludedDivIds = new Set(getExcludedAggregatedDepDivisionIds(dataStore, year));
 
   return lineItems.map((item) => {
     const divisionAmounts: { [divisionId: string]: number } = {};
@@ -140,7 +166,9 @@ export function buildDivisionalMatrix(
     divisions.forEach((div) => {
       const val = (yearData[div.id] && yearData[div.id][item.id]) || 0;
       divisionAmounts[div.id] = val;
-      total += val;
+      if (!excludedDivIds.has(div.id)) {
+        total += val;
+      }
     });
 
     return {

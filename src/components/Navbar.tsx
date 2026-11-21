@@ -31,7 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-th-primary text-th-primary-fg border-b-2 border-th-border-strong shadow-md no-print transition-colors">
+    <header className="bg-th-primary text-th-primary-fg border-b-2 border-th-border-strong shadow-sm transition-colors">
       <div className="max-w-[1780px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-6 h-[4.75rem]">
           {/* Prominent Brand Mark & Title */}

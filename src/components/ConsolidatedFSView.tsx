@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
-import { calculateReport } from '../utils/calculations';
+import { calculateReport, getExcludedAggregatedDepDivisionIds } from '../utils/calculations';
 import { formatAccounting } from '../utils/formatters';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
+import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { AccountingBalanceCheck } from './AccountingBalanceCheck';
 import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
-import { Printer, Download, Building2, Eye, EyeOff, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Printer, Download, Building2, Eye, EyeOff, Search, X, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 
 interface ConsolidatedFSViewProps {
   divisions: Division[];
@@ -72,8 +73,29 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     return calculateReport(lineItems, dataStore, priorYear);
   }, [lineItems, dataStore, priorYear]);
 
+  const excludedDivisionIdsCurr = useMemo(
+    () => new Set(getExcludedAggregatedDepDivisionIds(dataStore, selectedYear)),
+    [dataStore, selectedYear]
+  );
+
+  const excludedDivisionIdsPrior = useMemo(
+    () => new Set(getExcludedAggregatedDepDivisionIds(dataStore, priorYear)),
+    [dataStore, priorYear]
+  );
+
+  const excludedDivisionsCurr = useMemo(
+    () => divisions.filter((d) => excludedDivisionIdsCurr.has(d.id)),
+    [divisions, excludedDivisionIdsCurr]
+  );
+
+  const excludedDivisionsPrior = useMemo(
+    () => divisions.filter((d) => excludedDivisionIdsPrior.has(d.id)),
+    [divisions, excludedDivisionIdsPrior]
+  );
+
   // Visibility helpers to remove zero balances and filter by search query
   const isItemVisible = (item: LineItemDefinition) => {
+    if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const matches = item.name.toLowerCase().includes(q) ||
@@ -95,14 +117,15 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     return items.some(isItemVisible);
   };
 
-  // Count how many divisions have posted data in this year
+  // Count how many divisions are included in consolidation for this year
   const divisionsReportingCount = useMemo(() => {
     const yrData = dataStore[selectedYear] || {};
     return divisions.filter((d) => {
+      if (excludedDivisionIdsCurr.has(d.id)) return false;
       const dItems = yrData[d.id];
       return dItems && Object.values(dItems).some((v) => v !== 0);
     }).length;
-  }, [divisions, dataStore, selectedYear]);
+  }, [divisions, dataStore, selectedYear, excludedDivisionIdsCurr]);
 
   // Group line items hierarchically
   const sectionsHierarchy = useMemo(() => {
@@ -156,17 +179,23 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
 
 
   const renderItemsWithNetValue = (items: LineItemDefinition[], indentClass: string, includeNetValue: boolean) => {
-    // Include non-zero items, plus any contra items whose preceding base asset is visible
+    const isAggregateContraGroup = items.some(
+      (i) => i.subgroup === 'Other Receivables' || i.id === 'allowance_impairment_other_receivables'
+    );
+
+    // Include non-zero items, plus any contra items whose preceding base asset(s) are visible
     const visibleItems: LineItemDefinition[] = [];
     let baseVisible = false;
     items.forEach((item) => {
+      if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return;
       const valCurr = reportCurrent.values[item.id] || 0;
       const valPrior = reportPrior.values[item.id] || 0;
       const isNonZero = valCurr !== 0 || (showComparative && valPrior !== 0);
 
       if (!item.isContra) {
-        baseVisible = !hideZeroRows || isNonZero;
-        if (baseVisible) visibleItems.push(item);
+        const itemVisible = !hideZeroRows || isNonZero;
+        baseVisible = isAggregateContraGroup ? (baseVisible || itemVisible) : itemVisible;
+        if (itemVisible) visibleItems.push(item);
       } else {
         if (!hideZeroRows || isNonZero || baseVisible) {
           visibleItems.push(item);
@@ -184,8 +213,13 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
       const valPrior = reportPrior.values[item.id] || 0;
 
       if (!item.isContra) {
-        runningBaseCurr = valCurr;
-        runningBasePrior = valPrior;
+        if (isAggregateContraGroup) {
+          runningBaseCurr += valCurr;
+          runningBasePrior += valPrior;
+        } else {
+          runningBaseCurr = valCurr;
+          runningBasePrior = valPrior;
+        }
         hasContraForCurrentBase = false;
       } else {
         runningBaseCurr -= valCurr;
@@ -228,6 +262,10 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             </tr>
           );
           hasContraForCurrentBase = false;
+          if (isAggregateContraGroup) {
+            runningBaseCurr = 0;
+            runningBasePrior = 0;
+          }
         }
       }
     });
@@ -248,6 +286,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     ];
 
     lineItems.forEach((item) => {
+      if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return;
       const curr = reportCurrent.values[item.id] || 0;
       const prior = reportPrior.values[item.id] || 0;
       if (!hideZeroRows || curr !== 0 || prior !== 0) {
@@ -278,135 +317,170 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
         />
         <div className="flex-1 min-w-0 w-full space-y-6">
       {/* Control Toolbar (No-Print) */}
-      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-5 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 no-print transition-colors">
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-base font-bold shadow-xs">
-            <Building2 className="w-5 h-5 text-th-muted" />
-            <span>Consolidating {divisionsReportingCount} of {divisions.length} Divisions</span>
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-5 shadow-sm space-y-4 no-print transition-colors">
+        {/* Row 1: Consolidation Count, Year & Primary Actions */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2.5 min-h-[42px] px-4 py-2 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-base font-bold shadow-xs whitespace-nowrap">
+              <Building2 className="w-5 h-5 text-th-muted shrink-0" />
+              <span>Consolidating {divisionsReportingCount} of {divisions.length} Divisions</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-th-muted whitespace-nowrap">Year:</span>
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prevYr = String(Number(selectedYear) - 1);
+                    if (YEAR_RANGE.includes(prevYr)) onSelectYear(prevYr);
+                  }}
+                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
+                  className="min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
+                  title="Previous Fiscal Year"
+                  aria-label="Previous Fiscal Year"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => onSelectYear(e.target.value)}
+                  aria-label="Select Fiscal Year"
+                  className="min-h-[42px] px-4 py-2 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 cursor-pointer shadow-xs"
+                >
+                  {YEAR_RANGE.map((yr) => (
+                    <option key={yr} value={yr}>
+                      FY {yr}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextYr = String(Number(selectedYear) + 1);
+                    if (YEAR_RANGE.includes(nextYr)) onSelectYear(nextYr);
+                  }}
+                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
+                  className="min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
+                  title="Next Fiscal Year"
+                  aria-label="Next Fiscal Year"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+              <span className="text-sm text-th-muted font-mono font-semibold whitespace-nowrap">
+                Prior: {priorYear}
+              </span>
+            </div>
           </div>
 
-          {/* Year Select (2024 - 2099) */}
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-th-text">Year:</span>
-            <div className="inline-flex items-center gap-1.5">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
-              onClick={() => {
-                const prevYr = String(Number(selectedYear) - 1);
-                if (YEAR_RANGE.includes(prevYr)) onSelectYear(prevYr);
-              }}
-              disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-              className="p-2.5 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
-              title="Previous Fiscal Year"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-2 min-h-[42px] px-4 py-2 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <Download className="w-4 h-4 text-th-muted shrink-0" />
+              <span>CSV Export</span>
             </button>
-            <select
-              value={selectedYear}
-              onChange={(e) => onSelectYear(e.target.value)}
-              className="px-4 py-2.5 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 cursor-pointer shadow-xs"
-            >
-              {YEAR_RANGE.map((yr) => (
-                <option key={yr} value={yr}>
-                  FY {yr}
-                </option>
-              ))}
-            </select>
             <button
               type="button"
-              onClick={() => {
-                const nextYr = String(Number(selectedYear) + 1);
-                if (YEAR_RANGE.includes(nextYr)) onSelectYear(nextYr);
-              }}
-              disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-              className="p-2.5 rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer"
-              title="Next Fiscal Year"
+              onClick={handlePrint}
+              className="inline-flex items-center gap-2 min-h-[42px] px-5 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <ChevronRight className="w-4 h-4" />
+              <Printer className="w-4 h-4 shrink-0" />
+              <span>Print Consolidated FS</span>
             </button>
           </div>
-            <span className="text-sm text-th-text font-mono font-bold bg-th-subtle px-2.5 py-1 rounded-md border border-th-border-strong">
-              Comp: {priorYear}
-            </span>
+        </div>
+
+        {/* Row 2: Search, View Options & Section Jumps */}
+        <div className="pt-3.5 border-t border-th-border flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            <div className="relative min-w-[220px] flex-1 max-w-sm">
+              <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Find account in sheet..."
+                className="w-full min-h-[40px] pl-9 pr-8 py-2 text-sm font-semibold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-th-muted hover:text-th-text cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCondensed(!isCondensed)}
+              className={`min-h-[40px] px-4 py-2 text-sm font-bold rounded-xl border-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                isCondensed
+                  ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs'
+                  : 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+              }`}
+              title="Toggle between Detailed and Condensed Statement of Financial Position"
+            >
+              {isCondensed ? 'Condensed FS' : 'Detailed FS'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setHideZeroRows(!hideZeroRows)}
+              className={`min-h-[40px] px-4 py-2 text-sm font-bold rounded-xl border-2 transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer shadow-xs ${
+                hideZeroRows
+                  ? 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+                  : 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+              }`}
+            >
+              {hideZeroRows ? <EyeOff className="w-4 h-4 text-th-muted shrink-0" /> : <Eye className="w-4 h-4 shrink-0" />}
+              <span>{hideZeroRows ? 'Zero Balances Hidden' : 'Showing All Accounts'}</span>
+            </button>
           </div>
 
-          {/* Toggle Detailed / Condensed FS */}
-          <button
-            type="button"
-            onClick={() => setIsCondensed(!isCondensed)}
-            className={`px-4 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors cursor-pointer ${
-              isCondensed
-                ? "bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs"
-                : "bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover"
-            }`}
-            title="Toggle between Detailed and Condensed Statement of Financial Position"
-          >
-            {isCondensed ? "Condensed FS" : "Detailed FS"}
-          </button>
+          <div className="hidden sm:flex items-center gap-2 text-sm text-th-text font-bold shrink-0">
+            <span className="text-th-muted">Jump:</span>
+            <a href="#assets-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Assets</a>
+            <span className="text-th-muted" aria-hidden="true">·</span>
+            <a href="#liabilities-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Liabilities</a>
+            <span className="text-th-muted" aria-hidden="true">·</span>
+            <a href="#equity-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Equity</a>
+          </div>
+        </div>
+      </div>
 
-          {/* Zero Balances Toggle */}
-          <button
-            type="button"
-            onClick={() => setHideZeroRows(!hideZeroRows)}
-            className={`px-4 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors inline-flex items-center gap-2 cursor-pointer shadow-xs ${
-              hideZeroRows
-                ? 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
-                : 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
-            }`}
-          >
-            {hideZeroRows ? <EyeOff className="w-4 h-4 text-th-muted" /> : <Eye className="w-4 h-4" />}
-            <span>{hideZeroRows ? 'Zero Balances Removed (Default)' : 'Showing All Accounts (Include Zeroes)'}</span>
-          </button>
-
-          {/* Quick In-Sheet Account Search */}
-          <div className="relative min-w-[220px]">
-            <Search className="w-4 h-4 text-th-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Find account in sheet..."
-              className="w-full pl-9 pr-8 py-2.5 text-sm font-semibold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-th-muted hover:text-th-text cursor-pointer"
-                title="Clear search"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+      {/* Notice Banner for Divisions Excluded Due to Aggregated Accumulated Depreciation */}
+      {(excludedDivisionsCurr.length > 0 || (showComparative && excludedDivisionsPrior.length > 0)) && (
+        <div className="p-4 bg-red-50 dark:bg-red-950/50 border-2 border-red-300 dark:border-red-800 rounded-2xl flex items-start gap-3 text-red-900 dark:text-red-100 no-print">
+          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <div className="text-sm leading-relaxed space-y-1">
+            <div className="font-bold">
+              Excluded from Consolidated Financial Statements (Aggregated Accumulated Depreciation)
+            </div>
+            {excludedDivisionsCurr.length > 0 && (
+              <p>
+                <strong>FY {selectedYear}:</strong>{' '}
+                {excludedDivisionsCurr.map((d) => d.name).join(', ')}{' '}
+                {excludedDivisionsCurr.length === 1 ? 'is' : 'are'} excluded until a per-PPE breakdown of Accumulated Depreciation is encoded.
+              </p>
+            )}
+            {showComparative && excludedDivisionsPrior.length > 0 && (
+              <p>
+                <strong>FY {priorYear} (Comparative):</strong>{' '}
+                {excludedDivisionsPrior.map((d) => d.name).join(', ')}{' '}
+                {excludedDivisionsPrior.length === 1 ? 'is' : 'are'} excluded until a per-PPE breakdown of Accumulated Depreciation is encoded.
+              </p>
             )}
           </div>
         </div>
-
-        <div className="flex items-center gap-3 self-end md:self-auto">
-          {/* Quick Section Jumps */}
-          <div className="hidden sm:flex items-center gap-2 text-sm text-th-text mr-2 font-bold">
-            <span className="text-th-muted">Jump:</span>
-            <a href="#assets-section-c" className="hover:text-th-accent-text underline px-1">Assets</a>
-            <span className="text-th-muted">·</span>
-            <a href="#liabilities-section-c" className="hover:text-th-accent-text underline px-1">Liabilities</a>
-            <span className="text-th-muted">·</span>
-            <a href="#equity-section-c" className="hover:text-th-accent-text underline px-1">Equity</a>
-          </div>
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl shadow-xs transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-th-muted" />
-            <span>CSV Export</span>
-          </button>
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Print Consolidated FS</span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Prominent Balance Check Widget */}
       <div className="no-print">

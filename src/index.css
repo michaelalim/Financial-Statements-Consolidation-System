@@ -798,6 +798,159 @@
   --t-hero-to: #17212B;
 }
 
+/* Zoom (#1C2B45, #F4F7FC, #0B5CFF) */
+[data-theme="zoom"] {
+  --t-canvas: #F4F7FC;
+  --t-surface: #FFFFFF;
+  --t-subtle: #E9EFF9;
+  --t-subtle-hover: #DCE6F5;
+  --t-input: #FFFFFF;
+  --t-border: #C9D6EA;
+  --t-border-strong: #A6B9D8;
+  --t-text: #131E30;
+  --t-muted: #3D4F6B;
+  --t-primary: #1C2B45;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #1C2B45;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #0B5CFF;
+  --t-accent-hover: #0047D4;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #0047D4;
+  --t-accent-soft: #EDF3FF;
+  --t-accent-soft-hover: #DCE8FF;
+  --t-hero-from: #EAF0FA;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F4F7FC;
+}
+
+.dark[data-theme="zoom"] {
+  --t-canvas: #0E131B;
+  --t-surface: #171E29;
+  --t-subtle: #202938;
+  --t-subtle-hover: #2A3649;
+  --t-input: #0E131B;
+  --t-border: #2C394E;
+  --t-border-strong: #3F506B;
+  --t-text: #F0F4FA;
+  --t-muted: #C2CEE0;
+  --t-primary: #1F324F;
+  --t-primary-fg: #F0F4FA;
+  --t-table-head: #1C2B45;
+  --t-table-head-fg: #F0F4FA;
+  --t-accent: #4D8EFF;
+  --t-accent-hover: #6BA3FF;
+  --t-accent-fg: #07142B;
+  --t-accent-text: #82B1FF;
+  --t-accent-soft: #1B2942;
+  --t-accent-soft-hover: #243758;
+  --t-hero-from: #171E29;
+  --t-hero-via: #202938;
+  --t-hero-to: #171E29;
+}
+
+/* Gmail (#202124, #F6F8FC, #D93025) */
+[data-theme="gmail"] {
+  --t-canvas: #F6F8FC;
+  --t-surface: #FFFFFF;
+  --t-subtle: #EAF1FB;
+  --t-subtle-hover: #DCE6F5;
+  --t-input: #FFFFFF;
+  --t-border: #D2DAE6;
+  --t-border-strong: #B4C0D1;
+  --t-text: #1F1F1F;
+  --t-muted: #444746;
+  --t-primary: #202124;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #202124;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #D93025;
+  --t-accent-hover: #B3261E;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #B3261E;
+  --t-accent-soft: #FCE8E6;
+  --t-accent-soft-hover: #F9D2CE;
+  --t-hero-from: #EDF2FA;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F6F8FC;
+}
+
+.dark[data-theme="gmail"] {
+  --t-canvas: #121316;
+  --t-surface: #1B1C20;
+  --t-subtle: #25272C;
+  --t-subtle-hover: #303239;
+  --t-input: #121316;
+  --t-border: #34373E;
+  --t-border-strong: #494D56;
+  --t-text: #F1F3F4;
+  --t-muted: #C4C7C5;
+  --t-primary: #282A2F;
+  --t-primary-fg: #F1F3F4;
+  --t-table-head: #23252A;
+  --t-table-head-fg: #F1F3F4;
+  --t-accent: #F25F54;
+  --t-accent-hover: #F57B71;
+  --t-accent-fg: #1F0907;
+  --t-accent-text: #FF8B82;
+  --t-accent-soft: #36201E;
+  --t-accent-soft-hover: #472826;
+  --t-hero-from: #1B1C20;
+  --t-hero-via: #25272C;
+  --t-hero-to: #1B1C20;
+}
+
+/* Outlook (#0F3B6E, #F3F6FA, #0078D4) */
+[data-theme="outlook"] {
+  --t-canvas: #F3F6FA;
+  --t-surface: #FFFFFF;
+  --t-subtle: #E6EEF7;
+  --t-subtle-hover: #D6E4F2;
+  --t-input: #FFFFFF;
+  --t-border: #C7D6E6;
+  --t-border-strong: #A3BAD4;
+  --t-text: #1B2430;
+  --t-muted: #425266;
+  --t-primary: #0F3B6E;
+  --t-primary-fg: #FFFFFF;
+  --t-table-head: #0F3B6E;
+  --t-table-head-fg: #FFFFFF;
+  --t-accent: #006CBE;
+  --t-accent-hover: #00589C;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #005599;
+  --t-accent-soft: #EBF4FC;
+  --t-accent-soft-hover: #D9EAF9;
+  --t-hero-from: #E8F0F8;
+  --t-hero-via: #FFFFFF;
+  --t-hero-to: #F3F6FA;
+}
+
+.dark[data-theme="outlook"] {
+  --t-canvas: #0D141F;
+  --t-surface: #151F2E;
+  --t-subtle: #1D2A3D;
+  --t-subtle-hover: #26374F;
+  --t-input: #0D141F;
+  --t-border: #2B3B52;
+  --t-border-strong: #3D5373;
+  --t-text: #F0F4FA;
+  --t-muted: #C2CEE0;
+  --t-primary: #173861;
+  --t-primary-fg: #F0F4FA;
+  --t-table-head: #143257;
+  --t-table-head-fg: #F0F4FA;
+  --t-accent: #3AA0F3;
+  --t-accent-hover: #5CB2F7;
+  --t-accent-fg: #061829;
+  --t-accent-text: #72BFF9;
+  --t-accent-soft: #182D47;
+  --t-accent-soft-hover: #203D5F;
+  --t-hero-from: #151F2E;
+  --t-hero-via: #1D2A3D;
+  --t-hero-to: #151F2E;
+}
+
 /* ============================================================================
    Tonal Primary-Shade Mode (data-contrast-accent="false")
    Replaces each theme's 3rd contrasting accent color with a shade of the 1st color
@@ -1121,7 +1274,94 @@
   --t-hero-from: #1B293A;
 }
 
+/* Zoom — Tonal Shade of #1C2B45 */
+[data-theme="zoom"][data-contrast-accent="false"] {
+  --t-accent: #2A4166;
+  --t-accent-hover: #1C2B45;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #1C2B45;
+  --t-accent-soft: #E8EEF7;
+  --t-accent-soft-hover: #D6E0F0;
+  --t-hero-from: #ECF1F8;
+}
+
+.dark[data-theme="zoom"][data-contrast-accent="false"] {
+  --t-accent: #7DA1D9;
+  --t-accent-hover: #96B5E3;
+  --t-accent-fg: #0E131B;
+  --t-accent-text: #A8C2EA;
+  --t-accent-soft: #1F2D45;
+  --t-accent-soft-hover: #293B59;
+  --t-hero-from: #1B273B;
+}
+
+/* Gmail — Tonal Shade of #202124 */
+[data-theme="gmail"][data-contrast-accent="false"] {
+  --t-accent: #3C4043;
+  --t-accent-hover: #202124;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #202124;
+  --t-accent-soft: #ECEEF0;
+  --t-accent-soft-hover: #DFE2E6;
+  --t-hero-from: #F0F2F5;
+}
+
+.dark[data-theme="gmail"][data-contrast-accent="false"] {
+  --t-accent: #9AA0A6;
+  --t-accent-hover: #B0B5BA;
+  --t-accent-fg: #121316;
+  --t-accent-text: #C4C7C5;
+  --t-accent-soft: #26282B;
+  --t-accent-soft-hover: #323539;
+  --t-hero-from: #1F2024;
+}
+
+/* Outlook — Tonal Shade of #0F3B6E */
+[data-theme="outlook"][data-contrast-accent="false"] {
+  --t-accent: #1A4E8A;
+  --t-accent-hover: #0F3B6E;
+  --t-accent-fg: #FFFFFF;
+  --t-accent-text: #0F3B6E;
+  --t-accent-soft: #E5EDF6;
+  --t-accent-soft-hover: #D4E1F0;
+  --t-hero-from: #EAF0F7;
+}
+
+.dark[data-theme="outlook"][data-contrast-accent="false"] {
+  --t-accent: #70A6E0;
+  --t-accent-hover: #8BB9E8;
+  --t-accent-fg: #0D141F;
+  --t-accent-text: #A2C7ED;
+  --t-accent-soft: #1B2E47;
+  --t-accent-soft-hover: #233C5C;
+  --t-hero-from: #17273D;
+}
+
 @layer base {
+  html {
+    font-size: 16px;
+  }
+
+  html[data-text-scale="xs"] {
+    font-size: 12.5px;
+  }
+
+  html[data-text-scale="small"] {
+    font-size: 14px;
+  }
+
+  html[data-text-scale="standard"] {
+    font-size: 16px;
+  }
+
+  html[data-text-scale="large"] {
+    font-size: 17px;
+  }
+
+  html[data-text-scale="xlarge"] {
+    font-size: 18.5px;
+  }
+
   html, body {
     font-family: var(--font-sans);
     transition: background-color 0.2s ease, color 0.2s ease;
@@ -1130,8 +1370,15 @@
   body {
     background-color: var(--t-canvas);
     color: var(--t-text);
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Clear, high-contrast keyboard & mouse focus visibility for older users */
+  :focus-visible {
+    outline: 3px solid var(--t-accent);
+    outline-offset: 2px;
   }
 
   body ::selection {
@@ -1140,16 +1387,27 @@
   }
 }
 
-/* Custom scrollbars */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Custom scrollbars — wider and higher contrast for easier pointer grabbing */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 11px;
+  height: 11px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--t-subtle);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--t-border-strong);
+  border: 2px solid var(--t-subtle);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {

@@ -4,10 +4,15 @@ import { DataBankView } from './DataBankView';
 import { DivisionManager } from './DivisionManager';
 import { LineItemManager } from './LineItemManager';
 import { TransferDivisionPanel } from './TransferDivisionModal';
-import { Database, Building2, Sliders, RotateCcw, Settings, Sun, Moon, Check, Sparkles, ArrowLeftRight, Palette } from 'lucide-react';
+import { Database, Building2, Sliders, RotateCcw, Settings, Sun, Moon, Check, Sparkles, ArrowLeftRight, Palette, Type, MoveVertical } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
-import { useTheme } from '../context/ThemeContext';
-import { COLOR_THEMES } from '../types/theme';
+import {
+  useTheme,
+  SECOND_NAV_MIN_HEIGHT,
+  SECOND_NAV_DEFAULT_HEIGHT,
+  SECOND_NAV_MAX_HEIGHT,
+} from '../context/ThemeContext';
+import { COLOR_THEMES, TextScaleMode } from '../types/theme';
 
 export type OptionsSubTab = 'databank' | 'divisions' | 'lineItems' | 'transfer' | 'theme';
 
@@ -19,6 +24,7 @@ interface OptionsViewProps {
   onResetDivisions: () => void;
   lineItems: LineItemDefinition[];
   onAddLineItem: (item: Omit<LineItemDefinition, 'id' | 'order'>) => void;
+  onUpdateLineItem: (id: string, updates: Omit<LineItemDefinition, 'id' | 'order'>) => void;
   onDeleteLineItem: (id: string) => void;
   onResetLineItems: () => void;
   selectedYear: string;
@@ -43,6 +49,7 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
   onResetDivisions,
   lineItems,
   onAddLineItem,
+  onUpdateLineItem,
   onDeleteLineItem,
   onResetLineItems,
   selectedYear,
@@ -62,7 +69,20 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
   }, [initialSubTab]);
 
   const [isResetBenchmarkModalOpen, setIsResetBenchmarkModalOpen] = useState(false);
-  const { mode, isDark, setMode, themeId, setThemeId, useContrastAccent, setUseContrastAccent } = useTheme();
+  const {
+    mode,
+    isDark,
+    setMode,
+    themeId,
+    setThemeId,
+    useContrastAccent,
+    setUseContrastAccent,
+    textScale,
+    setTextScale,
+    secondNavHeight,
+    setSecondNavHeight,
+    resetSecondNavHeight,
+  } = useTheme();
   const activeTheme = COLOR_THEMES.find((t) => t.id === themeId) ?? COLOR_THEMES[0];
   const activeTonalHex = isDark ? activeTheme.tonalAccent.dark : activeTheme.tonalAccent.light;
 
@@ -192,6 +212,7 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
           <LineItemManager
             lineItems={lineItems}
             onAddLineItem={onAddLineItem}
+            onUpdateLineItem={onUpdateLineItem}
             onDeleteLineItem={onDeleteLineItem}
             onResetDefaultItems={onResetLineItems}
           />
@@ -213,11 +234,144 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             <div>
               <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
                 <Palette className="w-5 h-5 text-th-muted" />
-                <span>Themes &amp; Display Mode</span>
+                <span>Themes, Text Size &amp; Display Mode</span>
               </h3>
-              <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                Select a color theme and choose between Light, Dark, or System display mode.
+              <p className="text-sm sm:text-base text-th-muted mt-1 leading-relaxed">
+                Adjust screen text size for comfortable reading, select a calm color theme, or switch between Light and Dark mode.
               </p>
+            </div>
+
+            {/* Text Size & Readability Comfort */}
+            <div className="p-6 bg-th-subtle border-2 border-th-border-strong rounded-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2">
+                    <Type className="w-5 h-5 text-th-muted" />
+                    <span>Screen Text Size &amp; Readability</span>
+                  </h4>
+                  <p className="text-sm sm:text-base text-th-muted mt-1">
+                    Make labels, numbers, and buttons larger across the whole application.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                {(
+                  [
+                    {
+                      id: 'xs',
+                      title: 'Extra Small (XS)',
+                      desc: 'Ultra-compact view to fit maximum data (12.5px base)',
+                    },
+                    {
+                      id: 'small',
+                      title: 'Small',
+                      desc: 'Compact layout for wide tables (14px base)',
+                    },
+                    {
+                      id: 'standard',
+                      title: 'Normal',
+                      desc: 'Standard balanced size (16px base)',
+                    },
+                    {
+                      id: 'large',
+                      title: 'Large (Recommended)',
+                      desc: 'Easier on the eyes for daily work',
+                    },
+                    {
+                      id: 'xlarge',
+                      title: 'Extra Large',
+                      desc: 'Maximum print size for comfortable reading',
+                    },
+                  ] as { id: TextScaleMode; title: string; desc: string }[]
+                ).map((option) => {
+                  const selected = textScale === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTextScale(option.id)}
+                      className={`p-4 min-h-[76px] rounded-xl border-2 text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                        selected
+                          ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-sm'
+                          : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-base font-bold">{option.title}</div>
+                        <div className={`text-sm mt-0.5 ${selected ? 'opacity-90' : 'text-th-muted'}`}>
+                          {option.desc}
+                        </div>
+                      </div>
+                      {selected && <Check className="w-5 h-5 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Second Navigation Bar Height */}
+            <div className="p-6 bg-th-subtle border-2 border-th-border-strong rounded-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2">
+                    <MoveVertical className="w-5 h-5 text-th-muted" />
+                    <span>Office &amp; Year Bar Height</span>
+                  </h4>
+                  <p className="text-sm sm:text-base text-th-muted mt-1">
+                    Adjust the height of the frozen second navigation bar (you can also drag its bottom border directly).
+                  </p>
+                </div>
+                <span className="font-mono text-sm font-bold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong tabular-nums">
+                  {secondNavHeight}px
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <input
+                  type="range"
+                  min={SECOND_NAV_MIN_HEIGHT}
+                  max={SECOND_NAV_MAX_HEIGHT}
+                  step={2}
+                  value={secondNavHeight}
+                  onChange={(e) => setSecondNavHeight(Number(e.target.value))}
+                  aria-label="Office and Fiscal Year Bar Height"
+                  className="flex-1 accent-th-accent cursor-pointer h-2 rounded-lg"
+                />
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {[
+                    { label: 'Compact (46px)', value: 46 },
+                    { label: 'Standard (64px)', value: SECOND_NAV_DEFAULT_HEIGHT },
+                    { label: 'Tall (88px)', value: 88 },
+                  ].map((preset) => {
+                    const active = secondNavHeight === preset.value;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setSecondNavHeight(preset.value)}
+                        className={`px-3.5 py-2 rounded-xl text-sm font-bold border-2 transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs'
+                            : 'bg-th-surface text-th-text border-th-border hover:border-th-border-strong'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                  {secondNavHeight !== SECOND_NAV_DEFAULT_HEIGHT && (
+                    <button
+                      type="button"
+                      onClick={resetSecondNavHeight}
+                      className="px-3 py-2 rounded-xl text-sm font-bold text-th-muted hover:text-th-text bg-th-surface border border-th-border hover:border-th-border-strong cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Color Theme Presets */}

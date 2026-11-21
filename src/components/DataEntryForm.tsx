@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { getComparativeYear } from '../utils/yearUtils';
+import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { SearchableLineItemSelect, normalizeAlphanumeric } from './SearchableLineItemSelect';
 import * as XLSX from 'xlsx';
 import { 
@@ -282,6 +283,52 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     return activeStatementLineItems.filter((item) => !NON_ENCODABLE_SUMMARY_IDS.has(item.id));
   }, [activeStatementLineItems, NON_ENCODABLE_SUMMARY_IDS]);
 
+  const sameNameVariantsByNormName = useMemo(() => {
+    const byName = new Map<string, LineItemDefinition[]>();
+    encodableStatementLineItems.forEach((item) => {
+      const key = normalizeAlphanumeric(item.name);
+      if (!key) return;
+      const list = byName.get(key) || [];
+      list.push(item);
+      byName.set(key, list);
+    });
+    const multi = new Map<string, LineItemDefinition[]>();
+    byName.forEach((list, key) => {
+      if (list.length > 1) {
+        const sorted = [...list].sort((a, b) => {
+          const aNonOp = a.section === 'NON_OPERATING' ? 0 : 1;
+          const bNonOp = b.section === 'NON_OPERATING' ? 0 : 1;
+          if (aNonOp !== bNonOp) return aNonOp - bNonOp;
+          return a.order - b.order;
+        });
+        multi.set(key, sorted);
+      }
+    });
+    return multi;
+  }, [encodableStatementLineItems]);
+
+  const formatItemPlacementPath = (item: LineItemDefinition): string => {
+    const parts = [item.subsection, item.group, item.subgroup]
+      .filter((part): part is string => Boolean(part))
+      .filter((part, idx, arr) => idx === 0 || part.toLowerCase() !== arr[idx - 1]?.toLowerCase());
+    return parts.join(' → ');
+  };
+
+  const getRowSameNameVariants = (row: StagedEntry): LineItemDefinition[] => {
+    const rowDef = row.lineItemId
+      ? encodableStatementLineItems.find((i) => i.id === row.lineItemId)
+      : undefined;
+    const key = normalizeAlphanumeric(rowDef?.name || row.rawText || '');
+    return key ? sameNameVariantsByNormName.get(key) || [] : [];
+  };
+
+  const isRowAmbiguous = (row: StagedEntry): boolean => {
+    if (row.lineItemId && encodableStatementLineItems.some((i) => i.id === row.lineItemId)) {
+      return false;
+    }
+    return getRowSameNameVariants(row).length > 1;
+  };
+
   // Determines whether a staged entry's line item is invalid / not in the official line items database for the active statement
   const isRowLineItemInvalid = (row: StagedEntry): boolean => {
     const hasText = Boolean(row.rawText && row.rawText.trim());
@@ -294,13 +341,18 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       return !exists;
     }
 
+    // If user wrote text matching multiple official placements (e.g. Miscellaneous Income), it is valid in DB but needs placement selection
+    if (hasText && isRowAmbiguous(row)) {
+      return false;
+    }
+
     // If user wrote text or entered an amount, but no recognized lineItemId was matched:
     if (hasText || hasAmount) {
       if (hasText) {
-        const nameMatch = encodableStatementLineItems.some(
+        const matches = encodableStatementLineItems.filter(
           (item) => item.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
         );
-        if (nameMatch) return false;
+        if (matches.length === 1) return false;
       }
       return true; // Not in the database of line items for active statement!
     }
@@ -309,10 +361,32 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     return false;
   };
 
+  const topSameNameVariants = useMemo(() => {
+    const selectedDef = topSelectedItemId
+      ? encodableStatementLineItems.find((i) => i.id === topSelectedItemId)
+      : undefined;
+    const key = normalizeAlphanumeric(selectedDef?.name || topRawText || '');
+    return key ? sameNameVariantsByNormName.get(key) || [] : [];
+  }, [encodableStatementLineItems, topSelectedItemId, topRawText, sameNameVariantsByNormName]);
+
+  const isTopAmbiguous = Boolean(
+    topSameNameVariants.length > 1 &&
+      (!topSelectedItemId || !encodableStatementLineItems.some((i) => i.id === topSelectedItemId))
+  );
+
   // Top account invalid check
   const isTopInvalid = Boolean(
     (topRawText.trim() || (topAmountInput.trim() && parseNumberInput(topAmountInput) !== 0)) &&
-    !encodableStatementLineItems.some((i) => i.id === topSelectedItemId || (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()))
+      !isTopAmbiguous &&
+      !encodableStatementLineItems.some(
+        (i) =>
+          i.id === topSelectedItemId ||
+          (topRawText.trim() &&
+            i.name.toLowerCase().trim() === topRawText.toLowerCase().trim() &&
+            encodableStatementLineItems.filter(
+              (m) => m.name.toLowerCase().trim() === topRawText.toLowerCase().trim()
+            ).length === 1)
+      )
   );
 
   // Staged rows for batch multiple entries (starts blank with 0 items on startup as requested)
@@ -439,6 +513,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         (item.subgroup && item.subgroup.toLowerCase().includes(q));
 
       const hasAmount = currentDbEntries[item.id] !== undefined && currentDbEntries[item.id] !== 0;
+      if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID && !hasAmount) {
+        return false;
+      }
       const isEditable2024Jan1 =
         selectedYear === '2024' &&
         ((selectedStatement === 'cash_flows' && item.id === 'cf-sum-beg-cash') ||
@@ -498,141 +575,20 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         return;
       }
 
-      // Statement of Financial Position uses the smart Year-Header & Misspelling-Tolerant Import Modal
-      if (selectedStatement === 'position') {
-        setPositionImportModal({
-          isOpen: true,
-          workbook,
-          fileName: file.name,
-        });
-        return;
-      }
-
-      const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-
-      const IGNORED_CASH_FLOW_UPLOAD_NAMES = new Set([
-        'cashandcashequivalentsdecember31',
-        'cashandcashequivalentsjanuary1',
-        'increasedecreaseincashandcashequivalents',
-      ]);
-
-      const IGNORED_NET_ASSETS_UPLOAD_NAMES = new Set([
-        'balanceatjanuary1',
-        'balanceofjanuary1',
-        'restatedbalance',
-        'balanceatdecember31',
-        'balanceofdecember31',
-      ]);
-
-      const importedEntries: StagedEntry[] = [];
-      let matchedCount = 0;
-      let unmatchedCount = 0;
-      let ignoredSummaryCount = 0;
-
-      rows.forEach((row, idx) => {
-        if (!Array.isArray(row)) return;
-        const rawName = String(row[0] ?? '').trim();
-        const rawAmountCell = row[1];
-        const rawAmountStr = String(rawAmountCell ?? '').trim();
-
-        // Skip completely empty rows
-        if (!rawName && !rawAmountStr) return;
-
-        // Skip common header rows (e.g., "Line Item | Amount")
-        if (idx === 0) {
-          const lowerName = rawName.toLowerCase();
-          const lowerAmt = rawAmountStr.toLowerCase();
-          const looksLikeHeaderText =
-            ['line item', 'line item account', 'account', 'account title', 'particulars', 'description', 'item'].includes(lowerName) ||
-            ['amount', 'balance', 'value', 'total'].includes(lowerAmt);
-          const isAmtNumeric = rawAmountStr !== '' && !Number.isNaN(Number(rawAmountStr.replace(/[₱$,\s]/g, '')));
-          if (looksLikeHeaderText && !isAmtNumeric) {
-            return;
-          }
-        }
-
-        if (!rawName) return;
-
-        const alphaName = normalizeAlphanumeric(rawName);
-        if (
-          (selectedStatement === 'cash_flows' && IGNORED_CASH_FLOW_UPLOAD_NAMES.has(alphaName)) ||
-          (selectedStatement === 'net_assets' && IGNORED_NET_ASSETS_UPLOAD_NAMES.has(alphaName))
-        ) {
-          ignoredSummaryCount++;
-          return;
-        }
-
-        if (!rawAmountStr) return;
-
-        // Parse amount and ignore rows where Column B is zero or has no numeric value
-        let numericAmount = 0;
-        if (typeof rawAmountCell === 'number') {
-          numericAmount = rawAmountCell;
-        } else {
-          numericAmount = parseNumberInput(rawAmountStr);
-        }
-        if (numericAmount === 0) return;
-
-        const amountStr = formatAccounting(numericAmount);
-
-        // Match against encodable official lineItems database (exact or normalized alphanumeric)
-        const lowerName = rawName.toLowerCase();
-        const matchedItem = encodableStatementLineItems.find(
-          (item) =>
-            item.name.toLowerCase() === lowerName ||
-            (alphaName && normalizeAlphanumeric(item.name) === alphaName)
-        );
-
-        if (matchedItem) {
-          matchedCount++;
-          importedEntries.push({
-            id: `import-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-            lineItemId: matchedItem.id,
-            rawText: matchedItem.name,
-            amount: amountStr,
-          });
-        } else {
-          unmatchedCount++;
-          importedEntries.push({
-            id: `import-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-            lineItemId: '',
-            rawText: rawName,
-            amount: amountStr,
-          });
-        }
+      // Open the smart Year-Header & Misspelling-Tolerant Review Importer for all financial statements
+      setPositionImportModal({
+        isOpen: true,
+        workbook,
+        fileName: file.name,
       });
-
-      if (importedEntries.length === 0) {
-        setUploadFeedback({
-          message:
-            ignoredSummaryCount > 0
-              ? `No encodable rows found (${ignoredSummaryCount} auto-computed summary row${ignoredSummaryCount === 1 ? '' : 's'} ignored).`
-              : 'No valid rows found in columns A & B of the uploaded file.',
-          isError: true,
-        });
-      } else {
-        setStagedEntries((prev) => {
-          const nonBlankPrev = prev.filter((r) => r.lineItemId || r.rawText?.trim() || r.amount?.trim());
-          return [...nonBlankPrev, ...importedEntries];
-        });
-        const ignoredSuffix =
-          ignoredSummaryCount > 0
-            ? `; ${ignoredSummaryCount} auto-computed summary row${ignoredSummaryCount === 1 ? '' : 's'} ignored`
-            : '';
-        setUploadFeedback({
-          message: `Imported ${importedEntries.length} row${importedEntries.length === 1 ? '' : 's'} from "${file.name}" (${matchedCount} matched, ${unmatchedCount} not in database${ignoredSuffix}).`,
-          isError: false,
-        });
-      }
     } catch (err) {
       console.error('Failed to parse uploaded file:', err);
       setUploadFeedback({ message: 'Failed to read file. Please upload a valid .xlsx, .xls, or .csv file.', isError: true });
+      setTimeout(() => setUploadFeedback(null), 7000);
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      setTimeout(() => setUploadFeedback(null), 7000);
     }
   };
 
@@ -641,12 +597,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     if (e) e.preventDefault();
     if (!topSelectedItemId && !topRawText.trim()) return;
 
-    // Resolve if line item is in encodable active statement database
-    const resolvedItem = encodableStatementLineItems.find(
-      (i) =>
-        i.id === topSelectedItemId ||
-        (topRawText.trim() && i.name.toLowerCase().trim() === topRawText.toLowerCase().trim())
-    );
+    // Resolve by explicit ID first so duplicate-named accounts (e.g. Miscellaneous Income) keep their chosen section
+    const resolvedById = topSelectedItemId
+      ? encodableStatementLineItems.find((i) => i.id === topSelectedItemId)
+      : undefined;
+    const exactNameMatches =
+      !resolvedById && topRawText.trim()
+        ? encodableStatementLineItems.filter(
+            (i) => i.name.toLowerCase().trim() === topRawText.toLowerCase().trim()
+          )
+        : [];
+    if (!resolvedById && topSameNameVariants.length > 1) {
+      setTopFeedbackMsg(
+        `Multiple official placements exist for "${topSameNameVariants[0].name}" — please select Option 1 or Option 2 below before adding.`
+      );
+      return;
+    }
+    const resolvedItem =
+      resolvedById || (exactNameMatches.length === 1 ? exactNameMatches[0] : undefined);
 
     const targetItemId = resolvedItem ? resolvedItem.id : '';
     const targetItemName = resolvedItem ? resolvedItem.name : topRawText.trim();
@@ -719,19 +687,19 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
     if (activeRows.length === 0) return;
 
-    // Check which rows are invalid (not in database)
-    const invalidRows = activeRows.filter(isRowLineItemInvalid);
+    // Check which rows are invalid (not in database) or ambiguous (needs section placement choice)
+    const invalidRows = activeRows.filter((r) => isRowLineItemInvalid(r) || isRowAmbiguous(r));
 
     // Extract valid rows with amounts
     const validEntriesToSave: { lineItemId: string; amount: number; rowId: string }[] = [];
     activeRows.forEach((row) => {
-      if (!isRowLineItemInvalid(row)) {
+      if (!isRowLineItemInvalid(row) && !isRowAmbiguous(row)) {
         let resolvedId = row.lineItemId;
         if (!resolvedId && row.rawText) {
-          const match = encodableStatementLineItems.find(
+          const matches = encodableStatementLineItems.filter(
             (i) => i.name.toLowerCase().trim() === row.rawText!.toLowerCase().trim()
           );
-          if (match) resolvedId = match.id;
+          if (matches.length === 1) resolvedId = matches[0].id;
         }
         if (resolvedId && row.amount && row.amount.trim() !== '') {
           validEntriesToSave.push({
@@ -852,13 +820,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       {/* Batch Multiple Entries Form */}
       <div className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors">
         {/* Header with Title and Presets */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-th-border gap-3 mb-5">
-          <div>
-            <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
-              <Layers className="w-5 h-5 text-th-muted" />
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between pb-4 border-b border-th-border gap-4 mb-5">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+              <Layers className="w-5 h-5 text-th-muted shrink-0" />
               <span>Batch Data Entry</span>
               {validStagedCount > 0 && (
-                <span className="text-xs font-bold text-th-text bg-th-subtle px-2.5 py-0.5 rounded-lg border border-th-border-strong">
+                <span className="text-xs font-bold text-th-text bg-th-subtle px-2.5 py-0.5 rounded-lg border border-th-border-strong whitespace-nowrap">
                   {validStagedCount} ready to save
                 </span>
               )}
@@ -868,7 +836,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <input
               ref={fileInputRef}
               type="file"
@@ -879,31 +847,27 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 px-3.5 py-2 rounded-lg border border-th-primary dark:border-th-border-strong transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-              title={
-                selectedStatement === 'position'
-                  ? 'Upload any Statement of Financial Position Excel (.xlsx, .xls) or CSV file with Year headers (e.g. 2025, 2024) and line items before amounts'
-                  : 'Upload an Excel (.xlsx, .xls) or CSV file with Line Item Account in Column A and Amount in Column B'
-              }
+              className="min-h-[42px] text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 px-4 py-2 rounded-xl border-2 border-th-primary dark:border-th-border-strong transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+              title="Upload any financial statement Excel (.xlsx, .xls) or CSV file with Year headers (e.g. 2025, 2024) and line items before amounts"
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="w-4 h-4 shrink-0" />
               <span>Upload Excel / CSV</span>
             </button>
             <button
               type="button"
               onClick={handleAddStagedRow}
-              className="text-sm font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[42px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-4 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-th-muted" />
-              Add 1 Row
+              <Plus className="w-4 h-4 text-th-muted shrink-0" />
+              <span>Add 1 Row</span>
             </button>
             <button
               type="button"
               onClick={handleAdd5StagedRows}
-              className="text-sm font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[42px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-4 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-th-muted" />
-              Add 5 Rows
+              <Plus className="w-4 h-4 text-th-muted shrink-0" />
+              <span>Add 5 Rows</span>
             </button>
           </div>
         </div>
@@ -928,23 +892,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         {/* PRIMARY DATA ENTRY & ENCODING STATION */}
         <div className="mb-7 p-6 sm:p-7 bg-th-subtle border-2 border-th-border-strong rounded-2xl shadow-sm transition-all">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-th-border">
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="px-3.5 py-1.5 rounded-lg bg-th-primary text-th-primary-fg border border-th-border-strong text-xs font-extrabold uppercase tracking-wider shadow-xs flex items-center gap-2">
-                <PenTool className="w-4 h-4" />
-                <span>DATA ENCODING STATION</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-extrabold text-th-text">
+            <div className="flex items-center gap-2.5">
+              <PenTool className="w-5 h-5 text-th-muted shrink-0" />
+              <h3 className="text-xl font-extrabold text-th-text">
                 Enter Line Item &amp; Balance Here
               </h3>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-bold text-th-primary-fg bg-th-primary border border-th-border-strong px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                <span>Operating Year: FY {selectedYear}</span>
-              </span>
-              <span className="text-sm font-semibold text-th-text bg-th-surface px-3.5 py-1.5 rounded-xl border border-th-border-strong shadow-xs">
-                Primary Data Entry Area
-              </span>
+            <div className="flex items-center gap-2 text-sm font-bold text-th-text shrink-0">
+              <Calendar className="w-4 h-4 text-th-muted shrink-0" />
+              <span className="whitespace-nowrap">Operating Year: FY {selectedYear}</span>
             </div>
           </div>
 
@@ -952,11 +908,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             Select or type the official line item on the left, enter the monetary balance in the middle, then click <strong className="text-th-text font-bold">&quot;Add to Batch&quot;</strong> or press <strong className="text-th-text font-bold">Enter</strong>.
           </p>
 
-          <form onSubmit={handleAddTopItemToBatch} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+          <form onSubmit={handleAddTopItemToBatch} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
             {/* Step 1: Searchable Combobox */}
-            <div className="md:col-span-7">
+            <div className="lg:col-span-6">
               <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">1</span>
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">1</span>
                 <span>Select or Type Line Item Account</span>
               </label>
               <SearchableLineItemSelect
@@ -977,23 +933,79 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 placement="bottom"
                 placeholder={activeEncodingMeta.topPlaceholder}
               />
-              {topSelectedItemDetail && (
-                <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong shadow-2xs animate-in fade-in">
-                  <span className="font-bold text-th-text">Selected:</span>
-                  <span className="font-bold">{topSelectedItemDetail.name}</span>
-                  <span>·</span>
-                  <span className="text-th-muted">{topSelectedItemDetail.subsection} ({topSelectedItemDetail.group})</span>
-                  {topSelectedItemDetail.isContra && (
-                    <span className="px-1.5 py-0.5 rounded bg-th-subtle text-th-text text-xs font-bold border border-th-border-strong">Contra Account</span>
-                  )}
+              {topSameNameVariants.length > 1 ? (
+                <div className="mt-2 p-3 rounded-xl bg-th-surface border-2 border-th-border-strong space-y-2 animate-in fade-in shadow-2xs">
+                  <div className="text-xs sm:text-sm font-bold text-th-text flex items-center justify-between gap-2">
+                    <span>
+                      Choose which &quot;{topSameNameVariants[0].name}&quot; line item to add to:
+                    </span>
+                    {!topSelectedItemDetail && (
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                        Select 1 option
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {topSameNameVariants.map((variant, vIdx) => {
+                      const isChosen = topSelectedItemId === variant.id;
+                      return (
+                        <button
+                          key={variant.id}
+                          type="button"
+                          onClick={() => {
+                            setTopSelectedItemId(variant.id);
+                            setTopRawText(variant.name);
+                            setTopFeedbackMsg(null);
+                            topAmountInputRef.current?.focus();
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            isChosen
+                              ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
+                              : 'bg-th-subtle/60 border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
+                          }`}
+                        >
+                          <span className="min-w-0 truncate">
+                            <span className="font-bold text-th-text mr-1.5">
+                              Option {vIdx + 1}
+                              {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
+                            </span>
+                            <span>{formatItemPlacementPath(variant)}</span>
+                            <span className="text-th-muted"> → {variant.name}</span>
+                          </span>
+                          {isChosen ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-th-accent-text shrink-0">
+                              <Check className="w-3.5 h-3.5" />
+                              Selected
+                            </span>
+                          ) : (
+                            <span className="text-xs font-bold text-th-muted shrink-0">
+                              Choose
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              ) : (
+                topSelectedItemDetail && (
+                  <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong shadow-2xs animate-in fade-in flex-wrap">
+                    <span className="font-bold text-th-text">Selected:</span>
+                    <span className="font-bold">{topSelectedItemDetail.name}</span>
+                    <span>·</span>
+                    <span className="text-th-muted">{formatItemPlacementPath(topSelectedItemDetail)}</span>
+                    {topSelectedItemDetail.isContra && (
+                      <span className="px-1.5 py-0.5 rounded bg-th-subtle text-th-text text-xs font-bold border border-th-border-strong">Contra Account</span>
+                    )}
+                  </div>
+                )
               )}
             </div>
 
             {/* Step 2: Amount Input */}
-            <div className="md:col-span-3">
+            <div className="lg:col-span-3">
               <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">2</span>
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">2</span>
                 <span>Enter Amount (₱ Balance)</span>
               </label>
               <div className="relative">
@@ -1017,7 +1029,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     }
                   }}
                   placeholder="0.00"
-                  className="w-full pl-9 pr-4 py-3.5 text-lg font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong rounded-xl text-th-text focus:outline-hidden focus:border-th-accent focus:ring-4 focus:ring-th-accent/20 shadow-xs"
+                  className="w-full min-h-[48px] pl-9 pr-4 py-3 text-lg font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong rounded-xl text-th-text focus:outline-hidden focus:border-th-accent focus:ring-4 focus:ring-th-accent/20 shadow-xs"
                 />
               </div>
               {topAmountInput.trim() !== '' && (
@@ -1037,13 +1049,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </div>
 
             {/* Step 3: Add to Batch Button */}
-            <div className="md:col-span-2">
+            <div className="lg:col-span-3">
               <button
                 type="submit"
                 disabled={!topSelectedItemId && !topRawText.trim()}
-                className="w-full py-3.5 px-5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-th-accent cursor-pointer"
+                className="w-full min-h-[48px] py-3 px-5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-th-accent whitespace-nowrap cursor-pointer"
               >
-                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <Plus className="w-5 h-5 stroke-[2.5] shrink-0" />
                 <span>Add to Batch</span>
               </button>
             </div>
@@ -1051,7 +1063,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
           {/* Quick preset chips underneath top bar */}
           <div className="mt-5 pt-3.5 border-t border-th-border flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-th-text mr-1">
+            <span className="text-sm font-bold text-th-text mr-1 whitespace-nowrap">
               Frequent Accounts:
             </span>
             {activeEncodingMeta.frequentAccounts.map((preset) => (
@@ -1064,7 +1076,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   setTopRawText(matched ? matched.name : preset.label);
                   topAmountInputRef.current?.focus();
                 }}
-                className={`text-sm font-semibold px-3 py-1.5 rounded-xl transition-colors border cursor-pointer ${
+                className={`text-sm font-semibold px-3 py-1.5 min-h-[36px] rounded-xl transition-colors border whitespace-nowrap cursor-pointer ${
                   topSelectedItemId === preset.id
                     ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong font-bold'
                     : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
@@ -1205,20 +1217,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   // Line items dropdown opens on top so it is never cut off and choices are easy to see
                   const preferredPlacement = 'top';
                   const isInvalid = isRowLineItemInvalid(row);
+                  const rowVariants = getRowSameNameVariants(row);
 
                 return (
                   <div
                     key={row.id}
-                    className={`px-4 py-3 grid grid-cols-12 gap-3.5 items-center hover:bg-th-subtle transition-colors ${
+                    className={`px-4 py-3 grid grid-cols-12 gap-3.5 items-start hover:bg-th-subtle transition-colors ${
                       isThisRowDropdownOpen ? 'relative z-50 bg-th-subtle' : 'relative z-auto'
                     }`}
                   >
-                    <div className="col-span-1 text-center font-mono text-base font-bold text-th-text">
+                    <div className="col-span-1 text-center font-mono text-base font-bold text-th-text pt-2.5">
                       {idx + 1}
                     </div>
 
                     {/* Searchable Combobox with Arrow Navigation, Tab/Enter Selection & Red Highlight when not in database */}
-                    <div className="col-span-7">
+                    <div className="col-span-7 space-y-2">
                       <SearchableLineItemSelect
                         inputRef={(el) => {
                           lineItemInputRefs.current[row.id] = el;
@@ -1248,6 +1261,65 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         onOpenStateChange={(isOpen) => setActiveDropdownRowId(isOpen ? row.id : null)}
                         placeholder={activeEncodingMeta.rowPlaceholder}
                       />
+
+                      {rowVariants.length > 1 && (
+                        <div className="rounded-xl bg-th-subtle/80 border border-th-border-strong p-2.5 space-y-1.5">
+                          <div className="text-xs font-bold text-th-text flex items-center justify-between gap-2">
+                            <span>
+                              Choose which &quot;{rowVariants[0].name}&quot; line item to add to:
+                            </span>
+                            {!row.lineItemId && (
+                              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                                Select 1 option
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-1.5">
+                            {rowVariants.map((variant, vIdx) => {
+                              const isChosen = row.lineItemId === variant.id;
+                              return (
+                                <button
+                                  key={variant.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setStagedEntries((prev) =>
+                                      prev.map((r) =>
+                                        r.id === row.id
+                                          ? { ...r, lineItemId: variant.id, rawText: variant.name }
+                                          : r
+                                      )
+                                    );
+                                  }}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                                    isChosen
+                                      ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
+                                      : 'bg-th-surface border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
+                                  }`}
+                                >
+                                  <span className="min-w-0 truncate">
+                                    <span className="font-bold text-th-text mr-1.5">
+                                      Option {vIdx + 1}
+                                      {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
+                                    </span>
+                                    <span>{formatItemPlacementPath(variant)}</span>
+                                    <span className="text-th-muted"> → {variant.name}</span>
+                                  </span>
+                                  {isChosen ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-th-accent-text shrink-0">
+                                      <Check className="w-3.5 h-3.5" />
+                                      Selected
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-bold text-th-muted shrink-0">
+                                      Choose
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Amount Input with Auto-Advance to Next Line Item & Shift+Enter Save */}
@@ -1299,12 +1371,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     </div>
 
                     {/* Delete row */}
-                    <div className="col-span-1 text-center">
+                    <div className="col-span-1 text-center flex justify-center">
                       <button
                         type="button"
                         onClick={() => handleRemoveStagedRow(row.id)}
-                        className="p-2.5 text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors cursor-pointer"
                         title="Remove row"
+                        aria-label={`Remove row ${idx + 1}`}
                       >
                         <Trash2 className="w-5 h-5" />
                       </button>
@@ -1316,29 +1389,29 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
 
           {/* Form Actions */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 type="button"
                 onClick={handleAddStagedRow}
-                className="px-5 py-3 text-base font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs cursor-pointer"
+                className="px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <Plus className="w-5 h-5 text-th-muted" />
+                <Plus className="w-5 h-5 text-th-muted shrink-0" />
                 <span>Add Row</span>
               </button>
               <button
                 type="button"
                 onClick={() => setIsDiscardConfirmOpen(true)}
-                className="px-5 py-3 text-base font-semibold text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-semibold text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <RotateCcw className="w-5 h-5" />
+                <RotateCcw className="w-5 h-5 shrink-0" />
                 <span>Clear Form</span>
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
               {invalidStagedCount > 0 && (
-                <span className="text-base text-red-800 dark:text-red-300 font-bold flex items-center gap-2 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 rounded-xl border border-red-300 dark:border-red-800">
+                <span className="text-sm sm:text-base text-red-800 dark:text-red-300 font-bold flex items-center gap-2 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 rounded-xl border border-red-300 dark:border-red-800 whitespace-nowrap">
                   <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
                   <span>{invalidStagedCount} unrecognized line item{invalidStagedCount > 1 ? 's' : ''}</span>
                 </span>
@@ -1347,9 +1420,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="submit"
                 disabled={validStagedCount === 0 && invalidStagedCount === 0}
-                className="w-full sm:w-auto px-8 py-3.5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-th-accent cursor-pointer"
+                className="w-full sm:w-auto px-7 py-3 min-h-[48px] text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-th-accent whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <Check className="w-5 h-5" />
+                <Check className="w-5 h-5 shrink-0" />
                 <span>
                   Save All {validStagedCount > 0 ? `(${validStagedCount})` : ''} Entries to Database
                 </span>
@@ -1368,86 +1441,25 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
       {/* 4. Encoded Items for this Division & Fiscal Year (Zero balances removed by default) */}
       <div className="bg-th-surface border-2 border-th-border rounded-2xl shadow-sm overflow-hidden transition-colors">
-        <div className="px-6 py-5 border-b-2 border-th-border bg-th-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h4 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
-              <FileText className="w-5 h-5 text-th-muted" />
-              Recorded Balances: {currentDivision?.name} (FY {selectedYear})
-            </h4>
-            <p className="text-sm font-medium text-th-muted mt-1 leading-relaxed">
-              {showZeroBalancesInLedger
-                ? 'Showing all accounts including zero balances.'
-                : 'Zero balance items removed. Items appear automatically as amounts are encoded.'}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Toggle show zero balances */}
-            <button
-              type="button"
-              onClick={() => setShowZeroBalancesInLedger(!showZeroBalancesInLedger)}
-              className="px-4 py-2.5 text-sm font-bold text-th-text bg-th-surface border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover transition-colors inline-flex items-center gap-2 shadow-xs cursor-pointer"
-            >
-              {showZeroBalancesInLedger ? <EyeOff className="w-4 h-4 text-th-muted" /> : <Eye className="w-4 h-4 text-th-muted" />}
-              <span>{showZeroBalancesInLedger ? 'Remove Zero Balances (Default)' : 'Show All Accounts (Include Zeroes)'}</span>
-            </button>
-
-            {/* Delete All Function */}
-            <button
-              type="button"
-              onClick={() => setIsDeleteAllConfirmOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border-2 border-red-200 dark:border-red-800 rounded-xl transition-colors cursor-pointer"
-              title="Delete all records and reset all balances to zero for this division and year"
-            >
-              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
-              <span>Reset All to Zero</span>
-            </button>
+        <div className="px-6 py-5 border-b-2 border-th-border bg-th-subtle space-y-4">
+          {/* Row 1: Title on Left, Primary Report Navigation CTA on Right */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
+                <FileText className="w-5 h-5 text-th-muted shrink-0" />
+                <span>Recorded Balances: {currentDivision?.name} (FY {selectedYear})</span>
+              </h4>
+              <p className="text-sm text-th-muted mt-1 leading-relaxed">
+                {showZeroBalancesInLedger
+                  ? 'Showing all accounts including zero balances.'
+                  : 'Zero balance items hidden. Items appear automatically as amounts are saved.'}
+              </p>
+            </div>
 
             <button
               type="button"
-              onClick={() => {
-                setIsSelectMultipleMode((prev) => !prev);
-                setSelectedRecordedIds([]);
-              }}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 transition-colors cursor-pointer ${
-                isSelectMultipleMode
-                  ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
-                  : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
-              }`}
-            >
-              <span>{isSelectMultipleMode ? 'Cancel Select' : 'Select Multiples'}</span>
-            </button>
-
-            {selectedRecordedIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setPendingDeleteSelectedRecorded(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors cursor-pointer shadow-xs"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Delete Selected ({selectedRecordedIds.length})</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (deletedHistory.length === 0) return;
-                const last = deletedHistory[deletedHistory.length - 1];
-                onSaveBatchAmounts(last.year, last.divisionId, last.entries);
-                setDeletedHistory((prev) => prev.slice(0, -1));
-              }}
-              disabled={deletedHistory.length === 0}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold rounded-xl border-2 border-th-border-strong bg-th-surface text-th-text hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              title={deletedHistory.length > 0 ? 'Undo last delete' : 'Nothing to undo'}
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Undo</span>
-            </button>
-
-            <button
               onClick={onNavigateToViewFS}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong cursor-pointer shadow-xs"
+              className="self-start lg:self-auto inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
             >
               <span>
                 {selectedStatement === 'performance'
@@ -1458,7 +1470,77 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   ? 'View Statement of Changes in Net Assets/Equity'
                   : 'View Statement of Financial Position'}
               </span>
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-4 h-4 shrink-0" />
+            </button>
+          </div>
+
+          {/* Row 2: Tidy Action Toolbar — View/Select Controls Left, Destructive Reset Right */}
+          <div className="pt-3.5 border-t border-th-border flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowZeroBalancesInLedger(!showZeroBalancesInLedger)}
+                className="px-4 py-2 min-h-[40px] text-sm font-bold text-th-text bg-th-surface border-2 border-th-border-strong rounded-xl hover:bg-th-subtle-hover transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 shadow-xs cursor-pointer"
+              >
+                {showZeroBalancesInLedger ? (
+                  <EyeOff className="w-4 h-4 text-th-muted shrink-0" />
+                ) : (
+                  <Eye className="w-4 h-4 text-th-muted shrink-0" />
+                )}
+                <span>{showZeroBalancesInLedger ? 'Hide Zero Balances' : 'Show All Accounts'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSelectMultipleMode((prev) => !prev);
+                  setSelectedRecordedIds([]);
+                }}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] text-sm font-bold rounded-xl border-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  isSelectMultipleMode
+                    ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong'
+                    : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+                }`}
+              >
+                <span>{isSelectMultipleMode ? 'Cancel Select' : 'Select Multiples'}</span>
+              </button>
+
+              {selectedRecordedIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPendingDeleteSelectedRecorded(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+                >
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span>Delete Selected ({selectedRecordedIds.length})</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (deletedHistory.length === 0) return;
+                  const last = deletedHistory[deletedHistory.length - 1];
+                  onSaveBatchAmounts(last.year, last.divisionId, last.entries);
+                  setDeletedHistory((prev) => prev.slice(0, -1));
+                }}
+                disabled={deletedHistory.length === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] text-sm font-bold rounded-xl border-2 border-th-border-strong bg-th-surface text-th-text hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                title={deletedHistory.length > 0 ? 'Undo last delete' : 'Nothing to undo'}
+              >
+                <RotateCcw className="w-4 h-4 shrink-0" />
+                <span>Undo</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsDeleteAllConfirmOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 min-h-[40px] text-sm font-bold text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 dark:hover:bg-red-900/60 border-2 border-red-200 dark:border-red-800 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title="Delete all records and reset all balances to zero for this division and year"
+            >
+              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+              <span>Reset All to Zero</span>
             </button>
           </div>
         </div>
@@ -1819,7 +1901,20 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       )}
                       <td className="py-3.5 px-6 font-medium text-th-text">
                         <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-base font-bold text-th-text">{item.name}</span>
+                          <span
+                            className={`text-base font-bold ${
+                              item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+                                ? 'text-red-700 dark:text-red-400'
+                                : 'text-th-text'
+                            }`}
+                          >
+                            {item.name}
+                          </span>
+                          {item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID && (
+                            <span className="text-xs text-red-800 dark:text-red-200 bg-red-50 dark:bg-red-950/60 px-2.5 py-0.5 rounded-md font-bold border border-red-300 dark:border-red-700">
+                              Temporary Notice · Excluded from Consolidated FS
+                            </span>
+                          )}
                           {item.id === 'cf-sum-beg-cash' && (
                             <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Default: Prior Dec 31'}
@@ -1957,7 +2052,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                                 ]);
                                 window.scrollTo({ top: 220, behavior: 'smooth' });
                               }}
-                              className="text-sm font-bold text-th-text hover:text-th-primary-fg hover:bg-th-primary px-3.5 py-2 rounded-xl bg-th-subtle border border-th-border-strong transition-colors cursor-pointer"
+                              className="min-h-[42px] text-sm sm:text-base font-bold text-th-text hover:text-th-primary-fg hover:bg-th-primary px-4 py-2 rounded-xl bg-th-subtle border-2 border-th-border-strong transition-colors cursor-pointer"
                             >
                               {hasValue ? 'Edit Amount' : 'Add Amount'}
                             </button>
@@ -1965,8 +2060,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setPendingDeleteRecordedItem(item)}
-                                className="text-th-muted hover:text-red-700 dark:hover:text-red-400 p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                                className="min-w-[42px] min-h-[42px] flex items-center justify-center text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors cursor-pointer"
                                 title="Reset to zero"
+                                aria-label={`Reset ${item.name} to zero`}
                               >
                                 <Trash2 className="w-5 h-5" />
                               </button>
@@ -2190,13 +2286,16 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         onCancel={() => setPendingConfirmJan1_2024(null)}
       />
 
-      {/* Smart Statement of Financial Position Excel/CSV Preview & Mapping Modal */}
+      {/* Smart Financial Statement Excel/CSV Preview & Mapping Modal */}
       <ExcelPositionImportModal
         isOpen={positionImportModal.isOpen}
+        statementType={selectedStatement}
         workbook={positionImportModal.workbook}
         fileName={positionImportModal.fileName}
+        divisionId={selectedDivisionId}
         divisionName={currentDivision?.name || 'Selected Division'}
         selectedYear={selectedYear}
+        dataStore={dataStore}
         encodableItems={encodableStatementLineItems}
         onClose={() =>
           setPositionImportModal({ isOpen: false, workbook: null, fileName: '' })

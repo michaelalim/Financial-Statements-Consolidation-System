@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { LineItemDefinition, SubsectionType } from '../types/fs';
-import { Plus, Trash2, Search, SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
+import { Plus, Trash2, Search, SlidersHorizontal, RotateCcw, Pencil, X, Check } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
 
 interface LineItemManagerProps {
   lineItems: LineItemDefinition[];
   onAddLineItem: (item: Omit<LineItemDefinition, 'id' | 'order'>) => void;
+  onUpdateLineItem: (id: string, updates: Omit<LineItemDefinition, 'id' | 'order'>) => void;
   onDeleteLineItem: (id: string) => void;
   onResetDefaultItems: () => void;
 }
@@ -14,6 +16,7 @@ interface LineItemManagerProps {
 export const LineItemManager: React.FC<LineItemManagerProps> = ({
   lineItems,
   onAddLineItem,
+  onUpdateLineItem,
   onDeleteLineItem,
   onResetDefaultItems,
 }) => {
@@ -37,6 +40,18 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   const [itemToDelete, setItemToDelete] = useState<LineItemDefinition | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
+  // Edit Line Item modal state
+  const [editingItem, setEditingItem] = useState<LineItemDefinition | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editSubsection, setEditSubsection] = useState<SubsectionType>('Current Assets');
+  const [editIsCustomSubsection, setEditIsCustomSubsection] = useState(false);
+  const [editCustomSubsection, setEditCustomSubsection] = useState('');
+  const [editGroup, setEditGroup] = useState('');
+  const [editIsCustomGroup, setEditIsCustomGroup] = useState(false);
+  const [editCustomGroup, setEditCustomGroup] = useState('');
+  const [editSubgroup, setEditSubgroup] = useState('');
+  const [editIsContra, setEditIsContra] = useState(false);
+
   const defaultSubsectionOptions: SubsectionType[] =
     selectedStatement === 'cash_flows'
       ? [
@@ -45,7 +60,13 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
           'Cash Flows from Financing Activities',
         ]
       : selectedStatement === 'performance'
-      ? ['Revenue', 'Current Operating Expenses', 'Transfers, Assistance and Subsidy']
+      ? [
+          'Revenue',
+          'Current Operating Expenses',
+          'Transfers, Assistance and Subsidy',
+          'Other Non-Operating Income',
+          'Losses',
+        ]
       : selectedStatement === 'net_assets'
       ? ['Changes in Net Assets/Equity']
       : [
@@ -63,9 +84,25 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
       'Inventories',
       'Other Current Assets',
     ],
-    'Revenue': ['Tax Revenue', 'Service and Business Income', 'Shares, Grants and Donations'],
-    'Current Operating Expenses': ['Personnel Services', 'Maintenance and Other Operating Expenses', 'Financial Expenses', 'Non-Cash Expenses'],
-    'Transfers, Assistance and Subsidy': ['Assistance and Subsidy', 'Transfers'],
+    'Revenue': [
+      'Tax Revenue',
+      'Service and Business Income',
+      'Shares, Grants and Donations',
+      'Gains',
+      'Miscellaneous Income',
+    ],
+    'Current Operating Expenses': [
+      'Personnel Services',
+      'Maintenance and Other Operating Expenses',
+      'Financial Expenses',
+      'Non-Cash Expenses',
+    ],
+    'Transfers, Assistance and Subsidy': [
+      'Financial Assistance/Subsidy from NGAs, LGUs, GOCCs',
+      'Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs',
+    ],
+    'Other Non-Operating Income': ['Sale of Assets', 'Gains'],
+    'Losses': ['Losses'],
     'Cash Flows from Operating Activities': ['Cash Inflows', 'Cash Outflows'],
     'Cash Flows from Investing Activities': ['Cash Inflows', 'Cash Outflows'],
     'Cash Flows from Financing Activities': ['Cash Inflows', 'Cash Outflows'],
@@ -95,7 +132,11 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   };
 
   const statementLineItems = useMemo(() => {
-    return lineItems.filter((item) => (item.statementType || 'position') === selectedStatement);
+    return lineItems.filter(
+      (item) =>
+        item.id !== AGGREGATED_ACCUMULATED_DEPRECIATION_ID &&
+        (item.statementType || 'position') === selectedStatement
+    );
   }, [lineItems, selectedStatement]);
 
   const subsectionOptions = useMemo(() => {
@@ -117,6 +158,36 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     });
     return Array.from(set);
   }, [activeSubsection, statementLineItems]);
+
+  const editActiveSubsection = (
+    editIsCustomSubsection ? editCustomSubsection.trim() : editSubsection
+  ) as SubsectionType;
+
+  const editAvailableGroups = useMemo(() => {
+    const set = new Set<string>(groupSuggestionsBySubsection[editActiveSubsection] || []);
+    statementLineItems.forEach((item) => {
+      if (item.subsection === editActiveSubsection && item.group) {
+        set.add(item.group);
+      }
+    });
+    return Array.from(set);
+  }, [editActiveSubsection, statementLineItems]);
+
+  const editActiveGroup = editIsCustomGroup ? editCustomGroup.trim() : editGroup;
+
+  const editAvailableSubgroups = useMemo(() => {
+    const set = new Set<string>();
+    statementLineItems.forEach((item) => {
+      if (
+        item.subsection === editActiveSubsection &&
+        (!editActiveGroup || item.group === editActiveGroup) &&
+        item.subgroup
+      ) {
+        set.add(item.subgroup);
+      }
+    });
+    return Array.from(set);
+  }, [editActiveSubsection, editActiveGroup, statementLineItems]);
 
   const filteredItems = useMemo(() => {
     return statementLineItems.filter((item) => {
@@ -157,34 +228,30 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     setIsAddConfirmOpen(true);
   };
 
+  const deriveSectionForSubsection = (
+    finalSubsection: string,
+    stmt: string
+  ): LineItemDefinition['section'] => {
+    if (finalSubsection.includes('Operating Activities')) return 'CASH_OPERATING';
+    if (finalSubsection.includes('Investing Activities')) return 'CASH_INVESTING';
+    if (finalSubsection.includes('Financing Activities')) return 'CASH_FINANCING';
+    if (finalSubsection === 'Revenue') return 'REVENUE';
+    if (finalSubsection === 'Current Operating Expenses') return 'EXPENSES';
+    if (finalSubsection === 'Transfers, Assistance and Subsidy') return 'TRANSFERS';
+    if (finalSubsection === 'Other Non-Operating Income') return 'NON_OPERATING';
+    if (finalSubsection === 'Losses') return 'LOSSES';
+    if (stmt === 'cash_flows') return 'CASH_FLOWS';
+    if (stmt === 'performance') return 'REVENUE';
+    if (stmt === 'net_assets') return 'CHANGES_IN_NET_ASSETS';
+    if (finalSubsection.includes('Assets')) return 'ASSETS';
+    if (finalSubsection.includes('Liabilities')) return 'LIABILITIES';
+    return 'EQUITY';
+  };
+
   const handleConfirmAdd = () => {
     const finalSubsection = (isCustomSubsection ? customSubsection.trim() : subsection) as SubsectionType;
     const finalGroup = (isCustomGroup ? customGroup.trim() : group.trim()) || 'General';
-
-    const section =
-      finalSubsection.includes('Operating Activities')
-        ? 'CASH_OPERATING'
-        : finalSubsection.includes('Investing Activities')
-        ? 'CASH_INVESTING'
-        : finalSubsection.includes('Financing Activities')
-        ? 'CASH_FINANCING'
-        : finalSubsection === 'Revenue'
-        ? 'REVENUE'
-        : finalSubsection === 'Current Operating Expenses'
-        ? 'EXPENSES'
-        : finalSubsection === 'Transfers, Assistance and Subsidy'
-        ? 'TRANSFERS'
-        : selectedStatement === 'cash_flows'
-        ? 'CASH_FLOWS'
-        : selectedStatement === 'performance'
-        ? 'REVENUE'
-        : selectedStatement === 'net_assets'
-        ? 'CHANGES_IN_NET_ASSETS'
-        : finalSubsection.includes('Assets')
-        ? 'ASSETS'
-        : finalSubsection.includes('Liabilities')
-        ? 'LIABILITIES'
-        : 'EQUITY';
+    const section = deriveSectionForSubsection(finalSubsection, selectedStatement);
 
     onAddLineItem({
       name: name.trim(),
@@ -207,6 +274,68 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     setCustomGroup('');
     setGroup(finalGroup);
     setIsAddConfirmOpen(false);
+  };
+
+  const openEditModal = (item: LineItemDefinition) => {
+    setEditingItem(item);
+    setEditName(item.name);
+    const inSubOptions = subsectionOptions.includes(item.subsection);
+    if (inSubOptions) {
+      setEditSubsection(item.subsection);
+      setEditIsCustomSubsection(false);
+      setEditCustomSubsection('');
+    } else {
+      setEditSubsection(subsectionOptions[0] || 'Current Assets');
+      setEditIsCustomSubsection(true);
+      setEditCustomSubsection(item.subsection);
+    }
+
+    const groupsForItemSub = new Set<string>(groupSuggestionsBySubsection[item.subsection] || []);
+    statementLineItems.forEach((li) => {
+      if (li.subsection === item.subsection && li.group) groupsForItemSub.add(li.group);
+    });
+    if (groupsForItemSub.has(item.group)) {
+      setEditGroup(item.group);
+      setEditIsCustomGroup(false);
+      setEditCustomGroup('');
+    } else {
+      setEditGroup(Array.from(groupsForItemSub)[0] || '');
+      setEditIsCustomGroup(true);
+      setEditCustomGroup(item.group);
+    }
+
+    setEditSubgroup(item.subgroup || '');
+    setEditIsContra(Boolean(item.isContra));
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    const trimmedName = editName.trim();
+    if (!trimmedName) return;
+    if (editIsCustomSubsection && !editCustomSubsection.trim()) return;
+    if (editIsCustomGroup && !editCustomGroup.trim()) return;
+
+    const finalSubsection = (
+      editIsCustomSubsection ? editCustomSubsection.trim() : editSubsection
+    ) as SubsectionType;
+    const finalGroup =
+      (editIsCustomGroup ? editCustomGroup.trim() : editGroup.trim()) || 'General';
+    const stmt = editingItem.statementType || selectedStatement;
+    const section = deriveSectionForSubsection(finalSubsection, stmt);
+
+    onUpdateLineItem(editingItem.id, {
+      name: trimmedName,
+      statementType: editingItem.statementType,
+      section,
+      subsection: finalSubsection,
+      group: finalGroup,
+      subgroup: editSubgroup.trim() || undefined,
+      isContra: editIsContra,
+      isCustom: editingItem.isCustom,
+    });
+
+    setEditingItem(null);
   };
 
   const handleConfirmDelete = () => {
@@ -455,10 +584,10 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             filteredItems.map((item) => (
               <div
                 key={item.id}
-                className="px-6 py-3.5 flex items-center justify-between hover:bg-th-subtle transition-colors text-sm"
+                className="group px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-th-subtle transition-colors text-sm"
               >
-                <div className="pr-4">
-                  <div className="font-medium text-th-text flex items-center gap-2">
+                <div className="pr-4 min-w-0">
+                  <div className="font-medium text-th-text flex items-center gap-2 flex-wrap">
                     <span className="text-base font-semibold">{item.name}</span>
                     {item.isContra && (
                       <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
@@ -476,17 +605,28 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-xs text-th-muted hidden sm:inline">
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(item)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] text-sm font-bold text-th-text bg-th-surface hover:bg-th-primary hover:text-th-primary-fg border-2 border-th-border-strong rounded-xl shadow-2xs transition-all cursor-pointer opacity-80 sm:opacity-35 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                    title={`Modify line item: ${item.name}`}
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span>Modify</span>
+                  </button>
+
+                  <span className="text-sm font-medium text-th-muted hidden sm:inline">
                     {item.subsection}
                   </span>
                   <button
                     type="button"
                     onClick={() => setItemToDelete(item)}
-                    className="p-1.5 text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition-colors cursor-pointer"
+                    className="min-w-[40px] min-h-[40px] flex items-center justify-center text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors cursor-pointer"
                     title={`Delete line item: ${item.name}`}
+                    aria-label={`Delete line item: ${item.name}`}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -533,6 +673,249 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         }}
         onCancel={() => setIsResetConfirmOpen(false)}
       />
+
+      {/* Modify Line Item Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs">
+          <div className="w-full max-w-xl bg-th-surface border-2 border-th-border-strong rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 bg-th-subtle border-b border-th-border flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-th-primary text-th-primary-fg border border-th-border-strong">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-th-text">Modify Line Item</h3>
+                  <p className="text-xs text-th-muted mt-0.5">
+                    Update account title, classification, group, or sub-group without losing saved balances.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="p-1.5 rounded-lg text-th-muted hover:text-th-text hover:bg-th-surface border border-transparent hover:border-th-border-strong cursor-pointer"
+                aria-label="Close modify dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-th-text mb-1.5">
+                  Line Item Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Enter line item name"
+                  className="w-full px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-th-text mb-1.5">
+                    Classification *
+                  </label>
+                  {editIsCustomSubsection ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={editCustomSubsection}
+                        onChange={(e) => setEditCustomSubsection(e.target.value)}
+                        placeholder="Enter classification"
+                        className="flex-1 min-w-0 px-3 py-2 text-sm bg-th-input border border-th-accent text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditIsCustomSubsection(false);
+                          setEditCustomSubsection('');
+                        }}
+                        className="px-2.5 py-2 text-xs font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-lg border border-th-border-strong cursor-pointer shrink-0"
+                      >
+                        List
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={editSubsection}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__NEW__') {
+                          setEditIsCustomSubsection(true);
+                          setEditCustomSubsection('');
+                          setEditIsCustomGroup(true);
+                          setEditCustomGroup('');
+                        } else {
+                          const nextSub = val as SubsectionType;
+                          setEditSubsection(nextSub);
+                          const nextGroups = Array.from(
+                            new Set([
+                              ...(groupSuggestionsBySubsection[nextSub] || []),
+                              ...statementLineItems
+                                .filter((li) => li.subsection === nextSub && li.group)
+                                .map((li) => li.group),
+                            ])
+                          );
+                          if (!nextGroups.includes(editGroup)) {
+                            setEditGroup(nextGroups[0] || '');
+                            setEditIsCustomGroup(nextGroups.length === 0);
+                            setEditCustomGroup('');
+                          }
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                    >
+                      {subsectionOptions.map((sub) => (
+                        <option key={sub} value={sub}>
+                          {sub}
+                        </option>
+                      ))}
+                      <option value="__NEW__">+ Create New Classification...</option>
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-th-text mb-1.5">
+                    Account Group *
+                  </label>
+                  {editIsCustomGroup || editAvailableGroups.length === 0 ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={editCustomGroup}
+                        onChange={(e) => setEditCustomGroup(e.target.value)}
+                        placeholder="Enter account group"
+                        className="flex-1 min-w-0 px-3 py-2 text-sm bg-th-input border border-th-accent text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+                      />
+                      {editAvailableGroups.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditIsCustomGroup(false);
+                            setEditCustomGroup('');
+                            setEditGroup(editAvailableGroups[0]);
+                          }}
+                          className="px-2.5 py-2 text-xs font-semibold text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-lg border border-th-border-strong cursor-pointer shrink-0"
+                        >
+                          List
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <select
+                      value={editAvailableGroups.includes(editGroup) ? editGroup : editAvailableGroups[0]}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__NEW__') {
+                          setEditIsCustomGroup(true);
+                          setEditCustomGroup('');
+                        } else {
+                          setEditGroup(val);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                    >
+                      {editAvailableGroups.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                      <option value="__NEW__">+ Create New Account Group...</option>
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-bold text-th-text">
+                    Sub-Group (Optional)
+                  </label>
+                  {editSubgroup && (
+                    <button
+                      type="button"
+                      onClick={() => setEditSubgroup('')}
+                      className="text-xs font-semibold text-th-muted hover:text-th-text underline cursor-pointer"
+                    >
+                      Clear sub-group
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  list="edit-subgroup-suggestions"
+                  value={editSubgroup}
+                  onChange={(e) => setEditSubgroup(e.target.value)}
+                  placeholder="Enter sub-group or leave blank"
+                  className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                />
+                <datalist id="edit-subgroup-suggestions">
+                  {editAvailableSubgroups.map((sg) => (
+                    <option key={sg} value={sg} />
+                  ))}
+                </datalist>
+                {editAvailableSubgroups.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-th-muted font-semibold">Existing:</span>
+                    {editAvailableSubgroups.map((sg) => (
+                      <button
+                        key={sg}
+                        type="button"
+                        onClick={() => setEditSubgroup(sg)}
+                        className={`px-2 py-0.5 rounded-md text-xs font-semibold border cursor-pointer transition-colors ${
+                          editSubgroup === sg
+                            ? 'bg-th-primary text-th-primary-fg border-th-primary'
+                            : 'bg-th-subtle hover:bg-th-subtle-hover text-th-text border-th-border-strong'
+                        }`}
+                      >
+                        {sg}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2.5 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={editIsContra}
+                  onChange={(e) => setEditIsContra(e.target.checked)}
+                  className="w-4 h-4 text-th-accent accent-th-accent rounded border-th-border-strong focus:ring-th-accent"
+                />
+                <span className="text-sm text-th-text font-medium">
+                  This is a contra-account (deducted from gross balance)
+                </span>
+              </label>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-th-border">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong rounded-xl cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!editName.trim()}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-xs cursor-pointer transition-colors"
+                >
+                  <Check className="w-4 h-4" />
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
         </div>
       </div>
     </div>

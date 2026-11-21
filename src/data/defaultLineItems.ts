@@ -1,5 +1,18 @@
 import { LineItemDefinition } from '../types/fs';
 
+export const AGGREGATED_ACCUMULATED_DEPRECIATION_ID = 'acc_dep_aggregated_ppe';
+
+export const AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM: LineItemDefinition = {
+  id: AGGREGATED_ACCUMULATED_DEPRECIATION_ID,
+  name: 'Aggregated Accumulated Depreciation',
+  section: 'ASSETS',
+  subsection: 'Non-Current Assets',
+  group: 'Property, Plant and Equipment',
+  subgroup: 'General',
+  isContra: true,
+  order: 1335,
+};
+
 export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
   // ==========================================
   // ASSETS -> Current Assets
@@ -383,14 +396,23 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     order: 390,
   },
 
-  // Semi-Expendable Machinery and Equipment (Under Inventories)
+  // Semi-Expendable Items (Under Inventories -> Inventory Held for Consumption)
+  {
+    id: 'semi_exp_machinery_equip',
+    name: 'Semi-Expendable Machinery and Equipment',
+    section: 'ASSETS',
+    subsection: 'Current Assets',
+    group: 'Inventories',
+    subgroup: 'Inventory Held for Consumption',
+    order: 395,
+  },
   {
     id: 'semi_exp_office_equip',
     name: 'Semi-Expendable Office Equipment',
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 400,
   },
   {
@@ -399,7 +421,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 410,
   },
   {
@@ -408,7 +430,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 420,
   },
   {
@@ -417,7 +439,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 430,
   },
   {
@@ -426,7 +448,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 440,
   },
   {
@@ -435,7 +457,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 450,
   },
   {
@@ -444,7 +466,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 460,
   },
   {
@@ -453,7 +475,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 470,
   },
   {
@@ -462,7 +484,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 480,
   },
   {
@@ -471,7 +493,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 490,
   },
   {
@@ -480,7 +502,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 500,
   },
   {
@@ -489,7 +511,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 510,
   },
   {
@@ -498,7 +520,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Machinery and Equipment',
+    subgroup: 'Inventory Held for Consumption',
     order: 520,
   },
   {
@@ -507,7 +529,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Furniture, Fixtures & Books',
+    subgroup: 'Inventory Held for Consumption',
     order: 530,
   },
   {
@@ -516,7 +538,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     section: 'ASSETS',
     subsection: 'Current Assets',
     group: 'Inventories',
-    subgroup: 'Semi-Expendable Furniture, Fixtures & Books',
+    subgroup: 'Inventory Held for Consumption',
     order: 540,
   },
 
@@ -1327,6 +1349,7 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
     subgroup: 'Construction in Progress',
     order: 1330,
   },
+  AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM,
 
   // Heritage Assets
   {
@@ -1648,85 +1671,215 @@ export const DEFAULT_LINE_ITEMS: LineItemDefinition[] = [
 
 
 export const DEFAULT_PERFORMANCE_LINE_ITEMS: LineItemDefinition[] = [
+  // ==========================================
   // REVENUE
+  // ==========================================
   { id: "perf-rev-tax", name: "Tax Revenue", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Tax Revenue", order: 1001 },
-  { id: "perf-rev-clearance", name: "Clearance and Certification Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", order: 1002 },
-  { id: "perf-rev-other-service", name: "Other Service Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", order: 1003 },
-  { id: "perf-rev-interest", name: "Interest Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", order: 1004 },
-  { id: "perf-rev-fines", name: "Fines and Penalties-Service Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", order: 1005 },
-  { id: "perf-rev-other-business", name: "Other Business Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", order: 1006 },
-  { id: "perf-rev-grants-cash", name: "Income from Grants and Donations in Cash", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Shares, Grants and Donations", order: 1007 },
-  { id: "perf-rev-grants-kind", name: "Income from Grants and Donations in Kind", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Shares, Grants and Donations", order: 1008 },
 
-  // PERSONNEL SERVICES
-  { id: "perf-ps-salaries-reg", name: "Salaries and Wages - Regular", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1101 },
-  { id: "perf-ps-salaries-cas", name: "Salaries and Wages - Casual/Contractual", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1102 },
-  { id: "perf-ps-pera", name: "Personal Economic Relief Allowance (PERA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1103 },
-  { id: "perf-ps-ra", name: "Representation Allowance (RA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1104 },
-  { id: "perf-ps-ta", name: "Transportation Allowance (TA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1105 },
-  { id: "perf-ps-clothing", name: "Clothing/Uniform Allowance", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1106 },
-  { id: "perf-ps-honoraria", name: "Honoraria", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1107 },
-  { id: "perf-ps-overtime", name: "Overtime and Night Pay", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1108 },
-  { id: "perf-ps-yearend", name: "Year End Bonus", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1109 },
-  { id: "perf-ps-cashgift", name: "Cash Gift", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1110 },
-  { id: "perf-ps-midyear", name: "Mid-Year Bonus", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1111 },
-  { id: "perf-ps-other-bonuses", name: "Other Bonuses and Allowances", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1112 },
-  { id: "perf-ps-rlip", name: "Retirement and Life Insurance Premiums", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1113 },
-  { id: "perf-ps-pagibig", name: "Pag-IBIG Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1114 },
-  { id: "perf-ps-philhealth", name: "PhilHealth Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1115 },
-  { id: "perf-ps-ecip", name: "Employees Compensation Insurance Premiums", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1116 },
-  { id: "perf-ps-terminal", name: "Terminal Leave Benefits", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1117 },
-  { id: "perf-ps-other-benefits", name: "Other Personnel Benefits", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", order: 1118 },
+  // Service and Business Income -> Service Income
+  { id: "perf-rev-permit", name: "Permit Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1002 },
+  { id: "perf-rev-registration", name: "Registration Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1003 },
+  { id: "perf-rev-clearance", name: "Clearance and Certification Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1004 },
+  { id: "perf-rev-legal", name: "Legal Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1005 },
+  { id: "perf-rev-inspection", name: "Inspection Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1006 },
+  { id: "perf-rev-fines", name: "Fines and Penalties-Service Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1007 },
+  { id: "perf-rev-other-service", name: "Other Service Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Service Income", order: 1008 },
 
-  // MOOE
-  { id: "perf-mooe-travel-local", name: "Traveling Expenses - Local", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1201 },
-  { id: "perf-mooe-travel-foreign", name: "Traveling Expenses - Foreign", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1202 },
-  { id: "perf-mooe-training", name: "Training Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1203 },
-  { id: "perf-mooe-scholarship", name: "Scholarship Grants/Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1204 },
-  { id: "perf-mooe-office-sup", name: "Office Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1205 },
-  { id: "perf-mooe-drugs", name: "Drugs and Medicines Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1206 },
-  { id: "perf-mooe-medical-sup", name: "Medical, Dental and Laboratory Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1207 },
-  { id: "perf-mooe-fuel", name: "Fuel, Oil and Lubricants Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1208 },
-  { id: "perf-mooe-textbooks", name: "Textbooks and Instructional Materials Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1209 },
-  { id: "perf-mooe-other-sup", name: "Other Supplies and Materials Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1210 },
-  { id: "perf-mooe-water", name: "Water Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1211 },
-  { id: "perf-mooe-electricity", name: "Electricity Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1212 },
-  { id: "perf-mooe-postage", name: "Postage and Courier Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1213 },
-  { id: "perf-mooe-telephone", name: "Telephone Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1214 },
-  { id: "perf-mooe-internet", name: "Internet Subscription Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1215 },
-  { id: "perf-mooe-auditing", name: "Auditing Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1216 },
-  { id: "perf-mooe-consultancy", name: "Consultancy Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1217 },
-  { id: "perf-mooe-janitorial", name: "Janitorial Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1218 },
-  { id: "perf-mooe-security", name: "Security Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1219 },
-  { id: "perf-mooe-other-gen", name: "Other General Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1220 },
-  { id: "perf-mooe-repairs-bldg", name: "Repairs and Maintenance - Buildings and Other Structures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1221 },
-  { id: "perf-mooe-repairs-mach", name: "Repairs and Maintenance - Machinery and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1222 },
-  { id: "perf-mooe-repairs-trans", name: "Repairs and Maintenance - Transportation Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1223 },
-  { id: "perf-mooe-taxes", name: "Taxes, Duties and Licenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1224 },
-  { id: "perf-mooe-fidelity", name: "Fidelity Bond Premiums", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1225 },
-  { id: "perf-mooe-insurance", name: "Insurance Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1226 },
-  { id: "perf-mooe-printing", name: "Printing and Publication Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1227 },
-  { id: "perf-mooe-rent", name: "Rent/Lease Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1228 },
-  { id: "perf-mooe-other", name: "Other Maintenance and Operating Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", order: 1229 },
+  // Service and Business Income -> Business Income
+  { id: "perf-rev-school-fees", name: "School Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1009 },
+  { id: "perf-rev-seminar-fees", name: "Seminar Fees/Training Fees", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1010 },
+  { id: "perf-rev-hostels", name: "Income from Hostels/Dormitories and Other Like Facilities", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1011 },
+  { id: "perf-rev-printing", name: "Income from Printing and Publication", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1012 },
+  { id: "perf-rev-interest", name: "Interest Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1013 },
+  { id: "perf-rev-other-business", name: "Other Business Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Service and Business Income", subgroup: "Business Income", order: 1014 },
 
-  // FINANCIAL & NON-CASH EXPENSES
-  { id: "perf-fin-bank", name: "Bank Charges", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1301 },
-  { id: "perf-fin-other", name: "Other Financial Charges", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1302 },
-  { id: "perf-nc-depr-land", name: "Depreciation - Land Improvements", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1401 },
-  { id: "perf-nc-depr-infra", name: "Depreciation - Infrastructure Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1402 },
-  { id: "perf-nc-depr-bldg", name: "Depreciation - Buildings and Other Structures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1403 },
-  { id: "perf-nc-depr-mach", name: "Depreciation - Machinery and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1404 },
-  { id: "perf-nc-depr-trans", name: "Depreciation - Transportation Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1405 },
-  { id: "perf-nc-depr-furn", name: "Depreciation - Furniture, Fixtures and Books", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1406 },
-  { id: "perf-nc-depr-other", name: "Depreciation - Other Property, Plant and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1407 },
-  { id: "perf-nc-amort", name: "Amortization - Intangible Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1408 },
-  { id: "perf-nc-impairment", name: "Impairment Loss - Loans and Receivables", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", order: 1409 },
+  // Shares, Grants and Donations -> Donations
+  { id: "perf-rev-grants-cash", name: "Donations in Cash", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Shares, Grants and Donations", subgroup: "Donations", order: 1015 },
+  { id: "perf-rev-grants-kind", name: "Donations in Kind", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Shares, Grants and Donations", subgroup: "Donations", order: 1016 },
 
+  // Gains (Revenue option)
+  { id: "perf-rev-other-gains", name: "Other Gains", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Gains", order: 1017 },
+
+  // Miscellaneous Income
+  { id: "perf-rev-misc", name: "Miscellaneous Income", statementType: "performance", section: "REVENUE", subsection: "Revenue", group: "Miscellaneous Income", order: 1018 },
+
+  // ==========================================
+  // LESS: CURRENT OPERATING EXPENSES
+  // ==========================================
+  // Personnel Services -> Salaries and Wages
+  { id: "perf-ps-salaries-reg", name: "Salaries and Wages - Regular", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Salaries and Wages", order: 1101 },
+  { id: "perf-ps-salaries-cas", name: "Salaries and Wages - Casual/Contractual", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Salaries and Wages", order: 1102 },
+  { id: "perf-ps-salaries-sub", name: "Salaries and Wages - Substitute Teachers", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Salaries and Wages", order: 1103 },
+
+  // Personnel Services -> Other Compensation
+  { id: "perf-ps-pera", name: "Personnel Economic Relief Allowance (PERA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1104 },
+  { id: "perf-ps-ra", name: "Representation Allowance (RA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1105 },
+  { id: "perf-ps-ta", name: "Transportation Allowance (TA)", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1106 },
+  { id: "perf-ps-clothing", name: "Clothing/Uniform Allowance", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1107 },
+  { id: "perf-ps-subsistence", name: "Subsistence Allowances", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1108 },
+  { id: "perf-ps-laundry", name: "Laundry Allowance", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1109 },
+  { id: "perf-ps-quarters", name: "Quarters Allowance", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1110 },
+  { id: "perf-ps-productivity", name: "Productivity Incentive Benefits", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1111 },
+  { id: "perf-ps-honoraria", name: "Honoraria", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1112 },
+  { id: "perf-ps-hazard", name: "Hazard Pay", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1113 },
+  { id: "perf-ps-longevity", name: "Longevity Pay", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1114 },
+  { id: "perf-ps-overtime", name: "Overtime and Night Pay", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1115 },
+  { id: "perf-ps-yearend", name: "Year-End Bonus", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1116 },
+  { id: "perf-ps-cashgift", name: "Cash Gift", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1117 },
+  { id: "perf-ps-midyear", name: "Mid-Year Bonus", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1118 },
+  { id: "perf-ps-other-bonuses", name: "Other Bonuses and Allowances", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Compensation", order: 1119 },
+
+  // Personnel Services -> Personnel Benefit Contributions
+  { id: "perf-ps-rlip", name: "Life and Retirement Insurance Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Personnel Benefit Contributions", order: 1120 },
+  { id: "perf-ps-pagibig", name: "PAG-IBIG Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Personnel Benefit Contributions", order: 1121 },
+  { id: "perf-ps-philhealth", name: "PHILHEALTH Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Personnel Benefit Contributions", order: 1122 },
+  { id: "perf-ps-ecip", name: "ECC Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Personnel Benefit Contributions", order: 1123 },
+  { id: "perf-ps-provident", name: "Provident/Welfare Fund Contributions", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Personnel Benefit Contributions", order: 1124 },
+
+  // Personnel Services -> Other Personnel Benefits
+  { id: "perf-ps-retirement-gratuity", name: "Retirement Gratuity", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Personnel Benefits", order: 1125 },
+  { id: "perf-ps-terminal", name: "Terminal Leave Benefits", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Personnel Benefits", order: 1126 },
+  { id: "perf-ps-other-benefits", name: "Other Personnel Benefits", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Personnel Services", subgroup: "Other Personnel Benefits", order: 1127 },
+
+  // Maintenance and Other Operating Expenses -> Traveling Expenses
+  { id: "perf-mooe-travel-local", name: "Traveling Expenses - Local", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Traveling Expenses", order: 1201 },
+  { id: "perf-mooe-travel-foreign", name: "Traveling Expenses - Foreign", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Traveling Expenses", order: 1202 },
+
+  // Maintenance and Other Operating Expenses -> Training and Scholarship
+  { id: "perf-mooe-training", name: "Training Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Training and Scholarship", order: 1203 },
+  { id: "perf-mooe-scholarship", name: "Scholarship Grants/Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Training and Scholarship", order: 1204 },
+
+  // Maintenance and Other Operating Expenses -> Supplies and Materials Expenses
+  { id: "perf-mooe-office-sup", name: "Office Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1205 },
+  { id: "perf-mooe-accountable-forms", name: "Accountable Forms Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1206 },
+  { id: "perf-mooe-non-accountable-forms", name: "Non-Accountable Forms Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1207 },
+  { id: "perf-mooe-animal-sup", name: "Animal/Zoological Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1208 },
+  { id: "perf-mooe-food-sup", name: "Food Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1209 },
+  { id: "perf-mooe-welfare-goods", name: "Welfare Goods Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1210 },
+  { id: "perf-mooe-chalk", name: "Chalk Allowance", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1211 },
+  { id: "perf-mooe-drugs", name: "Drugs and Medicines Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1212 },
+  { id: "perf-mooe-medical-sup", name: "Medical, Dental and Laboratory Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1213 },
+  { id: "perf-mooe-fuel", name: "Fuel, Oil and Lubricants Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1214 },
+  { id: "perf-mooe-agri-sup", name: "Agricultural and Marine Supplies Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1215 },
+  { id: "perf-mooe-textbooks", name: "Textbooks and Instructional Materials Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1216 },
+  { id: "perf-mooe-semi-mach", name: "Semi-Expendable Machinery and Equipment Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1217 },
+  { id: "perf-mooe-semi-other-equip", name: "Semi-Expendable Machinery and Equipment Expenses - Other Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1218 },
+  { id: "perf-mooe-semi-furn-books", name: "Semi-Expendable Furniture, Fixtures and Books Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1219 },
+  { id: "perf-mooe-other-sup", name: "Other Supplies and Materials Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Supplies and Materials Expenses", order: 1220 },
+
+  // Maintenance and Other Operating Expenses -> Utility Expenses
+  { id: "perf-mooe-water", name: "Water Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Utility Expenses", order: 1221 },
+  { id: "perf-mooe-electricity", name: "Electricity Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Utility Expenses", order: 1222 },
+  { id: "perf-mooe-gas-heating", name: "Gas/Heating Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Utility Expenses", order: 1223 },
+
+  // Maintenance and Other Operating Expenses -> Communication Expenses
+  { id: "perf-mooe-postage", name: "Postage and Courier Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Communication Expenses", order: 1224 },
+  { id: "perf-mooe-telephone", name: "Telephone Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Communication Expenses", order: 1225 },
+  { id: "perf-mooe-internet", name: "Internet Subscription Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Communication Expenses", order: 1226 },
+  { id: "perf-mooe-cable", name: "Cable, Satellite, Telegraph and Radio Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Communication Expenses", order: 1227 },
+
+  // Maintenance and Other Operating Expenses -> Awards/Rewards Expenses
+  { id: "perf-mooe-awards", name: "Awards/Rewards Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Awards/Rewards Expenses", order: 1228 },
+  { id: "perf-mooe-prizes", name: "Prizes", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Awards/Rewards Expenses", order: 1229 },
+
+  // Maintenance and Other Operating Expenses -> Survey, Research, Exploration and Development Expenses
+  { id: "perf-mooe-survey", name: "Survey Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Survey, Research, Exploration and Development Expenses", order: 1230 },
+  { id: "perf-mooe-research", name: "Research, Exploration and Development Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Survey, Research, Exploration and Development Expenses", order: 1231 },
+
+  // Maintenance and Other Operating Expenses -> Confidential, Intelligence and Extraordinary Expenses
+  { id: "perf-mooe-extraordinary", name: "Extraordinary and Miscellaneous Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Confidential, Intelligence and Extraordinary Expenses", order: 1232 },
+
+  // Maintenance and Other Operating Expenses -> Professional Services
+  { id: "perf-mooe-legal", name: "Legal Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Professional Services", order: 1233 },
+  { id: "perf-mooe-auditing", name: "Auditing Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Professional Services", order: 1234 },
+  { id: "perf-mooe-consultancy", name: "Consultancy Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Professional Services", order: 1235 },
+  { id: "perf-mooe-other-prof", name: "Other Professional Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Professional Services", order: 1236 },
+
+  // Maintenance and Other Operating Expenses -> General Services
+  { id: "perf-mooe-env-sanitary", name: "Environment/Sanitary Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "General Services", order: 1237 },
+  { id: "perf-mooe-janitorial", name: "Janitorial Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "General Services", order: 1238 },
+  { id: "perf-mooe-security", name: "Security Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "General Services", order: 1239 },
+  { id: "perf-mooe-other-gen", name: "Other General Services", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "General Services", order: 1240 },
+
+  // Maintenance and Other Operating Expenses -> Repairs and Maintenance
+  { id: "perf-mooe-repairs-inv-prop", name: "Repairs and Maintenance - Investment Property", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1241 },
+  { id: "perf-mooe-repairs-land", name: "Repairs and Maintenance - Land Improvements", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1242 },
+  { id: "perf-mooe-repairs-infra", name: "Repairs and Maintenance - Infrastructure Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1243 },
+  { id: "perf-mooe-repairs-bldg", name: "Repairs and Maintenance - Buildings and Other Structures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1244 },
+  { id: "perf-mooe-repairs-mach", name: "Repairs and Maintenance - Machinery and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1245 },
+  { id: "perf-mooe-repairs-trans", name: "Repairs and Maintenance - Transportation Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1246 },
+  { id: "perf-mooe-repairs-furn", name: "Repairs and Maintenance - Furniture and Fixtures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1247 },
+  { id: "perf-mooe-repairs-semi-mach", name: "Repairs and Maintenance - Semi-Expendable Machinery and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1248 },
+  { id: "perf-mooe-repairs-semi-furn", name: "Repairs and Maintenance - Semi-Expendable Furnitures and Fixtures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1249 },
+  { id: "perf-mooe-repairs-other-ppe", name: "Repairs and Maintenance - Other PPE", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Repairs and Maintenance", order: 1250 },
+
+  // Maintenance and Other Operating Expenses -> Taxes, Insurance, Premiums and Other Fees
+  { id: "perf-mooe-taxes", name: "Taxes, Duties and Licenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Taxes, Insurance, Premiums and Other Fees", order: 1251 },
+  { id: "perf-mooe-fidelity", name: "Fidelity Bond Premiums", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Taxes, Insurance, Premiums and Other Fees", order: 1252 },
+  { id: "perf-mooe-insurance", name: "Insurance Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Taxes, Insurance, Premiums and Other Fees", order: 1253 },
+
+  // Maintenance and Other Operating Expenses -> Labor and Wages
+  { id: "perf-mooe-labor-wages", name: "Labor and Wages", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Labor and Wages", order: 1254 },
+
+  // Maintenance and Other Operating Expenses -> Other Maintenance and Operating Expenses
+  { id: "perf-mooe-advertising", name: "Advertising Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1255 },
+  { id: "perf-mooe-printing", name: "Printing and Publication Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1256 },
+  { id: "perf-mooe-representation", name: "Representation Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1257 },
+  { id: "perf-mooe-transport-delivery", name: "Transportation and Delivery Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1258 },
+  { id: "perf-mooe-rent", name: "Rent/Lease Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1259 },
+  { id: "perf-mooe-membership", name: "Membership Dues and Contributions to Organizations", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1260 },
+  { id: "perf-mooe-subscriptions", name: "Subscriptions Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1261 },
+  { id: "perf-mooe-bank-fee", name: "Bank Transaction Fee", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1262 },
+  { id: "perf-mooe-other", name: "Other Maintenance and Operating Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Maintenance and Other Operating Expenses", subgroup: "Other Maintenance and Operating Expenses", order: 1263 },
+
+  // Financial Expenses
+  { id: "perf-fin-interest", name: "Interest Expenses", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1301 },
+  { id: "perf-fin-bank-fee", name: "Bank Transaction Fees", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1302 },
+  { id: "perf-fin-bank-loans", name: "Bank Charges - Loans/Borrowings", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1303 },
+  { id: "perf-fin-bank", name: "Bank Charges", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1304 },
+  { id: "perf-fin-other", name: "Other Financial Charges", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Financial Expenses", order: 1305 },
+
+  // Non-Cash Expenses -> Depreciation
+  { id: "perf-nc-depr-land", name: "Depreciation - Land Improvements", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1401 },
+  { id: "perf-nc-depr-infra", name: "Depreciation - Infrastructure Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1402 },
+  { id: "perf-nc-depr-bldg", name: "Depreciation - Buildings and Other Structures", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1403 },
+  { id: "perf-nc-depr-office", name: "Depreciation - Office Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1404 },
+  { id: "perf-nc-depr-mach", name: "Depreciation - Machinery and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1405 },
+  { id: "perf-nc-depr-trans", name: "Depreciation - Transportation Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1406 },
+  { id: "perf-nc-depr-furn", name: "Depreciation - Furniture, Fixtures and Books", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1407 },
+  { id: "perf-nc-depr-heritage", name: "Depreciation - Heritage Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1408 },
+  { id: "perf-nc-depr-other", name: "Depreciation - Other Property, Plant and Equipment", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Depreciation", order: 1409 },
+
+  // Non-Cash Expenses -> Amortization & Impairment Loss
+  { id: "perf-nc-amort", name: "Amortization - Intangible Assets", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Amortization", order: 1410 },
+  { id: "perf-nc-impairment", name: "Impairment Loss - Loans and Receivables", statementType: "performance", section: "EXPENSES", subsection: "Current Operating Expenses", group: "Non-Cash Expenses", subgroup: "Impairment Loss", order: 1411 },
+
+  // ==========================================
   // TRANSFERS, ASSISTANCE AND SUBSIDY
-  { id: "perf-tr-sub-ng", name: "Subsidy from National Government", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1501 },
-  { id: "perf-tr-sub-ro", name: "Subsidy from Regional Office/Staff Bureaus", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1502 },
-  { id: "perf-tr-sub-ou", name: "Subsidy from Operating Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1503 },
-  { id: "perf-tr-lgu", name: "Assistance from Local Government Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Assistance and Subsidy", order: 1504 },
+  // ==========================================
+  // Financial Assistance/Subsidy from NGAs, LGUs, GOCCs
+  { id: "perf-tr-sub-ng", name: "Subsidy from National Government", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1501 },
+  { id: "perf-tr-sub-other-ngas", name: "Subsidy from other NGAs", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1502 },
+  { id: "perf-tr-lgu", name: "Assistance from Local Government Unit", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1503 },
+  { id: "perf-tr-goccs", name: "Assistance from GOCCs", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1504 },
+  { id: "perf-tr-sub-other-funds", name: "Subsidy from Other Funds", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1505 },
+  { id: "perf-tr-sub-co", name: "Subsidy from Central Office", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1506 },
+  { id: "perf-tr-sub-ro", name: "Subsidy from Regional Office/Staff Bureau", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1507 },
+  { id: "perf-tr-sub-ou", name: "Subsidy from Operating Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Financial Assistance/Subsidy from NGAs, LGUs, GOCCs", order: 1508 },
+
+  // Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs
+  { id: "perf-tr-to-ou", name: "Subsidies to Operating Units", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs", order: 1509 },
+  { id: "perf-tr-to-other-funds", name: "Subsidies to Other Funds", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs", order: 1510 },
+  { id: "perf-tr-to-others", name: "Subsidies - Others", statementType: "performance", section: "TRANSFERS", subsection: "Transfers, Assistance and Subsidy", group: "Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs", order: 1511 },
+
+  // ==========================================
+  // OTHER NON-OPERATING INCOME & LOSSES
+  // ==========================================
+  { id: "perf-nonop-sale-misc", name: "Miscellaneous Income", statementType: "performance", section: "NON_OPERATING", subsection: "Other Non-Operating Income", group: "Other Non-Operating Income", subgroup: "Sale of Assets", order: 1601 },
+  { id: "perf-nonop-gain-ppe", name: "Gain on Sale of Property, Plant and Equipment", statementType: "performance", section: "NON_OPERATING", subsection: "Other Non-Operating Income", group: "Other Non-Operating Income", subgroup: "Gains", order: 1602 },
+  { id: "perf-nonop-other-gains", name: "Other Gains", statementType: "performance", section: "NON_OPERATING", subsection: "Other Non-Operating Income", group: "Other Non-Operating Income", subgroup: "Gains", order: 1603 },
+
+  { id: "perf-nonop-loss-sale", name: "Loss on Sale of Assets", statementType: "performance", section: "LOSSES", subsection: "Losses", group: "Losses", order: 1604 },
 ];
 
 export { DEFAULT_CASH_FLOWS_LINE_ITEMS } from './cashFlowsLineItems';

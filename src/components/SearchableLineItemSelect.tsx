@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { LineItemDefinition } from '../types/fs';
 import { Search, ChevronDown, X, Check, ArrowUp, ArrowDown, CornerDownLeft, AlertCircle } from 'lucide-react';
 
@@ -9,9 +10,12 @@ export interface SearchableLineItemSelectProps {
   rawText?: string;
   onChangeRawText?: (text: string) => void;
   isInvalid?: boolean;
+  isDuplicate?: boolean;
   placeholder?: string;
   className?: string;
   placement?: 'auto' | 'bottom' | 'top';
+  usePortal?: boolean;
+  compact?: boolean;
   onOpenStateChange?: (isOpen: boolean) => void;
   onSelectAndNext?: () => void;
   inputRef?: React.RefObject<HTMLInputElement | null> | ((el: HTMLInputElement | null) => void);
@@ -120,9 +124,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
   rawText,
   onChangeRawText,
   isInvalid = false,
+  isDuplicate = false,
   placeholder = 'Enter line item...',
   className = '',
   placement = 'auto',
+  usePortal = false,
+  compact = false,
   onOpenStateChange,
   onSelectAndNext,
   inputRef: externalInputRef,
@@ -132,15 +139,39 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
   const [computedPlacement, setComputedPlacement] = useState<'top' | 'bottom'>('bottom');
+  const [portalCoords, setPortalCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const internalInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemButtonRefs = useRef<{ [key: number]: HTMLButtonElement | null }>({});
+  const isClearingRef = useRef(false);
+  const lastHighlightSourceRef = useRef<'keyboard' | 'mouse'>('keyboard');
 
   const selectedItem = useMemo(() => {
     return lineItems.find((i) => i.id === selectedItemId);
   }, [lineItems, selectedItemId]);
+
+  const duplicateNormalizedNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    lineItems.forEach((item) => {
+      const key = normalizeAlphanumeric(item.name);
+      if (key) {
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+    });
+    const dups = new Set<string>();
+    counts.forEach((count, key) => {
+      if (count > 1) dups.add(key);
+    });
+    return dups;
+  }, [lineItems]);
 
   const updateIsOpen = (nextState: boolean) => {
     setIsOpen(nextState);
@@ -149,10 +180,22 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     }
   };
 
-  // Close dropdown on outside click
+  // Clear stale internal search query whenever the dropdown is closed or selection changes externally
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+    }
+  }, [selectedItemId, isOpen]);
+
+  // Close dropdown on outside click (supporting portaled menu)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
         updateIsOpen(false);
       }
     };
@@ -160,38 +203,55 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Compute placement (top vs bottom) based on viewport and requested placement
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let nextPlacement: 'top' | 'bottom' = 'bottom';
+    if (placement === 'top') {
+      nextPlacement = rect.top < 140 && spaceBelow > 260 ? 'bottom' : 'top';
+    } else if (placement === 'bottom') {
+      nextPlacement = 'bottom';
+    } else {
+      nextPlacement = spaceBelow < 270 && spaceAbove > spaceBelow ? 'top' : 'bottom';
+    }
+    setComputedPlacement(nextPlacement);
+
+    if (usePortal) {
+      const menuWidth = Math.min(Math.max(rect.width, 420), Math.min(window.innerWidth * 0.92, 580));
+      const clampedLeft = Math.max(
+        12,
+        Math.min(rect.left, window.innerWidth - menuWidth - 12)
+      );
+      const maxH = Math.min(
+        448,
+        Math.max(200, (nextPlacement === 'top' ? spaceAbove : spaceBelow) - 16)
+      );
+      setPortalCoords({
+        top: nextPlacement === 'top' ? rect.top - 8 : rect.bottom + 8,
+        left: clampedLeft,
+        width: menuWidth,
+        maxHeight: maxH,
+      });
+    }
+  }, [placement, usePortal]);
+
+  // Compute placement (top vs bottom) and portal coordinates
   useEffect(() => {
     if (!isOpen) return;
+    updatePosition();
+    if (!usePortal) return;
 
-    if (placement === 'top') {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        if (rect.top < 140 && window.innerHeight - rect.bottom > 260) {
-          setComputedPlacement('bottom');
-          return;
-        }
-      }
-      setComputedPlacement('top');
-      return;
-    }
-    if (placement === 'bottom') {
-      setComputedPlacement('bottom');
-      return;
-    }
-
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-
-      if (spaceBelow < 270 && spaceAbove > spaceBelow) {
-        setComputedPlacement('top');
-      } else {
-        setComputedPlacement('bottom');
-      }
-    }
-  }, [isOpen, placement]);
+    const handleReposition = () => updatePosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen, usePortal, updatePosition]);
 
   // Filter & rank items using forgiving non-alphanumeric matching
   const filteredItems = useMemo(() => {
@@ -209,7 +269,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
     scoredItems.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      return a.item.name.localeCompare(b.item.name);
+      const cmp = a.item.name.localeCompare(b.item.name);
+      if (cmp !== 0) return cmp;
+      const aNonOp = a.item.section === 'NON_OPERATING' ? 0 : 1;
+      const bNonOp = b.item.section === 'NON_OPERATING' ? 0 : 1;
+      if (aNonOp !== bNonOp) return aNonOp - bNonOp;
+      return a.item.order - b.item.order;
     });
 
     return scoredItems.map((s) => s.item);
@@ -226,6 +291,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
   // Reset highlighted index when filtered items change
   useEffect(() => {
+    lastHighlightSourceRef.current = 'keyboard';
     if (filteredItems.length > 0) {
       if (selectedItemId && itemIndexMap.has(selectedItemId)) {
         setHighlightedIndex(itemIndexMap.get(selectedItemId)!);
@@ -248,9 +314,21 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     return groups;
   }, [filteredItems]);
 
-  // Scroll highlighted item into view
+  const activePreviewItem = useMemo(() => {
+    if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
+      return filteredItems[highlightedIndex];
+    }
+    return null;
+  }, [filteredItems, highlightedIndex]);
+
+  // Scroll highlighted item into view only for keyboard navigation or initial open (never yank on mouse hover)
   useEffect(() => {
-    if (isOpen && highlightedIndex >= 0 && itemButtonRefs.current[highlightedIndex]) {
+    if (
+      lastHighlightSourceRef.current === 'keyboard' &&
+      isOpen &&
+      highlightedIndex >= 0 &&
+      itemButtonRefs.current[highlightedIndex]
+    ) {
       itemButtonRefs.current[highlightedIndex]?.scrollIntoView({
         block: 'nearest',
       });
@@ -273,12 +351,14 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
+    isClearingRef.current = true;
     onSelectItem('', '');
     onChangeRawText?.('');
     setSearchQuery('');
     if (internalInputRef.current) {
       internalInputRef.current.focus();
     }
+    isClearingRef.current = false;
   };
 
   // Keyboard Navigation Handler (ArrowUp, ArrowDown, Tab, Enter)
@@ -290,6 +370,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      lastHighlightSourceRef.current = 'keyboard';
       if (!isOpen) {
         updateIsOpen(true);
         setHighlightedIndex(0);
@@ -301,6 +382,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
 
     if (e.key === 'ArrowUp') {
       e.preventDefault();
+      lastHighlightSourceRef.current = 'keyboard';
       if (!isOpen) {
         updateIsOpen(true);
         setHighlightedIndex(filteredItems.length - 1);
@@ -381,6 +463,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     ? rawText
     : searchQuery;
 
+  const inputHoverTitle = selectedItem
+    ? `${selectedItem.name} (${selectedItem.subsection} › ${selectedItem.group}${
+        selectedItem.subgroup ? ` › ${selectedItem.subgroup}` : ''
+      })`
+    : displayValue || undefined;
+
   return (
     <div
       ref={containerRef}
@@ -392,9 +480,13 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           updateIsOpen(true);
           internalInputRef.current?.focus();
         }}
-        className={`w-full flex items-center gap-3 px-4 py-3 text-base rounded-xl transition-all cursor-text min-h-[46px] ${
+        className={`w-full flex items-center transition-all cursor-text ${
+          compact ? 'gap-2 px-3 py-2 text-sm sm:text-base rounded-xl min-h-[42px]' : 'gap-3 px-4 py-3 text-base rounded-xl min-h-[48px]'
+        } ${
           isInvalid
             ? 'bg-red-50/90 dark:bg-red-950/50 border-2 border-red-500 dark:border-red-500 ring-2 ring-red-500/25'
+            : isDuplicate
+            ? 'bg-amber-50/85 dark:bg-amber-950/40 border-2 border-amber-500 dark:border-amber-400 ring-2 ring-amber-500/25'
             : isOpen
             ? 'bg-th-input border-2 border-th-accent ring-2 ring-th-accent/20 shadow-xs'
             : selectedItem
@@ -403,9 +495,11 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
         }`}
       >
         <Search
-          className={`w-5 h-5 shrink-0 ${
+          className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} shrink-0 ${
             isInvalid
               ? 'text-red-600 dark:text-red-400'
+              : isDuplicate
+              ? 'text-amber-600 dark:text-amber-400'
               : 'text-th-muted'
           }`}
         />
@@ -423,24 +517,37 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
             updateIsOpen(true);
 
             // Check if user typed an exact match to a database item
-            const exact = lineItems.find(
-              (i) => i.name.toLowerCase().trim() === val.toLowerCase().trim()
-            );
-            if (exact) {
-              onSelectItem(exact.id, exact.name);
+            const valTrimmed = val.toLowerCase().trim();
+            const exactMatches = valTrimmed
+              ? lineItems.filter((i) => i.name.toLowerCase().trim() === valTrimmed)
+              : [];
+            if (exactMatches.length === 1) {
+              onSelectItem(exactMatches[0].id, exactMatches[0].name);
+            } else if (exactMatches.length > 1) {
+              if (selectedItemId && !exactMatches.some((m) => m.id === selectedItemId)) {
+                onSelectItem('');
+              }
             } else if (selectedItemId) {
               onSelectItem('');
             }
           }}
           onFocus={(e) => {
             updateIsOpen(true);
+            if (isClearingRef.current) {
+              isClearingRef.current = false;
+              return;
+            }
             if (!searchQuery && (selectedItem?.name || rawText)) {
               setSearchQuery(selectedItem ? selectedItem.name : (rawText || ''));
             }
             e.target.select();
           }}
           onBlur={(e) => {
-            if (containerRef.current?.contains(e.relatedTarget as Node)) {
+            const related = e.relatedTarget as Node | null;
+            if (
+              containerRef.current?.contains(related) ||
+              dropdownRef.current?.contains(related)
+            ) {
               return;
             }
             if (searchQuery.trim() && !selectedItem) {
@@ -449,7 +556,10 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className={`flex-1 bg-transparent border-none outline-hidden text-base min-w-0 font-bold ${
+          title={inputHoverTitle}
+          className={`flex-1 bg-transparent border-none outline-hidden min-w-0 font-bold ${
+            compact ? 'text-sm sm:text-base' : 'text-base'
+          } ${
             isInvalid
               ? 'text-red-950 dark:text-red-100 placeholder:text-red-500 dark:placeholder:text-red-400'
               : 'text-th-text placeholder:text-th-muted'
@@ -469,6 +579,18 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
             </span>
           )}
 
+          {selectedItem && duplicateNormalizedNames.has(normalizeAlphanumeric(selectedItem.name)) && (
+            <span
+              className="text-[11px] font-bold text-th-accent-text bg-th-subtle px-2 py-0.5 rounded-md border border-th-border-strong truncate max-w-[150px]"
+              title={[selectedItem.subsection, selectedItem.group, selectedItem.subgroup]
+                .filter((p): p is string => Boolean(p))
+                .filter((p, idx, arr) => idx === 0 || p.toLowerCase() !== arr[idx - 1]?.toLowerCase())
+                .join(' → ')}
+            >
+              {selectedItem.subgroup || selectedItem.group || selectedItem.subsection}
+            </span>
+          )}
+
           {selectedItem?.isContra && (
             <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
               Contra
@@ -479,10 +601,11 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
             <button
               type="button"
               onClick={handleClear}
-              className="text-th-muted hover:text-th-text p-1.5 rounded-md cursor-pointer"
+              className="text-th-muted hover:text-th-text min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg hover:bg-th-subtle cursor-pointer"
               title="Clear line item"
+              aria-label="Clear line item"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           )}
 
@@ -498,7 +621,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                   ? 'Switch dropdown to open downward'
                   : 'Switch dropdown to open upward (on top)'
               }
-              className="text-xs text-th-text hover:text-th-accent-text px-2 py-1 rounded-md border border-th-border-strong cursor-pointer font-bold"
+              aria-label={
+                computedPlacement === 'top'
+                  ? 'Switch dropdown to open downward'
+                  : 'Switch dropdown to open upward'
+              }
+              className="text-xs text-th-text hover:text-th-accent-text min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg border border-th-border-strong hover:bg-th-subtle cursor-pointer font-bold"
             >
               {computedPlacement === 'top' ? (
                 <ArrowUp className="w-4 h-4" />
@@ -517,106 +645,187 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
       </div>
 
       {/* Dropdown Menu - Navigable with Up/Down Arrow Keys and Selectable with Tab/Enter */}
-      {isOpen && (
-        <div
-          ref={listRef}
-          className={`absolute z-[100] left-0 right-0 max-h-84 overflow-y-auto bg-th-surface border-2 border-th-border-strong rounded-2xl shadow-2xl divide-y divide-th-border animate-in fade-in zoom-in-95 duration-100 ${
-            computedPlacement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-          }`}
-        >
-          {/* Header Info & Helper Bar */}
-          <div className="p-3 bg-th-table-head text-sm font-semibold text-th-table-head-fg border-b border-th-border flex items-center justify-between sticky top-0 z-10">
-            <div className="flex items-center gap-2">
-              {searchQuery ? (
-                <span>
-                  Matches for: <strong className="underline font-bold">&quot;{searchQuery}&quot;</strong>
-                </span>
+      {isOpen && (() => {
+        const dropdownContent = (
+          <div
+            ref={dropdownRef}
+            style={
+              usePortal && portalCoords
+                ? {
+                    position: 'fixed',
+                    top: portalCoords.top,
+                    left: portalCoords.left,
+                    width: portalCoords.width,
+                    maxHeight: portalCoords.maxHeight,
+                    transform: computedPlacement === 'top' ? 'translateY(-100%)' : undefined,
+                  }
+                : undefined
+            }
+            className={`${
+              usePortal
+                ? 'z-[140]'
+                : `absolute z-[100] left-0 min-w-full sm:min-w-[420px] max-w-[min(92vw,580px)] max-h-[28rem] ${
+                    computedPlacement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                  }`
+            } flex flex-col overflow-hidden bg-th-surface border-2 border-th-border-strong rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-100`}
+          >
+            {/* Non-scrolling Header Info & Helper Bar */}
+            <div className="px-3.5 py-2.5 bg-th-table-head text-sm font-semibold text-th-table-head-fg border-b border-th-border flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                {searchQuery ? (
+                  <span className="truncate">
+                    Matches for: <strong className="underline font-bold">&quot;{searchQuery}&quot;</strong>
+                  </span>
+                ) : (
+                  <span className="font-bold truncate">
+                    Official Line Items Database
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-bold text-th-table-head-fg shrink-0">
+                <span className="hidden sm:inline">Use ↑ ↓ then Tab / Enter to select</span>
+                <span className="bg-white/15 px-2 py-0.5 rounded-md border border-white/25">({filteredItems.length})</span>
+              </div>
+            </div>
+
+            {/* Scrollable Options List */}
+            <div ref={listRef} className="flex-1 overflow-y-auto divide-y divide-th-border">
+              {filteredItems.length === 0 ? (
+                <div className="p-6 text-center text-base text-th-muted space-y-1.5">
+                  <div className="font-semibold">No official line item found matching &quot;{searchQuery}&quot;.</div>
+                  <div className="text-sm font-bold text-th-muted">
+                    Accounts not in the database will be highlighted in red.
+                  </div>
+                </div>
               ) : (
-                <span className="font-bold">
-                  Official Line Items Database
-                </span>
+                Object.entries(groupedItems).map(([groupTitle, items]) => (
+                  <div key={groupTitle} className="p-2.5">
+                    <div className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-th-text bg-th-subtle rounded-lg">
+                      {groupTitle}
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      {items.map((item) => {
+                        const isSelected = selectedItemId === item.id;
+                        const itemIndex = itemIndexMap.get(item.id) ?? -1;
+                        const isHighlighted = highlightedIndex === itemIndex;
+                        const optionTitle = `${item.name}\n${item.subsection} › ${item.group}${
+                          item.subgroup ? ` › ${item.subgroup}` : ''
+                        }${item.isContra ? ' [Contra]' : ''}`;
+
+                        return (
+                          <button
+                            key={item.id}
+                            ref={(el) => {
+                              if (itemIndex >= 0) {
+                                itemButtonRefs.current[itemIndex] = el;
+                              }
+                            }}
+                            type="button"
+                            title={optionTitle}
+                            onMouseEnter={() => {
+                              if (itemIndex >= 0) {
+                                lastHighlightSourceRef.current = 'mouse';
+                                setHighlightedIndex(itemIndex);
+                              }
+                            }}
+                            onClick={() => handleSelect(item.id, true)}
+                            className={`w-full text-left px-4 py-3 rounded-xl text-base font-semibold flex items-start justify-between gap-2.5 transition-colors cursor-pointer ${
+                              isHighlighted
+                                ? 'bg-th-subtle text-th-text ring-2 ring-th-border-strong'
+                                : isSelected
+                                ? 'bg-th-subtle text-th-text'
+                                : 'text-th-text hover:bg-th-subtle'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 flex items-start gap-2">
+                              <CornerDownLeft
+                                className={`w-4 h-4 text-th-text shrink-0 mt-1 transition-opacity ${
+                                  isHighlighted ? 'opacity-100' : 'opacity-0'
+                                }`}
+                                aria-hidden="true"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="whitespace-normal break-words leading-snug">
+                                  {item.name}
+                                </div>
+                                {(() => {
+                                  const isSharedName = duplicateNormalizedNames.has(
+                                    normalizeAlphanumeric(item.name)
+                                  );
+                                  if (!isSharedName && !item.subgroup) return null;
+                                  const hierarchyParts = [
+                                    item.subsection,
+                                    item.group,
+                                    item.subgroup,
+                                  ]
+                                    .filter((part): part is string => Boolean(part))
+                                    .filter(
+                                      (part, idx, arr) =>
+                                        idx === 0 || part.toLowerCase() !== arr[idx - 1]?.toLowerCase()
+                                    );
+                                  return (
+                                    <div className="text-xs sm:text-sm font-medium text-th-muted mt-0.5 whitespace-normal break-words leading-snug">
+                                      {isSharedName
+                                        ? hierarchyParts.join(' › ')
+                                        : item.name.toLowerCase() === item.subgroup!.toLowerCase() ||
+                                          item.name.toLowerCase() === item.group.toLowerCase()
+                                        ? `Individual Line Item · ${item.group}`
+                                        : item.subgroup}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                              {item.isContra && (
+                                <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
+                                  Contra
+                                </span>
+                              )}
+                              {isSelected && (
+                                <Check className="w-5 h-5 text-th-text" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-xs font-bold text-th-table-head-fg">
-              <span className="hidden sm:inline">Use ↑ ↓ then Tab / Enter to select</span>
-              <span className="bg-white/15 px-2 py-0.5 rounded-md border border-white/25">({filteredItems.length})</span>
-            </div>
+            {/* Live Hovered / Highlighted Item Preview Footer (constant height to prevent list wobble on hover) */}
+            {activePreviewItem && (
+              <div className="px-4 py-3 h-[112px] bg-th-subtle border-t-2 border-th-border-strong shrink-0 flex flex-col justify-center overflow-hidden">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-th-muted">
+                    Hovered / Highlighted Item
+                  </span>
+                  {activePreviewItem.isContra && (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-th-surface border border-th-border-strong text-th-text">
+                      Contra Account
+                    </span>
+                  )}
+                </div>
+                <div className="text-base font-bold text-th-text leading-snug line-clamp-2 mt-0.5">
+                  {activePreviewItem.name}
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-th-muted leading-snug line-clamp-1 mt-0.5">
+                  {activePreviewItem.subsection} › {activePreviewItem.group}
+                  {activePreviewItem.subgroup ? ` › ${activePreviewItem.subgroup}` : ''}
+                </div>
+              </div>
+            )}
           </div>
+        );
 
-          {filteredItems.length === 0 ? (
-            <div className="p-6 text-center text-base text-th-muted space-y-1.5">
-              <div className="font-semibold">No official line item found matching "{searchQuery}".</div>
-              <div className="text-sm font-bold text-th-muted">
-                Accounts not in the database will be highlighted in red.
-              </div>
-            </div>
-          ) : (
-            Object.entries(groupedItems).map(([groupTitle, items]) => (
-              <div key={groupTitle} className="p-2.5">
-                <div className="px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-th-text bg-th-subtle rounded-lg">
-                  {groupTitle}
-                </div>
-                <div className="mt-1.5 space-y-1">
-                  {items.map((item) => {
-                    const isSelected = selectedItemId === item.id;
-                    const itemIndex = itemIndexMap.get(item.id) ?? -1;
-                    const isHighlighted = highlightedIndex === itemIndex;
-
-                    return (
-                      <button
-                        key={item.id}
-                        ref={(el) => {
-                          if (itemIndex >= 0) {
-                            itemButtonRefs.current[itemIndex] = el;
-                          }
-                        }}
-                        type="button"
-                        onMouseEnter={() => {
-                          if (itemIndex >= 0) {
-                            setHighlightedIndex(itemIndex);
-                          }
-                        }}
-                        onClick={() => handleSelect(item.id, true)}
-                        className={`w-full text-left px-3.5 py-2.5 rounded-xl text-base flex items-center justify-between transition-colors cursor-pointer ${
-                          isHighlighted
-                            ? 'bg-th-subtle text-th-text font-bold ring-2 ring-th-border-strong'
-                            : isSelected
-                            ? 'bg-th-subtle text-th-text font-bold'
-                            : 'text-th-text hover:bg-th-subtle font-semibold'
-                        }`}
-                      >
-                        <div className="truncate mr-2 flex items-center gap-2.5">
-                          {isHighlighted && (
-                            <CornerDownLeft className="w-4 h-4 text-th-text shrink-0" />
-                          )}
-                          <span className="truncate">{item.name}</span>
-                          {item.subgroup && (
-                            <span className="text-sm font-medium text-th-muted ml-1 truncate">
-                              ({item.subgroup})
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {item.isContra && (
-                            <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
-                              Contra
-                            </span>
-                          )}
-                          {isSelected && (
-                            <Check className="w-5 h-5 text-th-text" />
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+        return usePortal && typeof document !== 'undefined'
+          ? createPortal(dropdownContent, document.body)
+          : dropdownContent;
+      })()}
     </div>
   );
 };
