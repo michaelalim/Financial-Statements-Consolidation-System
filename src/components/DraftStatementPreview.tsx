@@ -6,7 +6,18 @@ import { calculateReport, CalculatedReport } from '../utils/calculations';
 import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary, NetAssetsSummary } from '../utils/netAssetsCalculations';
 import { formatAccounting } from '../utils/formatters';
-import { Eye, EyeOff, FileText, Search, X, AlertTriangle, ArrowLeft } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  FileText,
+  Search,
+  X,
+  AlertTriangle,
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  Info,
+} from 'lucide-react';
 
 interface DraftStatementPreviewProps {
   statementType?: StatementType;
@@ -73,6 +84,16 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
   const [isCondensed, setIsCondensed] = useState(false);
   const [hideZeroRows, setHideZeroRows] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedDraftAggIds, setExpandedDraftAggIds] = useState<Record<string, boolean>>({});
+
+  const aggBreakdownRowByItemId = useMemo(() => {
+    const map: Record<string, ExtractedPositionRow> = {};
+    rows.forEach((r) => {
+      if (!r.included || !r.selectedLineItemId || !r.aggregationBreakdown) return;
+      map[r.selectedLineItemId] = r;
+    });
+    return map;
+  }, [rows]);
 
   const itemById = useMemo(() => {
     const map = new Map<string, LineItemDefinition>();
@@ -257,6 +278,87 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
     subgroups: { [subgroup: string]: LineItemDefinition[] },
     report: CalculatedReport
   ): number => Object.values(subgroups).reduce((sum, items) => sum + sumItemsNet(items, report), 0);
+
+  const renderDraftAggNotice = (itemId: string) => {
+    const sourceRow = aggBreakdownRowByItemId[itemId];
+    const breakdown = sourceRow?.aggregationBreakdown;
+    if (!sourceRow || !breakdown) return null;
+
+    const activeCols = orderedColumns.filter(({ colKey }) => {
+      const val = reportsByColKey[colKey]?.values[itemId] || 0;
+      return Math.abs(val) >= 0.005 || breakdown.children.some((c) => Math.abs(c.amountsByTargetId[colKey] || 0) >= 0.005);
+    });
+    if (activeCols.length === 0) return null;
+
+    const anyWasAggregated = activeCols.some(({ colKey }) => breakdown.wasAggregatedByTargetId[colKey]);
+    const isExpanded = Boolean(expandedDraftAggIds[itemId]);
+
+    return (
+      <div className="no-print mt-1 mb-1 font-sans">
+        <button
+          type="button"
+          onClick={() =>
+            setExpandedDraftAggIds((prev) => ({
+              ...prev,
+              [itemId]: !prev[itemId],
+            }))
+          }
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-900 text-[11px] font-bold transition-colors cursor-pointer"
+        >
+          <Info className="w-3 h-3 text-sky-700 shrink-0" />
+          <span>
+            {anyWasAggregated
+              ? 'Notice: This account has been aggregated'
+              : 'Notice: Parent matched sub-items'}
+          </span>
+          <span className="text-sky-700 font-semibold">
+            ({breakdown.children.length} sub-item{breakdown.children.length === 1 ? '' : 's'})
+          </span>
+          {isExpanded ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+        </button>
+
+        {isExpanded && (
+          <div className="mt-1.5 p-2.5 rounded-lg bg-sky-50/95 border border-sky-300 text-sky-950 text-[11px] max-w-xl space-y-2 shadow-2xs">
+            {activeCols.map(({ colKey, label }) => {
+              const parentOrig = breakdown.parentOwnAmountsByTargetId[colKey] || 0;
+              const resolvedAmt = sourceRow.amountsByTargetId[colKey] || 0;
+              const wasAgg = Boolean(breakdown.wasAggregatedByTargetId[colKey]);
+              return (
+                <div key={`draft-${itemId}-${colKey}`} className="space-y-0.5">
+                  <div className="flex items-center justify-between gap-2 font-bold text-sky-900">
+                    <span>
+                      {label} — {wasAgg ? 'Aggregated Total' : 'Parent Verified'}
+                    </span>
+                    <span className="font-mono">₱ {formatAccounting(resolvedAmt)}</span>
+                  </div>
+                  {(!breakdown.isParentless || Math.abs(parentOrig) >= 0.005) && (
+                    <div className="flex items-center justify-between gap-2 text-slate-700 pl-2">
+                      <span>Original father account row</span>
+                      <span className="font-mono font-semibold">₱ {formatAccounting(parentOrig)}</span>
+                    </div>
+                  )}
+                  {breakdown.children.map((child, idx) => (
+                    <div
+                      key={`draft-${itemId}-${colKey}-${idx}`}
+                      className="flex items-center justify-between gap-2 text-slate-700 pl-2"
+                    >
+                      <span className="truncate">
+                        {child.cleanedName || child.rawName}
+                        {child.excelRowNumber ? ` (Row ${child.excelRowNumber})` : ''}
+                      </span>
+                      <span className="font-mono font-semibold shrink-0">
+                        ₱ {formatAccounting(child.amountsByTargetId[colKey] || 0)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderItemsWithNetValue = (
     items: LineItemDefinition[],
@@ -662,25 +764,31 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                         <React.Fragment key={`${groupName}__${sgName}`}>
                           {isSubheader && (
                             <tr>
-                              <td
-                                colSpan={detailedColSpan}
-                                className={`pt-1.5 pb-0.5 ${subgroupIndentClass} font-semibold`}
-                              >
+                              <td className={`pt-1.5 pb-0.5 ${subgroupIndentClass} font-semibold`}>
                                 {sgName}
                               </td>
+                              {orderedColumns.map(({ colKey }) => (
+                                <td
+                                  key={colKey}
+                                  className="pt-1.5 pb-0.5 px-4 text-right font-semibold tabular-nums"
+                                >
+                                  {formatFSNumber(sumSection(sgItems, colKey))}
+                                </td>
+                              ))}
                             </tr>
                           )}
                           {visSgItems.map((item) => (
                             <tr key={item.id}>
                               <td
-                                className={`py-0.5 ${
+                                className={`py-0.5 align-top ${
                                   isSubheader ? leafIndentClassWithSub : leafIndentClassNoSub
                                 }`}
                               >
-                                {item.name}
+                                <div>{item.name}</div>
+                                {renderDraftAggNotice(item.id)}
                               </td>
                               {orderedColumns.map(({ colKey }) => (
-                                <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                <td key={colKey} className="py-0.5 px-4 text-right tabular-nums align-top">
                                   {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
                                 </td>
                               ))}
@@ -832,9 +940,14 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                         {trFromItems.some(isItemVisible) && (
                           <>
                             <tr>
-                              <td colSpan={detailedColSpan} className="pt-2 pb-1 pl-6 font-bold">
+                              <td className="pt-2 pb-1 pl-6 font-bold">
                                 Financial Assistance/Subsidy from NGAs, LGUs, GOCCs
                               </td>
+                              {orderedColumns.map(({ colKey }) => (
+                                <td key={colKey} className="pt-2 pb-1 px-4 text-right font-bold tabular-nums">
+                                  {formatFSNumber(sumSection(trFromItems, colKey))}
+                                </td>
+                              ))}
                             </tr>
                             {!isCondensed &&
                               trFromItems.filter(isItemVisible).map((item) => (
@@ -866,9 +979,14 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                         {trToItems.some(isItemVisible) && (
                           <>
                             <tr>
-                              <td colSpan={detailedColSpan} className="pt-2 pb-1 pl-6 font-bold">
+                              <td className="pt-2 pb-1 pl-6 font-bold">
                                 Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs
                               </td>
+                              {orderedColumns.map(({ colKey }) => (
+                                <td key={colKey} className="pt-2 pb-1 px-4 text-right font-bold tabular-nums">
+                                  {formatFSNumber(sumSection(trToItems, colKey))}
+                                </td>
+                              ))}
                             </tr>
                             {!isCondensed &&
                               trToItems.filter(isItemVisible).map((item) => (
@@ -931,15 +1049,24 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                             return (
                               <React.Fragment key={`nonop-${sgName}`}>
                                 <tr>
-                                  <td colSpan={detailedColSpan} className="pt-1 pb-0.5 pl-12 font-semibold">
-                                    {sgName}
-                                  </td>
+                                  <td className="pt-1 pb-0.5 pl-12 font-semibold">{sgName}</td>
+                                  {orderedColumns.map(({ colKey }) => (
+                                    <td
+                                      key={colKey}
+                                      className="pt-1 pb-0.5 px-4 text-right font-semibold tabular-nums"
+                                    >
+                                      {formatFSNumber(sumSection(sgItems, colKey))}
+                                    </td>
+                                  ))}
                                 </tr>
                                 {visSg.map((item) => (
                                   <tr key={item.id}>
-                                    <td className="py-0.5 pl-18">{item.name}</td>
+                                    <td className="py-0.5 pl-18 align-top">
+                                      <div>{item.name}</div>
+                                      {renderDraftAggNotice(item.id)}
+                                    </td>
                                     {orderedColumns.map(({ colKey }) => (
-                                      <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                      <td key={colKey} className="py-0.5 px-4 text-right tabular-nums align-top">
                                         {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
                                       </td>
                                     ))}
@@ -1055,8 +1182,12 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                 return Array.from(map.entries());
               };
 
-              const visibleInflows = inflowItems.filter(isItemVisible);
-              const visibleOutflows = outflowItems.filter(isItemVisible);
+              const isDirectLeafGroup = (grp: string, grpItems: LineItemDefinition[]) =>
+                grp === 'Financing Cash Inflows' ||
+                grp === 'Financing Cash Outflows' ||
+                (grpItems.length === 1 &&
+                  grpItems[0].name === grp &&
+                  grp !== 'Replenishment of Negotiated MDS Checks (for BTr)');
 
               return (
                 <React.Fragment key={sectionKey}>
@@ -1072,32 +1203,15 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                       Cash Inflows
                     </td>
                   </tr>
-                  {visibleInflows.length === 0 && hideZeroRows ? (
-                    <tr>
-                      <td className="py-0.5 pl-14 italic text-gray-600">No cash inflows recorded</td>
-                      {orderedColumns.map(({ colKey }) => (
-                        <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
-                          -
-                        </td>
-                      ))}
-                    </tr>
-                  ) : (
-                    groupItems(inflowItems).map(([grp, grpItems]) => {
-                      const vis = grpItems.filter(isItemVisible);
-                      if (hideZeroRows && vis.length === 0) return null;
+                  {groupItems(inflowItems).map(([grp, grpItems]) => {
+                    const vis = grpItems.filter(isItemVisible);
+                    if (hideZeroRows && vis.length === 0) return null;
+                    if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`${sectionKey}-in-${grp}`}>
-                          {grp !== 'Financing Cash Inflows' && (
-                            <tr>
-                              <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
-                              {orderedColumns.map(({ colKey }) => (
-                                <td key={colKey} className="pt-1.5 pb-0.5 px-4"></td>
-                              ))}
-                            </tr>
-                          )}
                           {vis.map((item) => (
                             <tr key={item.id}>
-                              <td className="py-0.5 pl-20">{item.name}</td>
+                              <td className="py-0.5 pl-12">{item.name}</td>
                               {orderedColumns.map(({ colKey }) => (
                                 <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
                                   {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
@@ -1107,8 +1221,33 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                           ))}
                         </React.Fragment>
                       );
-                    })
-                  )}
+                    }
+                    return (
+                      <React.Fragment key={`${sectionKey}-in-${grp}`}>
+                        <tr>
+                          <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
+                          {orderedColumns.map(({ colKey }) => (
+                            <td
+                              key={colKey}
+                              className="pt-1.5 pb-0.5 px-4 text-right font-semibold tabular-nums"
+                            >
+                              {formatFSNumber(sumItemsNet(grpItems, reportsByColKey[colKey]))}
+                            </td>
+                          ))}
+                        </tr>
+                        {vis.map((item) => (
+                          <tr key={item.id}>
+                            <td className="py-0.5 pl-20">{item.name}</td>
+                            {orderedColumns.map(({ colKey }) => (
+                              <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                   <tr>
                     <td className="pt-1.5 pb-2 pl-6 font-bold">Total Cash Inflows</td>
                     {orderedColumns.map(({ colKey }) => (
@@ -1127,32 +1266,15 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                       Cash Outflows
                     </td>
                   </tr>
-                  {visibleOutflows.length === 0 && hideZeroRows ? (
-                    <tr>
-                      <td className="py-0.5 pl-14 italic text-gray-600">No cash outflows recorded</td>
-                      {orderedColumns.map(({ colKey }) => (
-                        <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
-                          -
-                        </td>
-                      ))}
-                    </tr>
-                  ) : (
-                    groupItems(outflowItems).map(([grp, grpItems]) => {
-                      const vis = grpItems.filter(isItemVisible);
-                      if (hideZeroRows && vis.length === 0) return null;
+                  {groupItems(outflowItems).map(([grp, grpItems]) => {
+                    const vis = grpItems.filter(isItemVisible);
+                    if (hideZeroRows && vis.length === 0) return null;
+                    if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`${sectionKey}-out-${grp}`}>
-                          {grp !== 'Financing Cash Outflows' && (
-                            <tr>
-                              <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
-                              {orderedColumns.map(({ colKey }) => (
-                                <td key={colKey} className="pt-1.5 pb-0.5 px-4"></td>
-                              ))}
-                            </tr>
-                          )}
                           {vis.map((item) => (
                             <tr key={item.id}>
-                              <td className="py-0.5 pl-20">{item.name}</td>
+                              <td className="py-0.5 pl-12">{item.name}</td>
                               {orderedColumns.map(({ colKey }) => (
                                 <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
                                   {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
@@ -1162,8 +1284,33 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                           ))}
                         </React.Fragment>
                       );
-                    })
-                  )}
+                    }
+                    return (
+                      <React.Fragment key={`${sectionKey}-out-${grp}`}>
+                        <tr>
+                          <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
+                          {orderedColumns.map(({ colKey }) => (
+                            <td
+                              key={colKey}
+                              className="pt-1.5 pb-0.5 px-4 text-right font-semibold tabular-nums"
+                            >
+                              {formatFSNumber(sumItemsNet(grpItems, reportsByColKey[colKey]))}
+                            </td>
+                          ))}
+                        </tr>
+                        {vis.map((item) => (
+                          <tr key={item.id}>
+                            <td className="py-0.5 pl-20">{item.name}</td>
+                            {orderedColumns.map(({ colKey }) => (
+                              <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                   <tr>
                     <td className="pt-1.5 pb-2 pl-6 font-bold">Total Cash Outflows</td>
                     {orderedColumns.map(({ colKey }) => (
@@ -1191,6 +1338,10 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                 </React.Fragment>
               );
             };
+
+            const hasAnyFx = orderedColumns.some(
+              ({ colKey }) => Math.abs(cashFlowsSummaryByColKey[colKey]?.fxEffects || 0) >= 0.005
+            );
 
             return (
               <div className="overflow-x-auto">
@@ -1253,6 +1404,18 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                         </td>
                       ))}
                     </tr>
+                    {(hasAnyFx || !hideZeroRows) && (
+                      <tr>
+                        <td className="py-1 pl-6">
+                          Effects of Exchange Rate Changes on Cash and Cash Equivalents
+                        </td>
+                        {orderedColumns.map(({ colKey }) => (
+                          <td key={colKey} className="py-1 px-4 text-right tabular-nums">
+                            {formatFSNumber(cashFlowsSummaryByColKey[colKey].fxEffects)}
+                          </td>
+                        ))}
+                      </tr>
+                    )}
                     <tr>
                       <td className="py-1 font-bold">Cash and Cash Equivalents, January 1</td>
                       {orderedColumns.map(({ colKey }) => (

@@ -67,3 +67,30 @@ export interface GroupSubtotal {
   contra: number;
   net: number;
 }
+
+export interface AggregatedComponentItem {
+  label: string;
+  amount: number;
+  isParentOriginal?: boolean;
+  excelRowNumber?: number;
+}
+
+export interface DivisionAggregationRecord {
+  lineItemId: string;
+  lineItemName: string;
+  wasAggregated: boolean; // true when parent + sub-items were summed; false if parent already matched children total
+  totalAmount: number;
+  parentOriginalAmount: number;
+  components: AggregatedComponentItem[];
+  sourceFileName?: string;
+  updatedAt: string;
+}
+
+// Map: Year -> DivisionId -> LineItemId -> DivisionAggregationRecord
+export type AggregationMetadataStore = {
+  [year: string]: {
+    [divisionId: string]: {
+      [lineItemId: string]: DivisionAggregationRecord;
+    };
+  };
+};

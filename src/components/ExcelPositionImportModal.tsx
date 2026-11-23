@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { LineItemDefinition, FinancialDataStore, StatementType } from '../types/fs';
+import {
+  LineItemDefinition,
+  FinancialDataStore,
+  StatementType,
+  DivisionAggregationRecord,
+} from '../types/fs';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
 import { formatAccounting } from '../utils/formatters';
@@ -20,6 +25,7 @@ import {
   normalizeAliasKey,
   matchLineItemWithRecommendation,
   compareTargetAgainstDatabase,
+  buildDivisionAggregationRecordForTarget,
 } from '../utils/excelImportPosition';
 import {
   FileSpreadsheet,
@@ -62,10 +68,19 @@ interface ExcelPositionImportModalProps {
   onClose: () => void;
   onStageToBatch: (
     targetYear: string,
-    entries: { lineItemId: string; rawText: string; amount: string }[]
+    entries: {
+      lineItemId: string;
+      rawText: string;
+      amount: string;
+      aggregationRecord?: DivisionAggregationRecord;
+    }[]
   ) => void;
   onSaveYearsDirectly: (
-    savesByYear: { year: string; entries: { lineItemId: string; amount: number }[] }[],
+    savesByYear: {
+      year: string;
+      entries: { lineItemId: string; amount: number }[];
+      aggregationRecords?: DivisionAggregationRecord[];
+    }[],
     unmatchedToStage?: { lineItemId: string; rawText: string; amount: string }[]
   ) => void;
 }
@@ -105,6 +120,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const [step3ViewMode, setStep3ViewMode] = useState<'accounts' | 'draft'>('accounts');
   const [verifyOnlyOverrides, setVerifyOnlyOverrides] = useState<Record<string, boolean>>({});
   const [collapsedDiffTargets, setCollapsedDiffTargets] = useState<Record<string, boolean>>({});
+  const [expandedAggRowIds, setExpandedAggRowIds] = useState<Record<string, boolean>>({});
 
   const comparativeYear = getComparativeYear(selectedYear);
 
@@ -1046,7 +1062,12 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
   const handleStageTargetToBatch = (target: YearImportColumnTarget) => {
     commitRememberedAliases();
-    const stagedPayload: { lineItemId: string; rawText: string; amount: string }[] = [];
+    const stagedPayload: {
+      lineItemId: string;
+      rawText: string;
+      amount: string;
+      aggregationRecord?: DivisionAggregationRecord;
+    }[] = [];
 
     rows.forEach((r) => {
       if (!r.included) return;
@@ -1054,10 +1075,15 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
       const itemDef = r.selectedLineItemId ? itemById.get(r.selectedLineItemId) : undefined;
       const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
+      const aggRec =
+        itemDef && r.aggregationBreakdown
+          ? buildDivisionAggregationRecordForTarget(r, target.id, itemDef, fileName) || undefined
+          : undefined;
       stagedPayload.push({
         lineItemId: itemDef ? itemDef.id : '',
         rawText: itemDef ? itemDef.name : r.rawName,
         amount: formatAccounting(normalizedAmt),
+        aggregationRecord: aggRec,
       });
     });
 
@@ -1070,13 +1096,18 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
     // Only save targets not marked as "Verify Only" (e.g., skip saving previously uploaded comparative years)
     const savesMap = new Map<string, Map<string, number>>();
+    const aggRecordsMap = new Map<string, Map<string, DivisionAggregationRecord>>();
     const unmatchedForActiveYear: { lineItemId: string; rawText: string; amount: string }[] = [];
 
     targetsToSave.forEach((target) => {
       if (!savesMap.has(target.targetYear)) {
         savesMap.set(target.targetYear, new Map<string, number>());
       }
+      if (!aggRecordsMap.has(target.targetYear)) {
+        aggRecordsMap.set(target.targetYear, new Map<string, DivisionAggregationRecord>());
+      }
       const yearMap = savesMap.get(target.targetYear)!;
+      const yearAggMap = aggRecordsMap.get(target.targetYear)!;
 
       rows.forEach((r) => {
         if (!r.included) return;
@@ -1087,6 +1118,17 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
           const itemDef = itemById.get(r.selectedLineItemId);
           const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
           yearMap.set(r.selectedLineItemId, normalizedAmt);
+          if (itemDef && r.aggregationBreakdown) {
+            const aggRec = buildDivisionAggregationRecordForTarget(
+              r,
+              target.id,
+              itemDef,
+              fileName
+            );
+            if (aggRec) {
+              yearAggMap.set(r.selectedLineItemId, aggRec);
+            }
+          }
         } else if (target.targetYear === selectedYear) {
           unmatchedForActiveYear.push({
             lineItemId: '',
@@ -1104,6 +1146,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
           lineItemId,
           amount,
         })),
+        aggregationRecords: Array.from(aggRecordsMap.get(year)?.values() || []),
       }))
       .filter((s) => s.entries.length > 0);
 
@@ -2442,6 +2485,91 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                                 <span>Matched automatically</span>
                               </div>
                             )}
+                          {row.included && row.aggregationNote && (
+                            <div className="rounded-lg bg-sky-500/10 border border-sky-500/30 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-sky-900 dark:text-sky-200 space-y-1.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span>{row.aggregationNote}</span>
+                                {row.aggregationBreakdown && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedAggRowIds((prev) => ({
+                                        ...prev,
+                                        [row.rowId]: !prev[row.rowId],
+                                      }))
+                                    }
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-950 dark:text-sky-100 text-xs font-bold cursor-pointer shrink-0 transition-colors"
+                                  >
+                                    {expandedAggRowIds[row.rowId] ? (
+                                      <>
+                                        <ChevronUp className="w-3.5 h-3.5" />
+                                        <span>Hide Breakdown</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="w-3.5 h-3.5" />
+                                        <span>
+                                          View Breakdown ({row.aggregationBreakdown.children.length} sub-items)
+                                        </span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              {expandedAggRowIds[row.rowId] && row.aggregationBreakdown && (
+                                <div className="mt-1.5 pt-1.5 border-t border-sky-500/25 space-y-1 text-xs font-medium">
+                                  {!row.aggregationBreakdown.isParentless && (
+                                    <div className="flex items-center justify-between gap-2 text-sky-950 dark:text-sky-100">
+                                      <span className="truncate">
+                                        {row.aggregationBreakdown.parentRawName} (Original parent)
+                                      </span>
+                                      <span className="font-mono font-bold tabular-nums shrink-0">
+                                        {enabledTargets
+                                          .map((t) => {
+                                            const v =
+                                              row.aggregationBreakdown!.parentOwnAmountsByTargetId[
+                                                t.id
+                                              ];
+                                            return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                                          })
+                                          .join(' · ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {row.aggregationBreakdown.children.map((ch, cIdx) => (
+                                    <div
+                                      key={`${row.rowId}-ch-${cIdx}`}
+                                      className="flex items-center justify-between gap-2 text-sky-900/90 dark:text-sky-200/90 pl-2"
+                                    >
+                                      <span className="truncate">
+                                        {ch.excelRowNumber ? `Row ${ch.excelRowNumber}: ` : ''}
+                                        {ch.cleanedName || ch.rawName}
+                                      </span>
+                                      <span className="font-mono tabular-nums shrink-0">
+                                        {enabledTargets
+                                          .map((t) => {
+                                            const v = ch.amountsByTargetId[t.id];
+                                            return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                                          })
+                                          .join(' · ')}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-sky-500/25 font-bold text-sky-950 dark:text-sky-100">
+                                    <span>Resolved Total</span>
+                                    <span className="font-mono tabular-nums shrink-0">
+                                      {enabledTargets
+                                        .map((t) => {
+                                          const v = row.amountsByTargetId[t.id];
+                                          return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                                        })
+                                        .join(' · ')}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {isDup && dupInfo && (
                             <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2.5 py-1.5 text-sm font-bold text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-x-2 gap-y-1">
                               <span className="inline-flex items-center gap-1.5">

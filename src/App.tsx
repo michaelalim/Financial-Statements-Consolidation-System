@@ -4,7 +4,13 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Division, LineItemDefinition, FinancialDataStore } from './types/fs';
+import {
+  Division,
+  LineItemDefinition,
+  FinancialDataStore,
+  DivisionAggregationRecord,
+  AggregationMetadataStore,
+} from './types/fs';
 import { INITIAL_DIVISIONS } from './data/defaultDivisions';
 import {
   DEFAULT_LINE_ITEMS,
@@ -37,8 +43,10 @@ const LOCAL_STORAGE_KEY_LINE_ITEMS = 'deped_ro6_line_items_v1';
 const LOCAL_STORAGE_KEY_ILOILO_MIGRATED = 'deped_ro6_transferred_iloilo_2024_v1';
 const LOCAL_STORAGE_KEY_SEMI_EXP_MIGRATED = 'deped_ro6_semi_exp_inventory_consumption_v1';
 const LOCAL_STORAGE_KEY_PERF_LINE_ITEMS_V2 = 'deped_ro6_perf_line_items_hierarchy_v2';
+const LOCAL_STORAGE_KEY_CASH_FLOWS_LINE_ITEMS_V2 = 'deped_ro6_cash_flows_line_items_v2';
 const LOCAL_STORAGE_KEY_SELECTED_DIVISION = 'deped_ro6_selected_division_v1';
 const LOCAL_STORAGE_KEY_SELECTED_YEAR = 'deped_ro6_selected_year_v1';
+const LOCAL_STORAGE_KEY_AGGREGATION_METADATA = 'deped_ro6_aggregation_metadata_v1';
 const SESSION_STORAGE_KEY_YEAR = 'deped_ro6_selected_year_session_v1';
 
 export default function App() {
@@ -188,6 +196,18 @@ export default function App() {
           }
         }
 
+        if (localStorage.getItem(LOCAL_STORAGE_KEY_CASH_FLOWS_LINE_ITEMS_V2) !== 'true') {
+          const nonCashFlowsOrCustom = parsed.filter(
+            (i) => i.statementType !== 'cash_flows' || i.isCustom === true
+          );
+          parsed = [...nonCashFlowsOrCustom, ...DEFAULT_CASH_FLOWS_LINE_ITEMS];
+          try {
+            localStorage.setItem(LOCAL_STORAGE_KEY_CASH_FLOWS_LINE_ITEMS_V2, 'true');
+          } catch {
+            // ignore storage write error
+          }
+        }
+
         const existingIds = new Set(parsed.map((i) => i.id));
         const missingPerf = DEFAULT_PERFORMANCE_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingCashFlows = DEFAULT_CASH_FLOWS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
@@ -245,6 +265,20 @@ export default function App() {
     return currentStore;
   });
 
+  // Persisted Aggregation Metadata Store (for aggregated umbrella accounts per division & fiscal year)
+  const [aggregationStore, setAggregationStore] = useState<AggregationMetadataStore>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_AGGREGATION_METADATA);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return typeof parsed === 'object' && parsed !== null ? parsed : {};
+      }
+    } catch {
+      // fallback
+    }
+    return {};
+  });
+
   // Transfer notification toast state
   const [transferToastMessage, setTransferToastMessage] = useState<string | null>(null);
 
@@ -277,6 +311,17 @@ export default function App() {
       console.error(e);
     }
   }, [dataStore]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LOCAL_STORAGE_KEY_AGGREGATION_METADATA,
+        JSON.stringify(aggregationStore)
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }, [aggregationStore]);
 
   useEffect(() => {
     if (divisions.length > 0 && !divisions.some((d) => d.id === selectedDivisionId)) {
@@ -316,7 +361,8 @@ export default function App() {
   const handleSaveBatchAmounts = (
     year: string,
     divisionId: string,
-    entries: { lineItemId: string; amount: number }[]
+    entries: { lineItemId: string; amount: number }[],
+    aggregationRecords?: DivisionAggregationRecord[]
   ) => {
     setDataStore((prev) => {
       const yearCopy = { ...(prev[year] || {}) };
@@ -324,6 +370,38 @@ export default function App() {
       entries.forEach(({ lineItemId, amount }) => {
         divCopy[lineItemId] = amount;
       });
+      yearCopy[divisionId] = divCopy;
+      return {
+        ...prev,
+        [year]: yearCopy,
+      };
+    });
+
+    setAggregationStore((prev) => {
+      const yearCopy = { ...(prev[year] || {}) };
+      const divCopy = { ...(yearCopy[divisionId] || {}) };
+      let changed = false;
+
+      const recordsById = new Map<string, DivisionAggregationRecord>();
+      (aggregationRecords || []).forEach((rec) => {
+        recordsById.set(rec.lineItemId, rec);
+      });
+
+      recordsById.forEach((rec, id) => {
+        divCopy[id] = rec;
+        changed = true;
+      });
+
+      entries.forEach(({ lineItemId, amount }) => {
+        if (recordsById.has(lineItemId)) return;
+        const existingRec = divCopy[lineItemId];
+        if (existingRec && (Math.abs(amount) < 0.005 || Math.abs(existingRec.totalAmount - amount) >= 0.01)) {
+          delete divCopy[lineItemId];
+          changed = true;
+        }
+      });
+
+      if (!changed) return prev;
       yearCopy[divisionId] = divCopy;
       return {
         ...prev,
@@ -344,11 +422,33 @@ export default function App() {
         [year]: yearCopy,
       };
     });
+
+    setAggregationStore((prev) => {
+      if (!prev[year]?.[divisionId]?.[lineItemId]) return prev;
+      const yearCopy = { ...prev[year] };
+      const divCopy = { ...yearCopy[divisionId] };
+      delete divCopy[lineItemId];
+      yearCopy[divisionId] = divCopy;
+      return {
+        ...prev,
+        [year]: yearCopy,
+      };
+    });
   };
 
   const handleDeleteAllDivisionAmounts = (year: string, divisionId: string) => {
     setDataStore((prev) => {
       if (!prev[year] || !prev[year][divisionId]) return prev;
+      const yearCopy = { ...prev[year] };
+      delete yearCopy[divisionId];
+      return {
+        ...prev,
+        [year]: yearCopy,
+      };
+    });
+
+    setAggregationStore((prev) => {
+      if (!prev[year]?.[divisionId]) return prev;
       const yearCopy = { ...prev[year] };
       delete yearCopy[divisionId];
       return {
@@ -450,6 +550,32 @@ export default function App() {
         };
       }
 
+      return nextStore;
+    });
+
+    setAggregationStore((prev) => {
+      const fromEntries = prev[fromYear]?.[fromDivId];
+      if (!fromEntries && mode !== 'move') return prev;
+      const toYearCopy = { ...(prev[toYear] || {}) };
+      const toDivCopy = { ...(toYearCopy[toDivId] || {}) };
+      if (fromEntries) {
+        toYearCopy[toDivId] = {
+          ...toDivCopy,
+          ...fromEntries,
+        };
+      }
+      let nextStore: AggregationMetadataStore = {
+        ...prev,
+        [toYear]: toYearCopy,
+      };
+      if (mode === 'move' && prev[fromYear]?.[fromDivId]) {
+        const fromYearCopy = { ...(nextStore[fromYear] || {}) };
+        delete fromYearCopy[fromDivId];
+        nextStore = {
+          ...nextStore,
+          [fromYear]: fromYearCopy,
+        };
+      }
       return nextStore;
     });
 
@@ -728,6 +854,7 @@ export default function App() {
                 selectedDivisionId={selectedDivisionId}
                 selectedYear={selectedYear}
                 dataStore={dataStore}
+                aggregationStore={aggregationStore}
                 onSaveBatchAmounts={handleSaveBatchAmounts}
                 onDeleteAmount={handleDeleteAmount}
                 onDeleteAllDivisionAmounts={handleDeleteAllDivisionAmounts}
@@ -746,6 +873,7 @@ export default function App() {
                 selectedYear={selectedYear}
                 onSelectYear={setSelectedYear}
                 dataStore={dataStore}
+                aggregationStore={aggregationStore}
               />
             )}
 

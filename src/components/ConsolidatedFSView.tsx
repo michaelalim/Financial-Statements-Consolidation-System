@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { calculateReport, getExcludedAggregatedDepDivisionIds } from '../utils/calculations';
+import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
+import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
 import { formatAccounting } from '../utils/formatters';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
@@ -73,6 +75,27 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     return calculateReport(lineItems, dataStore, priorYear);
   }, [lineItems, dataStore, priorYear]);
 
+  // Statement-scoped line items
+  const statementLineItems = useMemo(() => {
+    return lineItems.filter((item) => (item.statementType || 'position') === selectedStatement);
+  }, [lineItems, selectedStatement]);
+
+  const cashFlowsSummaryCurrent = useMemo(() => {
+    return calculateCashFlowsSummary(lineItems, dataStore, selectedYear);
+  }, [lineItems, dataStore, selectedYear]);
+
+  const cashFlowsSummaryPrior = useMemo(() => {
+    return calculateCashFlowsSummary(lineItems, dataStore, priorYear);
+  }, [lineItems, dataStore, priorYear]);
+
+  const netAssetsSummaryCurrent = useMemo(() => {
+    return calculateNetAssetsSummary(dataStore, selectedYear);
+  }, [dataStore, selectedYear]);
+
+  const netAssetsSummaryPrior = useMemo(() => {
+    return calculateNetAssetsSummary(dataStore, priorYear);
+  }, [dataStore, priorYear]);
+
   const excludedDivisionIdsCurr = useMemo(
     () => new Set(getExcludedAggregatedDepDivisionIds(dataStore, selectedYear)),
     [dataStore, selectedYear]
@@ -138,17 +161,19 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     };
 
     const tree: Tree = {};
-    lineItems.forEach((item) => {
-      const sub = item.subsection;
-      const grp = item.group;
-      const subgrp = item.subgroup || 'General';
+    lineItems
+      .filter((item) => (item.statementType || 'position') === 'position')
+      .forEach((item) => {
+        const sub = item.subsection;
+        const grp = item.group;
+        const subgrp = item.subgroup || 'General';
 
-      if (!tree[sub]) tree[sub] = {};
-      if (!tree[sub][grp]) tree[sub][grp] = {};
-      if (!tree[sub][grp][subgrp]) tree[sub][grp][subgrp] = [];
+        if (!tree[sub]) tree[sub] = {};
+        if (!tree[sub][grp]) tree[sub][grp] = {};
+        if (!tree[sub][grp][subgrp]) tree[sub][grp][subgrp] = [];
 
-      tree[sub][grp][subgrp].push(item);
-    });
+        tree[sub][grp][subgrp].push(item);
+      });
 
     return tree;
   }, [lineItems]);
@@ -274,18 +299,36 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
   };
 
   const handleExportCSV = () => {
+    const stmtTitle =
+      selectedStatement === 'cash_flows'
+        ? 'Consolidated Detailed Statement of Cash Flows'
+        : selectedStatement === 'performance'
+        ? isCondensed
+          ? 'Consolidated Condensed Statement of Financial Performance'
+          : 'Consolidated Statement of Financial Performance'
+        : selectedStatement === 'net_assets'
+        ? 'Consolidated Statement of Changes in Net Assets/Equity'
+        : isCondensed
+        ? 'Consolidated Statement of Financial Position'
+        : 'Consolidated Detailed Statement of Financial Position';
+
+    const dateLabel =
+      selectedStatement === 'position'
+        ? `As at December 31, ${selectedYear}${showComparative ? ` and ${priorYear}` : ''}`
+        : `For the Year Ended December 31, ${selectedYear}${showComparative ? ` and ${priorYear}` : ''}`;
+
     const rows = [
       ['Department of Education'],
       ['Regional Office No. VI'],
-      ['Consolidated Detailed Statement of Financial Position'],
+      [stmtTitle],
       ['All Funds'],
-      [`As at December 31, ${selectedYear}${showComparative ? ` and ${priorYear}` : ''}`],
+      [dateLabel],
       [`Consolidating ${divisionsReportingCount} Divisions`],
       [],
       ['Account Title', `Consolidated (${selectedYear})`, ...(showComparative ? [`Consolidated (${priorYear})`] : [])],
     ];
 
-    lineItems.forEach((item) => {
+    statementLineItems.forEach((item) => {
       if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return;
       const curr = reportCurrent.values[item.id] || 0;
       const prior = reportPrior.values[item.id] || 0;
@@ -302,7 +345,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `DepEd_Region_VI_Consolidated_FS_${selectedYear}.csv`);
+    link.setAttribute('download', `DepEd_Region_VI_Consolidated_${selectedStatement.toUpperCase()}_${selectedYear}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -418,18 +461,20 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsCondensed(!isCondensed)}
-              className={`min-h-[40px] px-4 py-2 text-sm font-bold rounded-xl border-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                isCondensed
-                  ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs'
-                  : 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
-              }`}
-              title="Toggle between Detailed and Condensed Statement of Financial Position"
-            >
-              {isCondensed ? 'Condensed FS' : 'Detailed FS'}
-            </button>
+            {(selectedStatement === 'position' || selectedStatement === 'performance') && (
+              <button
+                type="button"
+                onClick={() => setIsCondensed(!isCondensed)}
+                className={`min-h-[40px] px-4 py-2 text-sm font-bold rounded-xl border-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  isCondensed
+                    ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong shadow-xs'
+                    : 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+                }`}
+                title="Toggle between Detailed and Condensed statement view"
+              >
+                {isCondensed ? 'Condensed FS' : 'Detailed FS'}
+              </button>
+            )}
 
             <button
               type="button"
@@ -447,17 +492,51 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
 
           <div className="hidden sm:flex items-center gap-2 text-sm text-th-text font-bold shrink-0">
             <span className="text-th-muted">Jump:</span>
-            <a href="#assets-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Assets</a>
-            <span className="text-th-muted" aria-hidden="true">·</span>
-            <a href="#liabilities-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Liabilities</a>
-            <span className="text-th-muted" aria-hidden="true">·</span>
-            <a href="#equity-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Equity</a>
+            {selectedStatement === 'position' && (
+              <>
+                <a href="#assets-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Assets</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#liabilities-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Liabilities</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#equity-section-c" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Equity</a>
+              </>
+            )}
+            {selectedStatement === 'performance' && (
+              <>
+                <a href="#con-revenue-section" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Revenue</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-expenses-section" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Operating Expenses</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-surplus-section" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Surplus/(Deficit)</a>
+              </>
+            )}
+            {selectedStatement === 'cash_flows' && (
+              <>
+                <a href="#con-cf-operating" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Operating</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-cf-investing" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Investing</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-cf-financing" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Financing</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-cf-reconciliation" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Cash Reconciliation</a>
+              </>
+            )}
+            {selectedStatement === 'net_assets' && (
+              <>
+                <a href="#con-na-beginning" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Restated Balance</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-na-changes" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Calendar Year Changes</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-na-ending" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Ending Balance</a>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* Notice Banner for Divisions Excluded Due to Aggregated Accumulated Depreciation */}
-      {(excludedDivisionsCurr.length > 0 || (showComparative && excludedDivisionsPrior.length > 0)) && (
+      {selectedStatement === 'position' &&
+        (excludedDivisionsCurr.length > 0 || (showComparative && excludedDivisionsPrior.length > 0)) && (
         <div className="p-4 bg-red-50 dark:bg-red-950/50 border-2 border-red-300 dark:border-red-800 rounded-2xl flex items-start gap-3 text-red-900 dark:text-red-100 no-print">
           <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
           <div className="text-sm leading-relaxed space-y-1">
@@ -483,13 +562,15 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
       )}
 
       {/* Prominent Balance Check Widget */}
-      <div className="no-print">
-        <AccountingBalanceCheck
-          totalAssets={reportCurrent.totalAssets}
-          totalLiabilities={reportCurrent.totalLiabilities}
-          totalEquity={reportCurrent.totalEquity}
-        />
-      </div>
+      {selectedStatement === 'position' && (
+        <div className="no-print">
+          <AccountingBalanceCheck
+            totalAssets={reportCurrent.totalAssets}
+            totalLiabilities={reportCurrent.totalLiabilities}
+            totalEquity={reportCurrent.totalEquity}
+          />
+        </div>
+      )}
 
       {/* Official Financial Statement Document Container */}
       <div className="bg-white text-black p-8 sm:p-14 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug print:p-0">
@@ -499,9 +580,11 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
           <div className="text-base font-bold">Regional Office No. VI</div>
           <div className="text-base font-bold">
             {selectedStatement === 'cash_flows'
-              ? 'Consolidated Statement of Cash Flows'
+              ? 'Consolidated Detailed Statement of Cash Flows'
               : selectedStatement === 'performance'
-              ? 'Consolidated Statement of Financial Performance'
+              ? isCondensed
+                ? 'Consolidated Condensed Statement of Financial Performance'
+                : 'Consolidated Statement of Financial Performance'
               : selectedStatement === 'net_assets'
               ? 'Consolidated Statement of Changes in Net Assets/Equity'
               : isCondensed
@@ -519,7 +602,917 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
         </div>
 
         {/* Statement Body Table */}
-        {isCondensed ? (
+        {selectedStatement === 'performance' ? (
+          (() => {
+            const perfItems = statementLineItems;
+            const revItems = perfItems.filter((i) => i.section === 'REVENUE');
+            const expItems = perfItems.filter((i) => i.section === 'EXPENSES');
+            const trItems = perfItems.filter((i) => i.section === 'TRANSFERS');
+            const trFromItems = trItems.filter((i) => !i.group.startsWith('Less:'));
+            const trToItems = trItems.filter((i) => i.group.startsWith('Less:'));
+            const nonOpItems = perfItems.filter((i) => i.section === 'NON_OPERATING');
+            const lossItems = perfItems.filter((i) => i.section === 'LOSSES');
+
+            const groupByKey = (
+              items: LineItemDefinition[],
+              getKey: (it: LineItemDefinition) => string
+            ) => {
+              const map = new Map<string, LineItemDefinition[]>();
+              items.forEach((it) => {
+                const key = getKey(it);
+                const list = map.get(key) || [];
+                list.push(it);
+                map.set(key, list);
+              });
+              return Array.from(map.entries());
+            };
+
+            const revGroups = groupByKey(revItems, (i) => i.group);
+            const expGroups = groupByKey(expItems, (i) => i.group);
+            const nonOpSubgroups = groupByKey(nonOpItems, (i) => i.subgroup || i.group);
+
+            const sumLossAbs = (report: ReturnType<typeof calculateReport>) =>
+              lossItems.reduce((sum, item) => sum + Math.abs(report.values[item.id] || 0), 0);
+
+            const getNetTransfers = (report: ReturnType<typeof calculateReport>) =>
+              sumItemsNet(trFromItems, report) - sumItemsNet(trToItems, report);
+
+            const perfColSpan = showComparative ? 3 : 2;
+
+            const renderPerfGroupWithSubgroups = (
+              groupName: string,
+              items: LineItemDefinition[],
+              groupIndentClass: string,
+              subgroupIndentClass: string,
+              leafIndentClassNoSub: string,
+              leafIndentClassWithSub: string,
+              showGroupTotalRow: boolean
+            ) => {
+              const subgroups = groupByKey(items, (i) => i.subgroup || '__NONE__');
+              const hasRealSubgroups = subgroups.some(([sg]) => sg !== '__NONE__');
+
+              return (
+                <React.Fragment key={groupName}>
+                  <tr>
+                    <td
+                      className={`pt-2 pb-1 ${groupIndentClass} ${
+                        isCondensed ? 'font-normal' : 'font-bold'
+                      }`}
+                    >
+                      {groupName}
+                    </td>
+                    <td
+                      className={`pt-2 pb-1 px-4 text-right tabular-nums ${
+                        isCondensed ? 'font-normal' : 'font-bold'
+                      }`}
+                    >
+                      {isCondensed || !hasRealSubgroups
+                        ? formatFSNumber(sumItemsNet(items, reportCurrent))
+                        : ''}
+                    </td>
+                    {showComparative && (
+                      <td
+                        className={`pt-2 pb-1 px-4 text-right tabular-nums ${
+                          isCondensed ? 'font-normal' : 'font-bold'
+                        }`}
+                      >
+                        {isCondensed || !hasRealSubgroups
+                          ? formatFSNumber(sumItemsNet(items, reportPrior))
+                          : ''}
+                      </td>
+                    )}
+                  </tr>
+
+                  {!isCondensed &&
+                    subgroups.map(([sgName, sgItems]) => {
+                      const visSgItems = sgItems.filter(isItemVisible);
+                      if (hideZeroRows && visSgItems.length === 0) return null;
+                      const isSubheader = sgName !== '__NONE__';
+                      return (
+                        <React.Fragment key={`${groupName}__${sgName}`}>
+                          {isSubheader && (
+                            <tr>
+                              <td
+                                colSpan={perfColSpan}
+                                className={`pt-1.5 pb-0.5 ${subgroupIndentClass} font-semibold`}
+                              >
+                                {sgName}
+                              </td>
+                            </tr>
+                          )}
+                          {visSgItems.map((item) => (
+                            <tr key={item.id}>
+                              <td
+                                className={`py-0.5 align-top ${
+                                  isSubheader ? leafIndentClassWithSub : leafIndentClassNoSub
+                                }`}
+                              >
+                                {item.name}
+                              </td>
+                              <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                          {isSubheader && (
+                            <tr>
+                              <td className={`pt-1 pb-2 ${leafIndentClassWithSub} font-bold`}>
+                                Total {sgName}
+                              </td>
+                              <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                {formatFSNumber(sumItemsNet(sgItems, reportCurrent))}
+                              </td>
+                              {showComparative && (
+                                <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                  {formatFSNumber(sumItemsNet(sgItems, reportPrior))}
+                                </td>
+                              )}
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                  {!isCondensed && showGroupTotalRow && (
+                    <tr>
+                      <td className={`pt-1 pb-2.5 ${groupIndentClass} font-bold`}>
+                        Total {groupName}
+                      </td>
+                      <td className="pt-1 pb-2.5 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(sumItemsNet(items, reportCurrent))}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-1 pb-2.5 px-4 text-right font-bold tabular-nums border-t border-black">
+                          {formatFSNumber(sumItemsNet(items, reportPrior))}
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            };
+
+            const hasAnyTransfers = trItems.some(isItemVisible);
+            const hasAnyNonOp = nonOpItems.some(isItemVisible);
+            const hasAnyLosses = lossItems.some(isItemVisible);
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="py-1.5 pr-4 text-left font-bold uppercase w-3/5 text-sm">
+                        Account Title
+                      </th>
+                      <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                        {selectedYear}
+                      </th>
+                      {showComparative && (
+                        <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                          {priorYear}
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr id="con-revenue-section">
+                      <td colSpan={perfColSpan} className="pt-4 pb-1 font-bold uppercase">
+                        Revenue
+                      </td>
+                    </tr>
+                    {revGroups.map(([groupName, items]) => {
+                      const visibleGroupItems = items.filter(isItemVisible);
+                      if (hideZeroRows && visibleGroupItems.length === 0) return null;
+                      return renderPerfGroupWithSubgroups(
+                        groupName,
+                        items,
+                        'pl-6',
+                        'pl-12',
+                        'pl-12',
+                        'pl-18',
+                        groupName === 'Miscellaneous Income' || groupName === 'Gains'
+                      );
+                    })}
+                    <tr>
+                      <td className="pt-2 pb-3 pl-4 font-bold">Total Revenue</td>
+                      <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(sumItemsNet(revItems, reportCurrent))}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                          {formatFSNumber(sumItemsNet(revItems, reportPrior))}
+                        </td>
+                      )}
+                    </tr>
+
+                    <tr id="con-expenses-section">
+                      <td colSpan={perfColSpan} className="pt-3 pb-1 font-bold uppercase">
+                        Less: Current Operating Expenses
+                      </td>
+                    </tr>
+                    {expGroups.map(([groupName, items]) => {
+                      const visibleGroupItems = items.filter(isItemVisible);
+                      if (hideZeroRows && visibleGroupItems.length === 0) return null;
+                      return renderPerfGroupWithSubgroups(
+                        groupName,
+                        items,
+                        'pl-6',
+                        'pl-12',
+                        'pl-12',
+                        'pl-18',
+                        true
+                      );
+                    })}
+                    <tr>
+                      <td className="pt-2 pb-3 pl-4 font-bold">Current Operating Expenses</td>
+                      <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(sumItemsNet(expItems, reportCurrent))}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                          {formatFSNumber(sumItemsNet(expItems, reportPrior))}
+                        </td>
+                      )}
+                    </tr>
+
+                    <tr id="con-surplus-section">
+                      <td className="pt-2 pb-3 font-bold">Surplus/(Deficit) from Current Operations</td>
+                      <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(
+                          sumItemsNet(revItems, reportCurrent) - sumItemsNet(expItems, reportCurrent)
+                        )}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                          {formatFSNumber(
+                            sumItemsNet(revItems, reportPrior) - sumItemsNet(expItems, reportPrior)
+                          )}
+                        </td>
+                      )}
+                    </tr>
+
+                    {hasAnyTransfers && (
+                      <>
+                        {trFromItems.some(isItemVisible) && (
+                          <>
+                            <tr>
+                              <td colSpan={perfColSpan} className="pt-2 pb-1 pl-6 font-bold">
+                                Financial Assistance/Subsidy from NGAs, LGUs, GOCCs
+                              </td>
+                            </tr>
+                            {!isCondensed &&
+                              trFromItems.filter(isItemVisible).map((item) => (
+                                <tr key={item.id}>
+                                  <td className="py-0.5 pl-12 align-top">{item.name}</td>
+                                  <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                    {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                                  </td>
+                                  {showComparative && (
+                                    <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                      {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            <tr>
+                              <td className="pt-1 pb-2 pl-12 font-bold">
+                                Total Financial Assistance/Subsidy from NGAs, LGUs, GOCCs
+                              </td>
+                              <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                {formatFSNumber(sumItemsNet(trFromItems, reportCurrent))}
+                              </td>
+                              {showComparative && (
+                                <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                  {formatFSNumber(sumItemsNet(trFromItems, reportPrior))}
+                                </td>
+                              )}
+                            </tr>
+                          </>
+                        )}
+
+                        {trToItems.some(isItemVisible) && (
+                          <>
+                            <tr>
+                              <td colSpan={perfColSpan} className="pt-2 pb-1 pl-6 font-bold">
+                                Less: Financial Assistance/Subsidy to NGAs, LGUs, GOCCs
+                              </td>
+                            </tr>
+                            {!isCondensed &&
+                              trToItems.filter(isItemVisible).map((item) => (
+                                <tr key={item.id}>
+                                  <td className="py-0.5 pl-12 align-top">{item.name}</td>
+                                  <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                    {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                                  </td>
+                                  {showComparative && (
+                                    <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                      {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            <tr>
+                              <td className="pt-1 pb-2 pl-12 font-bold">
+                                Total Financial Assistance/Subsidy to NGAs, LGUs, GOCCs
+                              </td>
+                              <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                {formatFSNumber(sumItemsNet(trToItems, reportCurrent))}
+                              </td>
+                              {showComparative && (
+                                <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                  {formatFSNumber(sumItemsNet(trToItems, reportPrior))}
+                                </td>
+                              )}
+                            </tr>
+                          </>
+                        )}
+
+                        <tr>
+                          <td className="pt-1.5 pb-3 pl-6 font-bold">
+                            Net Financial Assistance/Subsidy
+                          </td>
+                          <td className="pt-1.5 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                            {formatFSNumber(getNetTransfers(reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="pt-1.5 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                              {formatFSNumber(getNetTransfers(reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      </>
+                    )}
+
+                    {hasAnyNonOp && (
+                      <>
+                        <tr>
+                          <td className="pt-2 pb-1 pl-6 font-bold">Other Non-Operating Income</td>
+                          <td className="pt-2 pb-1 px-4 text-right font-bold tabular-nums">
+                            {isCondensed ? formatFSNumber(sumItemsNet(nonOpItems, reportCurrent)) : ''}
+                          </td>
+                          {showComparative && (
+                            <td className="pt-2 pb-1 px-4 text-right font-bold tabular-nums">
+                              {isCondensed ? formatFSNumber(sumItemsNet(nonOpItems, reportPrior)) : ''}
+                            </td>
+                          )}
+                        </tr>
+                        {!isCondensed &&
+                          nonOpSubgroups.map(([sgName, sgItems]) => {
+                            const visSg = sgItems.filter(isItemVisible);
+                            if (hideZeroRows && visSg.length === 0) return null;
+                            return (
+                              <React.Fragment key={`con-nonop-${sgName}`}>
+                                <tr>
+                                  <td colSpan={perfColSpan} className="pt-1 pb-0.5 pl-12 font-semibold">
+                                    {sgName}
+                                  </td>
+                                </tr>
+                                {visSg.map((item) => (
+                                  <tr key={item.id}>
+                                    <td className="py-0.5 pl-18 align-top">{item.name}</td>
+                                    <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                      {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                                    </td>
+                                    {showComparative && (
+                                      <td className="py-0.5 px-4 text-right tabular-nums align-top">
+                                        {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                                <tr>
+                                  <td className="pt-1 pb-2 pl-18 font-bold">Total {sgName}</td>
+                                  <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                    {formatFSNumber(sumItemsNet(sgItems, reportCurrent))}
+                                  </td>
+                                  {showComparative && (
+                                    <td className="pt-1 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                                      {formatFSNumber(sumItemsNet(sgItems, reportPrior))}
+                                    </td>
+                                  )}
+                                </tr>
+                              </React.Fragment>
+                            );
+                          })}
+                        <tr>
+                          <td className="pt-1 pb-2.5 pl-6 font-bold">Total Non-Operating Income</td>
+                          <td className="pt-1 pb-2.5 px-4 text-right font-bold tabular-nums border-t border-black">
+                            {formatFSNumber(sumItemsNet(nonOpItems, reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="pt-1 pb-2.5 px-4 text-right font-bold tabular-nums border-t border-black">
+                              {formatFSNumber(sumItemsNet(nonOpItems, reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      </>
+                    )}
+
+                    {hasAnyLosses && (
+                      <>
+                        {lossItems.filter(isItemVisible).map((item) => (
+                          <tr key={item.id}>
+                            <td className="pt-1.5 pb-0.5 pl-6 font-bold align-top">{item.name}</td>
+                            <td className="pt-1.5 pb-0.5 px-4 text-right font-bold tabular-nums align-top">
+                              {reportCurrent.values[item.id]
+                                ? formatFSNumber(-Math.abs(reportCurrent.values[item.id]))
+                                : '-'}
+                            </td>
+                            {showComparative && (
+                              <td className="pt-1.5 pb-0.5 px-4 text-right font-bold tabular-nums align-top">
+                                {reportPrior.values[item.id]
+                                  ? formatFSNumber(-Math.abs(reportPrior.values[item.id]))
+                                  : '-'}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        <tr>
+                          <td className="pt-1.5 pb-2 pl-6 font-bold">
+                            Surplus/(Deficit) after Other Non-Operating Income &amp; Losses
+                          </td>
+                          <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                            {formatFSNumber(
+                              sumItemsNet(revItems, reportCurrent) -
+                                sumItemsNet(expItems, reportCurrent) +
+                                getNetTransfers(reportCurrent) +
+                                sumItemsNet(nonOpItems, reportCurrent) -
+                                sumLossAbs(reportCurrent)
+                            )}
+                          </td>
+                          {showComparative && (
+                            <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                              {formatFSNumber(
+                                sumItemsNet(revItems, reportPrior) -
+                                  sumItemsNet(expItems, reportPrior) +
+                                  getNetTransfers(reportPrior) +
+                                  sumItemsNet(nonOpItems, reportPrior) -
+                                  sumLossAbs(reportPrior)
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      </>
+                    )}
+
+                    <tr>
+                      <td className="pt-3 pb-3 font-bold uppercase">
+                        Surplus/(Deficit) for the Period
+                      </td>
+                      <td className="pt-3 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatFSNumber(
+                          sumItemsNet(revItems, reportCurrent) -
+                            sumItemsNet(expItems, reportCurrent) +
+                            getNetTransfers(reportCurrent) +
+                            sumItemsNet(nonOpItems, reportCurrent) -
+                            sumLossAbs(reportCurrent)
+                        )}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-3 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                          {formatFSNumber(
+                            sumItemsNet(revItems, reportPrior) -
+                              sumItemsNet(expItems, reportPrior) +
+                              getNetTransfers(reportPrior) +
+                              sumItemsNet(nonOpItems, reportPrior) -
+                              sumLossAbs(reportPrior)
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()
+        ) : selectedStatement === 'cash_flows' ? (
+          (() => {
+            const cfColSpan = showComparative ? 3 : 2;
+            const renderCashFlowActivity = (
+              anchorId: string,
+              title: string,
+              sectionKey: 'CASH_OPERATING' | 'CASH_INVESTING' | 'CASH_FINANCING',
+              netLabel: string,
+              getNet: (s: CashFlowsSummary) => number,
+              getInflowTotal: (s: CashFlowsSummary) => number,
+              getOutflowTotal: (s: CashFlowsSummary) => number
+            ) => {
+              const sectionItems = statementLineItems.filter((i) => i.section === sectionKey);
+              const inflowItems = sectionItems.filter((i) => i.subgroup !== 'Cash Outflows');
+              const outflowItems = sectionItems.filter((i) => i.subgroup === 'Cash Outflows');
+
+              const groupItems = (items: LineItemDefinition[]) => {
+                const map = new Map<string, LineItemDefinition[]>();
+                items.forEach((it) => {
+                  const list = map.get(it.group) || [];
+                  list.push(it);
+                  map.set(it.group, list);
+                });
+                return Array.from(map.entries());
+              };
+
+              const isDirectLeafGroup = (grp: string, grpItems: LineItemDefinition[]) =>
+                grp === 'Financing Cash Inflows' ||
+                grp === 'Financing Cash Outflows' ||
+                (grpItems.length === 1 &&
+                  grpItems[0].name === grp &&
+                  grp !== 'Replenishment of Negotiated MDS Checks (for BTr)');
+
+              return (
+                <React.Fragment key={sectionKey}>
+                  <tr id={anchorId}>
+                    <td colSpan={cfColSpan} className="pt-4 pb-1 font-bold">
+                      {title}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan={cfColSpan} className="pt-1 pb-0.5 pl-6 font-bold">
+                      Cash Inflows
+                    </td>
+                  </tr>
+                  {groupItems(inflowItems).map(([grp, grpItems]) => {
+                    const vis = grpItems.filter(isItemVisible);
+                    if (hideZeroRows && vis.length === 0) return null;
+                    if (isDirectLeafGroup(grp, grpItems)) {
+                      return (
+                        <React.Fragment key={`con-${sectionKey}-in-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    return (
+                      <React.Fragment key={`con-${sectionKey}-in-${grp}`}>
+                        <tr>
+                          <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
+                          <td className="pt-1.5 pb-0.5 px-4"></td>
+                          {showComparative && <td className="pt-1.5 pb-0.5 px-4"></td>}
+                        </tr>
+                        {vis.map((item) => (
+                          <tr key={item.id}>
+                            <td className="py-0.5 pl-20">{item.name}</td>
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                            </td>
+                            {showComparative && (
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportPrior.values[item.id] || 0)}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  <tr>
+                    <td className="pt-1.5 pb-2 pl-6 font-bold">Total Cash Inflows</td>
+                    <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                      {formatFSNumber(getInflowTotal(cashFlowsSummaryCurrent))}
+                    </td>
+                    {showComparative && (
+                      <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(getInflowTotal(cashFlowsSummaryPrior))}
+                      </td>
+                    )}
+                  </tr>
+
+                  <tr>
+                    <td colSpan={cfColSpan} className="pt-1 pb-0.5 pl-6 font-bold">
+                      Cash Outflows
+                    </td>
+                  </tr>
+                  {groupItems(outflowItems).map(([grp, grpItems]) => {
+                    const vis = grpItems.filter(isItemVisible);
+                    if (hideZeroRows && vis.length === 0) return null;
+                    if (isDirectLeafGroup(grp, grpItems)) {
+                      return (
+                        <React.Fragment key={`con-${sectionKey}-out-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    return (
+                      <React.Fragment key={`con-${sectionKey}-out-${grp}`}>
+                        <tr>
+                          <td className="pt-1.5 pb-0.5 pl-12 font-semibold">{grp}</td>
+                          <td className="pt-1.5 pb-0.5 px-4"></td>
+                          {showComparative && <td className="pt-1.5 pb-0.5 px-4"></td>}
+                        </tr>
+                        {vis.map((item) => (
+                          <tr key={item.id}>
+                            <td className="py-0.5 pl-20">{item.name}</td>
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                            </td>
+                            {showComparative && (
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportPrior.values[item.id] || 0)}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  <tr>
+                    <td className="pt-1.5 pb-2 pl-6 font-bold">Total Cash Outflows</td>
+                    <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                      {formatFSNumber(getOutflowTotal(cashFlowsSummaryCurrent))}
+                    </td>
+                    {showComparative && (
+                      <td className="pt-1.5 pb-2 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(getOutflowTotal(cashFlowsSummaryPrior))}
+                      </td>
+                    )}
+                  </tr>
+
+                  <tr>
+                    <td className="pt-2 pb-3 pl-4 font-bold">{netLabel}</td>
+                    <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                      {formatFSNumber(getNet(cashFlowsSummaryCurrent))}
+                    </td>
+                    {showComparative && (
+                      <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(getNet(cashFlowsSummaryPrior))}
+                      </td>
+                    )}
+                  </tr>
+                </React.Fragment>
+              );
+            };
+
+            const hasAnyFx =
+              Math.abs(cashFlowsSummaryCurrent.fxEffects) >= 0.005 ||
+              (showComparative && Math.abs(cashFlowsSummaryPrior.fxEffects) >= 0.005);
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="py-1.5 pr-4 text-left font-bold uppercase w-3/5 text-sm">
+                        Cash Flow Activity
+                      </th>
+                      <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                        {selectedYear}
+                      </th>
+                      {showComparative && (
+                        <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                          {priorYear}
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderCashFlowActivity(
+                      'con-cf-operating',
+                      'Cash Flows from Operating Activities',
+                      'CASH_OPERATING',
+                      'Net Cash Provided by (Used in) Operating Activities',
+                      (s) => s.netOperating,
+                      (s) => s.operatingInflows,
+                      (s) => s.operatingOutflows
+                    )}
+                    {renderCashFlowActivity(
+                      'con-cf-investing',
+                      'Cash Flows from Investing Activities',
+                      'CASH_INVESTING',
+                      'Net Cash Provided by (Used in) Investing Activities',
+                      (s) => s.netInvesting,
+                      (s) => s.investingInflows,
+                      (s) => s.investingOutflows
+                    )}
+                    {renderCashFlowActivity(
+                      'con-cf-financing',
+                      'Cash Flows from Financing Activities',
+                      'CASH_FINANCING',
+                      'Net Cash Provided by (Used in) Financing Activities',
+                      (s) => s.netFinancing,
+                      (s) => s.financingInflows,
+                      (s) => s.financingOutflows
+                    )}
+
+                    <tr id="con-cf-reconciliation">
+                      <td className="pt-4 pb-1 font-bold">
+                        Increase/(Decrease) in Cash and Cash Equivalents
+                      </td>
+                      <td className="pt-4 pb-1 px-4 text-right font-bold tabular-nums border-t border-black">
+                        {formatFSNumber(cashFlowsSummaryCurrent.netIncreaseDecrease)}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-4 pb-1 px-4 text-right font-bold tabular-nums border-t border-black">
+                          {formatFSNumber(cashFlowsSummaryPrior.netIncreaseDecrease)}
+                        </td>
+                      )}
+                    </tr>
+                    {(hasAnyFx || !hideZeroRows) && (
+                      <tr>
+                        <td className="py-1 pl-6">
+                          Effects of Exchange Rate Changes on Cash and Cash Equivalents
+                        </td>
+                        <td className="py-1 px-4 text-right tabular-nums">
+                          {formatFSNumber(cashFlowsSummaryCurrent.fxEffects)}
+                        </td>
+                        {showComparative && (
+                          <td className="py-1 px-4 text-right tabular-nums">
+                            {formatFSNumber(cashFlowsSummaryPrior.fxEffects)}
+                          </td>
+                        )}
+                      </tr>
+                    )}
+                    <tr>
+                      <td className="py-1 font-bold">Cash and Cash Equivalents, January 1</td>
+                      <td className="py-1 px-4 text-right font-bold tabular-nums">
+                        {formatFSNumber(cashFlowsSummaryCurrent.january1Cash)}
+                      </td>
+                      {showComparative && (
+                        <td className="py-1 px-4 text-right font-bold tabular-nums">
+                          {formatFSNumber(cashFlowsSummaryPrior.january1Cash)}
+                        </td>
+                      )}
+                    </tr>
+                    <tr>
+                      <td className="pt-1.5 pb-3 font-bold uppercase">
+                        Cash and Cash Equivalents, December 31
+                      </td>
+                      <td className="pt-1.5 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatFSNumber(cashFlowsSummaryCurrent.december31Cash)}
+                      </td>
+                      {showComparative && (
+                        <td className="pt-1.5 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                          {formatFSNumber(cashFlowsSummaryPrior.december31Cash)}
+                        </td>
+                      )}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()
+        ) : selectedStatement === 'net_assets' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr>
+                  <th className="py-1.5 pr-4 text-left font-bold uppercase w-3/5 text-sm">
+                    Particulars
+                  </th>
+                  <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                    {selectedYear}
+                  </th>
+                  {showComparative && (
+                    <th className="py-1.5 px-4 text-center font-bold w-1/5 text-sm border-b border-black">
+                      {priorYear}
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                <tr id="con-na-beginning">
+                  <td className="pt-4 pb-1 font-bold">Balance at January 1</td>
+                  <td className="pt-4 pb-1 px-4 text-right font-bold tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.january1Balance)}
+                  </td>
+                  {showComparative && (
+                    <td className="pt-4 pb-1 px-4 text-right font-bold tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.january1Balance)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-1 pl-6 font-bold">
+                    Add/(Deduct):
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">Changes in Accounting Policy</td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.changesInAccountingPolicy)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.changesInAccountingPolicy)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">Prior period errors</td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.priorPeriodErrors)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.priorPeriodErrors)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">Other Adjustments</td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.otherAdjustments)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.otherAdjustments)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td className="pt-2 pb-3 font-bold">Restated Balance</td>
+                  <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                    {formatFSNumber(netAssetsSummaryCurrent.restatedBalance)}
+                  </td>
+                  {showComparative && (
+                    <td className="pt-2 pb-3 px-4 text-right font-bold tabular-nums border-t border-black">
+                      {formatFSNumber(netAssetsSummaryPrior.restatedBalance)}
+                    </td>
+                  )}
+                </tr>
+
+                <tr id="con-na-changes">
+                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-1 font-bold">
+                    Changes in Net Assets/Equity for the Calendar Year
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">Surplus/(Deficit) for the Period</td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.surplusDeficitForPeriod)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.surplusDeficitForPeriod)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">
+                    Adjustment of net revenue recognized directly in net assets/equity
+                  </td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.netRevenueAdjustment)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.netRevenueAdjustment)}
+                    </td>
+                  )}
+                </tr>
+                <tr>
+                  <td className="py-0.5 pl-12">Others</td>
+                  <td className="py-0.5 px-4 text-right tabular-nums">
+                    {formatFSNumber(netAssetsSummaryCurrent.others)}
+                  </td>
+                  {showComparative && (
+                    <td className="py-0.5 px-4 text-right tabular-nums">
+                      {formatFSNumber(netAssetsSummaryPrior.others)}
+                    </td>
+                  )}
+                </tr>
+
+                <tr id="con-na-ending">
+                  <td className="pt-3 pb-3 font-bold uppercase">Balance at December 31</td>
+                  <td className="pt-3 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                    {formatFSNumber(netAssetsSummaryCurrent.december31Balance)}
+                  </td>
+                  {showComparative && (
+                    <td className="pt-3 pb-3 px-4 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                      {formatFSNumber(netAssetsSummaryPrior.december31Balance)}
+                    </td>
+                  )}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : isCondensed ? (
           <div className="overflow-x-auto">
             {(() => {
               const CONDENSED_NOTES: Record<string, string> = {

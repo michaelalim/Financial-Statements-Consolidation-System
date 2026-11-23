@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx';
-import { LineItemDefinition, StatementType } from '../types/fs';
+import {
+  LineItemDefinition,
+  StatementType,
+  DivisionAggregationRecord,
+  AggregatedComponentItem,
+} from '../types/fs';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { YEAR_RANGE } from './yearUtils';
 
@@ -38,6 +43,25 @@ export interface LineItemRecommendation {
   alternatives: { item: LineItemDefinition; confidence: number }[];
 }
 
+export interface AggregatedChildDetail {
+  rawName: string;
+  cleanedName: string;
+  excelRowNumber?: number;
+  amountsByTargetId: Record<string, number | null>;
+}
+
+export interface AggregationBreakdown {
+  parentItemId: string;
+  parentLabel: string;
+  parentRawName: string;
+  parentExcelRowNumber?: number;
+  isParentless: boolean;
+  parentOwnAmountsByTargetId: Record<string, number | null>;
+  resolvedAmountsByTargetId: Record<string, number | null>;
+  wasAggregatedByTargetId: Record<string, boolean>;
+  children: AggregatedChildDetail[];
+}
+
 export interface ExtractedPositionRow {
   rowId: string;
   excelRowNumber: number; // 1-based Excel row number
@@ -51,6 +75,8 @@ export interface ExtractedPositionRow {
   isSummaryRow: boolean;
   isLumpedDepreciation?: boolean;
   summaryReason?: string;
+  aggregationNote?: string;
+  aggregationBreakdown?: AggregationBreakdown;
   summaryKind?:
     | 'total_assets'
     | 'total_liabilities'
@@ -625,19 +651,503 @@ function diceBigramSimilarity(a: string, b: string): number {
   return (2 * matches) / (a.length - 1 + (b.length - 1));
 }
 
-const CONTRA_KEYWORDS = ['allowance', 'impairment', 'accumulated', 'depreciation', 'amortization', 'contra'];
+const CONTRA_KEYWORDS = ['impairment', 'accumulated', 'depreciation', 'amortization', 'contra'];
 
 function hasContraKeywords(tokens: string[]): boolean {
-  return tokens.some((t) => {
+  const hasCoreContra = tokens.some((t) => {
     const sing = singularizeToken(t);
     return CONTRA_KEYWORDS.some((kw) => t === kw || sing === kw || tokenSimilarity(t, kw) >= 0.72);
   });
+  if (hasCoreContra) return true;
+
+  // Treat "allowance" as contra only for contra-asset phrases (e.g. "Allowance for ..."),
+  // never for compensation/expense allowances like "Other Bonuses and Allowances" or "Special Hardship Allowance".
+  const hasAllowance = tokens.some(
+    (t) => singularizeToken(t) === 'allowance' || tokenSimilarity(t, 'allowance') >= 0.8
+  );
+  if (!hasAllowance) return false;
+
+  return (
+    tokens.includes('for') ||
+    tokens.some((t) =>
+      ['doubtful', 'bad', 'uncollectible', 'credit', 'decline', 'obsolescence'].some(
+        (kw) => tokenSimilarity(t, kw) >= 0.78
+      )
+    )
+  );
 }
 
 function hasSemiKeywords(tokens: string[]): boolean {
   return tokens.some(
     (t) => t === 'semi' || t === 'semiexpendable' || tokenSimilarity(t, 'semiexpendable') >= 0.78
   );
+}
+
+function hasRepairsKeywords(tokens: string[]): boolean {
+  const hasRepair = tokens.some(
+    (t) => t === 'repair' || t === 'repairs' || singularizeToken(t) === 'repair' || tokenSimilarity(t, 'repair') >= 0.78
+  );
+  if (hasRepair) return true;
+  const hasMaint = tokens.some((t) => t === 'maintenance' || tokenSimilarity(t, 'maintenance') >= 0.78);
+  const hasOperating = tokens.some((t) => t === 'operating' || tokenSimilarity(t, 'operating') >= 0.8);
+  return hasMaint && !hasOperating;
+}
+
+const SEMI_FURN_BOOKS_UMBRELLA_ID = 'perf-mooe-semi-furn-books';
+const SEMI_MACH_UMBRELLA_ID = 'perf-mooe-semi-mach';
+const OTHER_BONUSES_UMBRELLA_ID = 'perf-ps-other-bonuses';
+const DEPR_BLDG_UMBRELLA_ID = 'perf-nc-depr-bldg';
+const DEPR_MACH_UMBRELLA_ID = 'perf-nc-depr-mach';
+const DEPR_TRANS_UMBRELLA_ID = 'perf-nc-depr-trans';
+const DEPR_FURN_UMBRELLA_ID = 'perf-nc-depr-furn';
+const UMBRELLA_PARENT_IDS = new Set([
+  SEMI_FURN_BOOKS_UMBRELLA_ID,
+  SEMI_MACH_UMBRELLA_ID,
+  OTHER_BONUSES_UMBRELLA_ID,
+  DEPR_BLDG_UMBRELLA_ID,
+  DEPR_MACH_UMBRELLA_ID,
+  DEPR_TRANS_UMBRELLA_ID,
+  DEPR_FURN_UMBRELLA_ID,
+]);
+
+function isSemiMachUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasRepairsKeywords(tokens) || hasContraKeywords(tokens)) return false;
+  // Never confuse "Semi-Expendable Machinery and Equipment Expenses - Other Equipment" with the umbrella parent
+  if (tokens.includes('other')) return false;
+  const hasSemi = hasSemiKeywords(tokens);
+  const hasMach = tokens.some((t) => tokenSimilarity(t, 'machinery') >= 0.78);
+  const hasEquip = tokens.some((t) => tokenSimilarity(t, 'equipment') >= 0.78);
+  if (hasSemi && hasMach && hasEquip) return true;
+  return (
+    Math.max(
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Machinery and Equipment Expenses'),
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Machinery and Equipment')
+    ) >= 86
+  );
+}
+
+function classifySemiMachChildKind(rawText: string): string | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasRepairsKeywords(tokens) || hasContraKeywords(tokens)) return null;
+  if (
+    tokens.some(
+      (t) =>
+        t === 'furniture' ||
+        t === 'fixtures' ||
+        singularizeToken(t) === 'book' ||
+        t === 'textbook' ||
+        t === 'textbooks' ||
+        t === 'instructional' ||
+        t === 'supplies' ||
+        t === 'supply' ||
+        t === 'materials'
+    )
+  ) {
+    return null;
+  }
+
+  // Never consume the distinct official "Semi-Expendable Machinery and Equipment Expenses - Other Equipment"
+  if (hasSemiKeywords(tokens) && tokens.includes('other')) {
+    return null;
+  }
+  // Never consume the parent itself
+  if (isSemiMachUmbrellaLabel(cleaned)) return null;
+
+  const knownSubEquipmentTargets: [string, string[]][] = [
+    ['machinery', ['Machinery']],
+    ['office_equip', ['Office Equipment']],
+    ['ict_equip', ['Information and Communications Technology Equipment', 'ICT Equipment', 'Information Technology Equipment']],
+    ['comm_equip', ['Communications Equipment', 'Communication Equipment']],
+    ['disaster_equip', ['Disaster Response and Rescue Equipment']],
+    ['military_equip', ['Military, Police and Security Equipment', 'Military Police and Security Equipment']],
+    ['medical_equip', ['Medical Equipment']],
+    ['printing_equip', ['Printing Equipment']],
+    ['sports_equip', ['Sports Equipment']],
+    ['tech_sci_equip', ['Technical and Scientific Equipment']],
+    ['agri_equip', ['Agricultural and Forestry Equipment']],
+    ['marine_equip', ['Marine and Fishery Equipment']],
+    ['airport_equip', ['Airport Equipment']],
+    ['const_equip', ['Construction and Heavy Equipment', 'Construction Equipment']],
+    ['other_mach_equip', ['Other Machinery and Equipment']],
+  ];
+
+  for (const [kind, labels] of knownSubEquipmentTargets) {
+    for (const label of labels) {
+      if (scoreStringSimilarity(cleaned, label) >= 78) {
+        return kind;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function buildDivisionAggregationRecordForTarget(
+  row: ExtractedPositionRow,
+  targetId: string,
+  officialItem: LineItemDefinition,
+  sourceFileName?: string
+): DivisionAggregationRecord | null {
+  const bd = row.aggregationBreakdown;
+  if (!bd) return null;
+
+  const totalRaw = row.amountsByTargetId[targetId] ?? bd.resolvedAmountsByTargetId[targetId];
+  if (totalRaw === null || totalRaw === undefined || Math.abs(totalRaw) < 0.005) {
+    return null;
+  }
+
+  const totalAmount = officialItem.isContra ? Math.abs(totalRaw) : totalRaw;
+  const parentOwnRaw = bd.isParentless ? 0 : (bd.parentOwnAmountsByTargetId[targetId] ?? 0);
+  const wasAggregated = Boolean(bd.wasAggregatedByTargetId[targetId]);
+
+  const components: AggregatedComponentItem[] = [];
+  if (!bd.isParentless && Math.abs(parentOwnRaw) >= 0.005) {
+    components.push({
+      label: `${bd.parentRawName} (Original parent balance)`,
+      amount: Math.round(parentOwnRaw * 10000) / 10000,
+      isParentOriginal: true,
+      excelRowNumber: bd.parentExcelRowNumber,
+    });
+  }
+
+  bd.children.forEach((child) => {
+    const childVal = child.amountsByTargetId[targetId];
+    if (childVal !== null && childVal !== undefined && Math.abs(childVal) >= 0.005) {
+      components.push({
+        label: child.cleanedName || child.rawName,
+        amount: Math.round(childVal * 10000) / 10000,
+        isParentOriginal: false,
+        excelRowNumber: child.excelRowNumber,
+      });
+    }
+  });
+
+  if (components.length === 0) return null;
+
+  return {
+    lineItemId: officialItem.id,
+    lineItemName: officialItem.name,
+    wasAggregated,
+    totalAmount: Math.round(totalAmount * 10000) / 10000,
+    parentOriginalAmount: Math.round(parentOwnRaw * 10000) / 10000,
+    components,
+    sourceFileName,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function isSemiFurnBooksUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasRepairsKeywords(tokens) || hasContraKeywords(tokens)) return false;
+  const hasSemi = hasSemiKeywords(tokens);
+  const hasFurn = tokens.some((t) => tokenSimilarity(t, 'furniture') >= 0.76);
+  const hasBooks = tokens.some((t) => singularizeToken(t) === 'book' || tokenSimilarity(t, 'books') >= 0.82);
+  if (hasSemi && hasFurn && hasBooks) return true;
+  return (
+    Math.max(
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Furniture, Fixtures and Books Expenses'),
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Furniture, Fixtures and Books')
+    ) >= 84
+  );
+}
+
+function classifySemiFurnBooksChildKind(rawText: string): 'furniture' | 'books' | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasRepairsKeywords(tokens) || hasContraKeywords(tokens)) return null;
+  if (
+    tokens.some(
+      (t) =>
+        t === 'machinery' ||
+        t === 'equipment' ||
+        t === 'building' ||
+        t === 'buildings' ||
+        t === 'land' ||
+        t === 'office' ||
+        t === 'textbook' ||
+        t === 'textbooks' ||
+        t === 'instructional' ||
+        t === 'other'
+    )
+  ) {
+    return null;
+  }
+
+  const hasFurn = tokens.some((t) => tokenSimilarity(t, 'furniture') >= 0.76);
+  const hasFixt = tokens.some((t) => tokenSimilarity(t, 'fixtures') >= 0.74);
+  const hasBooks = tokens.some(
+    (t) =>
+      (singularizeToken(t) === 'book' || tokenSimilarity(t, 'books') >= 0.84) &&
+      t !== 'textbook' &&
+      t !== 'textbooks'
+  );
+
+  // Must not already be the full combined umbrella term containing both Furniture and Books
+  if (hasFurn && hasBooks) return null;
+
+  if (hasFurn && hasFixt) {
+    const furnScore = Math.max(
+      scoreStringSimilarity(cleaned, 'Furnitures and Fixtures'),
+      scoreStringSimilarity(cleaned, 'Furniture and Fixtures'),
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Furniture and Fixtures'),
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Furnitures and Fixtures')
+    );
+    if (furnScore >= 72) return 'furniture';
+  }
+
+  if (hasBooks) {
+    const booksScore = Math.max(
+      scoreStringSimilarity(cleaned, 'Books'),
+      scoreStringSimilarity(cleaned, 'Semi-Expendable Books')
+    );
+    if (booksScore >= 80) return 'books';
+  }
+
+  return null;
+}
+
+function isOtherBonusesUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasRepairsKeywords(tokens) || hasContraKeywords(tokens)) return false;
+  return scoreStringSimilarity(cleaned, 'Other Bonuses and Allowances') >= 84;
+}
+
+function classifyOtherBonusesChildKind(
+  rawText: string
+): 'hardship' | 'cna' | 'pei' | 'pbb' | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasContraKeywords(tokens) || hasRepairsKeywords(tokens)) return null;
+
+  const hasTokenNear = (target: string, minSim = 0.74) =>
+    tokens.some((t) => tokenSimilarity(t, target) >= minSim);
+
+  // 1. Special Hardship Allowance
+  if (hasTokenNear('hardship', 0.72) && (hasTokenNear('allowance', 0.7) || hasTokenNear('special', 0.72))) {
+    const s = Math.max(
+      scoreStringSimilarity(cleaned, 'Special Hardship Allowance'),
+      scoreStringSimilarity(cleaned, 'Hardship Allowance')
+    );
+    if (s >= 72) return 'hardship';
+  }
+
+  // 2. Collective Negotiation Agreement Incentive-Civilian
+  const hasCnaAcronym = tokens.includes('cna');
+  if (
+    (hasCnaAcronym && (hasTokenNear('incentive', 0.72) || tokens.length <= 3)) ||
+    (hasTokenNear('collective', 0.72) &&
+      (hasTokenNear('negotiation', 0.7) || hasTokenNear('agreement', 0.7)))
+  ) {
+    const s = Math.max(
+      scoreStringSimilarity(cleaned, 'Collective Negotiation Agreement Incentive - Civilian'),
+      scoreStringSimilarity(cleaned, 'Collective Negotiation Agreement Incentive'),
+      scoreStringSimilarity(cleaned, 'CNA Incentive - Civilian')
+    );
+    if (s >= 68 || hasCnaAcronym) return 'cna';
+  }
+
+  // 3. Productivity Enhancement Incentive - Civilian
+  // Require "enhancement" (or "pei") so distinct "Productivity Incentive Benefits" is never swallowed.
+  const hasPeiAcronym = tokens.includes('pei');
+  if (hasPeiAcronym || (hasTokenNear('enhancement', 0.72) && hasTokenNear('productivity', 0.68))) {
+    const s = Math.max(
+      scoreStringSimilarity(cleaned, 'Productivity Enhancement Incentive - Civilian'),
+      scoreStringSimilarity(cleaned, 'Productivity Enhancement Incentive'),
+      scoreStringSimilarity(cleaned, 'PEI - Civilian')
+    );
+    if (s >= 68 || hasPeiAcronym) return 'pei';
+  }
+
+  // 4. Performance Based Bonus - Civilian
+  const hasPbbAcronym = tokens.includes('pbb');
+  if (hasPbbAcronym || (hasTokenNear('performance', 0.72) && hasTokenNear('bonus', 0.7))) {
+    const s = Math.max(
+      scoreStringSimilarity(cleaned, 'Performance Based Bonus - Civilian'),
+      scoreStringSimilarity(cleaned, 'Performance Based Bonus'),
+      scoreStringSimilarity(cleaned, 'PBB - Civilian')
+    );
+    if (s >= 68 || hasPbbAcronym) return 'pbb';
+  }
+
+  return null;
+}
+
+function hasDeprExpensePrefixTokens(tokens: string[]): boolean {
+  const hasDepr = tokens.some(
+    (t) => t === 'depreciation' || tokenSimilarity(t, 'depreciation') >= 0.78
+  );
+  if (!hasDepr) return false;
+  const hasForbidden = tokens.some(
+    (t) =>
+      t === 'accumulated' ||
+      tokenSimilarity(t, 'accumulated') >= 0.78 ||
+      t === 'amortization' ||
+      tokenSimilarity(t, 'amortization') >= 0.78 ||
+      t === 'impairment' ||
+      tokenSimilarity(t, 'impairment') >= 0.78
+  );
+  return !hasForbidden && !hasRepairsKeywords(tokens) && !hasSemiKeywords(tokens);
+}
+
+function isDeprBldgUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (!hasDeprExpensePrefixTokens(tokens)) return false;
+  const hasBldg = tokens.some((t) => singularizeToken(t) === 'building' || tokenSimilarity(t, 'buildings') >= 0.8);
+  const hasStruct = tokens.some((t) => singularizeToken(t) === 'structure' || tokenSimilarity(t, 'structures') >= 0.8);
+  if (hasBldg && hasStruct) return true;
+  return scoreStringSimilarity(cleaned, 'Depreciation - Buildings and Other Structures') >= 84;
+}
+
+function classifyDeprBldgChildKind(
+  rawText: string
+): 'buildings' | 'school_buildings' | 'other_structures' | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasContraKeywords(tokens) || hasRepairsKeywords(tokens) || hasSemiKeywords(tokens)) return null;
+  if (
+    tokens.some(
+      (t) =>
+        t === 'machinery' ||
+        t === 'equipment' ||
+        t === 'furniture' ||
+        t === 'fixtures' ||
+        singularizeToken(t) === 'book' ||
+        t === 'land' ||
+        t === 'heritage' ||
+        t === 'transportation' ||
+        singularizeToken(t) === 'vehicle' ||
+        t === 'infrastructure'
+    )
+  ) {
+    return null;
+  }
+  if (scoreStringSimilarity(cleaned, 'School Buildings') >= 78) return 'school_buildings';
+  if (scoreStringSimilarity(cleaned, 'Other Structures') >= 78) return 'other_structures';
+  if (scoreStringSimilarity(cleaned, 'Buildings') >= 84) return 'buildings';
+  return null;
+}
+
+function isDeprMachUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (!hasDeprExpensePrefixTokens(tokens)) return false;
+  if (tokens.includes('office') || tokens.includes('transportation') || tokens.includes('other')) {
+    return false;
+  }
+  const hasMach = tokens.some((t) => tokenSimilarity(t, 'machinery') >= 0.78);
+  const hasEquip = tokens.some((t) => tokenSimilarity(t, 'equipment') >= 0.78);
+  if (hasMach && hasEquip) return true;
+  return scoreStringSimilarity(cleaned, 'Depreciation - Machinery and Equipment') >= 84;
+}
+
+function classifyDeprMachChildKind(rawText: string): string | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasContraKeywords(tokens) || hasRepairsKeywords(tokens) || hasSemiKeywords(tokens)) return null;
+  if (
+    tokens.some(
+      (t) =>
+        t === 'furniture' ||
+        t === 'fixtures' ||
+        singularizeToken(t) === 'book' ||
+        singularizeToken(t) === 'building' ||
+        singularizeToken(t) === 'structure' ||
+        t === 'land' ||
+        t === 'transportation' ||
+        singularizeToken(t) === 'vehicle' ||
+        t === 'heritage' ||
+        t === 'infrastructure'
+    )
+  ) {
+    return null;
+  }
+  if (isDeprMachUmbrellaLabel(cleaned)) return null;
+  const subKind = classifySemiMachChildKind(cleaned);
+  if (subKind) return subKind;
+  if (
+    scoreStringSimilarity(cleaned, 'Other Equipment') >= 82 ||
+    scoreStringSimilarity(cleaned, 'Other Machinery and Equipment') >= 82
+  ) {
+    return 'other_equip';
+  }
+  return null;
+}
+
+function isDeprTransUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (!hasDeprExpensePrefixTokens(tokens)) return false;
+  const hasTrans = tokens.some((t) => tokenSimilarity(t, 'transportation') >= 0.78);
+  const hasEquip = tokens.some((t) => tokenSimilarity(t, 'equipment') >= 0.78);
+  if (hasTrans && hasEquip) return true;
+  return scoreStringSimilarity(cleaned, 'Depreciation - Transportation Equipment') >= 84;
+}
+
+function classifyDeprTransChildKind(
+  rawText: string
+): 'motor_vehicles' | 'other_trans_equip' | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasContraKeywords(tokens) || hasRepairsKeywords(tokens) || hasSemiKeywords(tokens)) return null;
+  if (
+    tokens.some(
+      (t) =>
+        t === 'machinery' ||
+        t === 'office' ||
+        t === 'ict' ||
+        t === 'furniture' ||
+        t === 'fixtures' ||
+        singularizeToken(t) === 'book' ||
+        singularizeToken(t) === 'building' ||
+        singularizeToken(t) === 'structure' ||
+        t === 'land' ||
+        t === 'heritage'
+    )
+  ) {
+    return null;
+  }
+  if (scoreStringSimilarity(cleaned, 'Motor Vehicles') >= 78) return 'motor_vehicles';
+  if (scoreStringSimilarity(cleaned, 'Other Transportation Equipment') >= 78) return 'other_trans_equip';
+  return null;
+}
+
+function isDeprFurnUmbrellaLabel(rawText: string): boolean {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return false;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (!hasDeprExpensePrefixTokens(tokens)) return false;
+  const hasFurn = tokens.some((t) => tokenSimilarity(t, 'furniture') >= 0.76);
+  const hasBooks = tokens.some(
+    (t) => singularizeToken(t) === 'book' || tokenSimilarity(t, 'books') >= 0.82
+  );
+  if (hasFurn && hasBooks) return true;
+  return scoreStringSimilarity(cleaned, 'Depreciation - Furniture, Fixtures and Books') >= 84;
+}
+
+function classifyDeprFurnChildKind(rawText: string): 'furniture' | 'books' | null {
+  const cleaned = cleanAccountLabel(rawText);
+  if (!cleaned) return null;
+  const tokens = tokenizeAndExpand(cleaned);
+  if (hasSemiKeywords(tokens)) return null;
+  return classifySemiFurnBooksChildKind(cleaned);
 }
 
 function scoreStringSimilarity(rawQuery: string, targetLabel: string): number {
@@ -714,11 +1224,50 @@ type PerfSectionContext =
   | 'NON_OP'
   | 'LOSSES';
 
+type PerfSubContext = 'SUPPLIES' | 'REPAIRS';
+
+type CashFlowSectionContext =
+  | 'CASH_OPERATING_IN'
+  | 'CASH_OPERATING_OUT'
+  | 'CASH_INVESTING_IN'
+  | 'CASH_INVESTING_OUT'
+  | 'CASH_FINANCING_IN'
+  | 'CASH_FINANCING_OUT';
+
+function isPerfSectionContext(ctx?: string): ctx is PerfSectionContext {
+  return (
+    ctx === 'REVENUE' ||
+    ctx === 'PS' ||
+    ctx === 'MOOE' ||
+    ctx === 'FIN_EXP' ||
+    ctx === 'NON_CASH' ||
+    ctx === 'TRANSFERS_FROM' ||
+    ctx === 'TRANSFERS_TO' ||
+    ctx === 'NON_OP' ||
+    ctx === 'LOSSES'
+  );
+}
+
+function isCashFlowSectionContext(ctx?: string): ctx is CashFlowSectionContext {
+  return Boolean(ctx && ctx.startsWith('CASH_'));
+}
+
 const PERFORMANCE_SYNONYM_GROUPS: string[][] = [
   ['retirementandlifeinsurancepremiums', 'lifeandretirementinsurancecontributions'],
   ['employeescompensationinsurancepremiums', 'ecccontributions'],
   ['incomefromgrantsanddonationsincash', 'donationsincash'],
   ['incomefromgrantsanddonationsinkind', 'donationsinkind'],
+];
+
+const CASH_FLOWS_SYNONYM_GROUPS: string[][] = [
+  ['constructionacquistionofheritageassets', 'constructionacquisitionofheritageassets'],
+  ['refundofcustomersdeposit', 'refundofcustomersdeposits'],
+  ['paymentofdepositsonletterofcredits', 'paymentofdepositsonlettersofcredit'],
+  ['purchaseofsemiexpendablemachineryandequipment', 'purchaseofsemiexpendablemachineryandequipments'],
+  ['effectsofexchangeratechangesoncashandcashequivalents', 'effectofexchangeratechangesoncashandcashequivalents', 'effectsofexchangeratechangesoncash'],
+  ['receiptofsharesgrantsanddonations', 'receiptofsharesgrantsanddonation'],
+  ['repaymentoflongtermloansbygoccgfi', 'repaymentoflongtermloansbygoccsgfis'],
+  ['collectionofreceivablefromauditdisallowances', 'collectionofreceivablesfromauditdisallowances'],
 ];
 
 function arePerformanceSynonyms(a: string, b: string): boolean {
@@ -728,6 +1277,82 @@ function arePerformanceSynonyms(a: string, b: string): boolean {
   return PERFORMANCE_SYNONYM_GROUPS.some(
     (grp) => grp.includes(normA) && grp.includes(normB)
   );
+}
+
+function areCashFlowsSynonyms(a: string, b: string): boolean {
+  const normA = normalizeAliasKey(a);
+  const normB = normalizeAliasKey(b);
+  if (!normA || !normB) return false;
+  return CASH_FLOWS_SYNONYM_GROUPS.some(
+    (grp) => grp.includes(normA) && grp.includes(normB)
+  );
+}
+
+function resolveCashFlowClippedTargetId(
+  normQuery: string,
+  cashCtx?: CashFlowSectionContext,
+  cashGroupCtx?: string
+): string | undefined {
+  if (!normQuery) return undefined;
+  switch (normQuery) {
+    case 'ngaslgusgoccs':
+      if (cashGroupCtx === 'Other Receipts') return 'cf-op-in-oth-11';
+      if (cashGroupCtx === 'Receipt of Inter-Agency Fund Transfers' || cashCtx === 'CASH_OPERATING_IN') {
+        return 'cf-op-in-inter-2';
+      }
+      return undefined;
+    case 'programsprojects':
+    case 'programprojects':
+      return 'cf-op-in-intra-1';
+    case 'expenses':
+      return cashCtx === 'CASH_OPERATING_IN' || cashGroupCtx === 'Other Receipts'
+        ? 'cf-op-in-oth-8'
+        : undefined;
+    case 'receipts':
+      return cashCtx === 'CASH_OPERATING_OUT' || cashGroupCtx === 'Remittance to National Treasury'
+        ? 'cf-op-out-rem-4'
+        : undefined;
+    case 'andequipmentnotcapitalizable':
+    case 'equipmentnotcapitalizable':
+      return 'cf-op-out-prep-1';
+    case 'goodsservicesasauthorizedbylaw':
+    case 'forpurchaseofgoodsservicesasauthorizedbylaw':
+      return 'cf-op-out-inter-2';
+    case 'projects':
+      return cashGroupCtx === 'Release of Inter-Agency Fund Transfers' || cashCtx === 'CASH_OPERATING_OUT'
+        ? 'cf-op-out-inter-3'
+        : undefined;
+    case 'consularoffices':
+    case 'regionalconsularoffices':
+      return 'cf-op-out-intra-1';
+    case 'capitalizedrepair':
+      return 'cf-inv-out-ppe-18';
+    case 'andequipment':
+      return cashCtx === 'CASH_INVESTING_OUT' ||
+        cashGroupCtx === 'Purchase/Construction of Property, Plant and Equipment'
+        ? 'cf-inv-out-ppe-19'
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function itemMatchesCashFlowContext(item: LineItemDefinition, ctx: CashFlowSectionContext): boolean {
+  const isOutflow = item.subgroup === 'Cash Outflows';
+  switch (ctx) {
+    case 'CASH_OPERATING_IN':
+      return item.section === 'CASH_OPERATING' && !isOutflow;
+    case 'CASH_OPERATING_OUT':
+      return item.section === 'CASH_OPERATING' && isOutflow;
+    case 'CASH_INVESTING_IN':
+      return item.section === 'CASH_INVESTING' && !isOutflow;
+    case 'CASH_INVESTING_OUT':
+      return item.section === 'CASH_INVESTING' && isOutflow;
+    case 'CASH_FINANCING_IN':
+      return item.section === 'CASH_FINANCING' && !isOutflow;
+    case 'CASH_FINANCING_OUT':
+      return item.section === 'CASH_FINANCING' && isOutflow;
+  }
 }
 
 function itemMatchesPerfContext(item: LineItemDefinition, ctx: PerfSectionContext): boolean {
@@ -758,19 +1383,107 @@ const NON_OP_DEFAULT_AMBIGUOUS_KEYS = new Set(['miscellaneousincome', 'othergain
 function scoreLineItemMatch(
   rawQuery: string,
   item: LineItemDefinition,
-  sectionContext?: PerfSectionContext
+  sectionContext?: PerfSectionContext | CashFlowSectionContext,
+  subContext?: PerfSubContext | string
 ): number {
   let score = scoreStringSimilarity(rawQuery, item.name);
-  if (arePerformanceSynonyms(rawQuery, item.name)) {
+  if (arePerformanceSynonyms(rawQuery, item.name) || areCashFlowsSynonyms(rawQuery, item.name)) {
     score = Math.max(score, 95);
   }
-  if (score === 0) return 0;
+
+  const cashCtx = isCashFlowSectionContext(sectionContext) ? sectionContext : undefined;
+  const perfCtx = isPerfSectionContext(sectionContext) ? sectionContext : undefined;
+  const cashGroupCtx = cashCtx ? subContext : undefined;
+  const perfSubCtx = !cashCtx ? (subContext as PerfSubContext | undefined) : undefined;
+
+  if (item.statementType === 'cash_flows') {
+    const normQuery = normalizeAliasKey(rawQuery);
+    const clippedTargetId = resolveCashFlowClippedTargetId(normQuery, cashCtx, cashGroupCtx);
+    if (clippedTargetId && item.id === clippedTargetId) {
+      score = Math.max(score, 96);
+    }
+  }
 
   const qTokensAll = tokenizeAndExpand(cleanAccountLabel(rawQuery));
   const cTokensAll = tokenizeAndExpand(item.name);
 
   const qContra = hasContraKeywords(qTokensAll);
   const cContra = Boolean(item.isContra) || hasContraKeywords(cTokensAll);
+  const qRepairs = hasRepairsKeywords(qTokensAll);
+  const cRepairs = hasRepairsKeywords(cTokensAll);
+
+  // Educated fallback when Financial Performance has standalone child lines under
+  // Semi-Expendable Furniture, Fixtures & Books Expenses, Semi-Expendable Machinery & Equipment Expenses,
+  // or Other Bonuses and Allowances
+  if (
+    item.statementType === 'performance' &&
+    !qContra &&
+    !qRepairs &&
+    classifySemiFurnBooksChildKind(rawQuery) !== null
+  ) {
+    if (perfSubCtx === 'REPAIRS') {
+      if (item.id === 'perf-mooe-repairs-furn' || item.id === 'perf-mooe-repairs-semi-furn') {
+        const prefersSemi = hasSemiKeywords(qTokensAll);
+        const isSemiRepair = item.id === 'perf-mooe-repairs-semi-furn';
+        score = Math.max(score, prefersSemi === isSemiRepair ? 86 : 76);
+      }
+    } else if (perfCtx === 'NON_CASH') {
+      if (item.id === DEPR_FURN_UMBRELLA_ID && !hasSemiKeywords(qTokensAll)) {
+        score = Math.max(score, 84);
+      }
+    } else if (item.id === SEMI_FURN_BOOKS_UMBRELLA_ID) {
+      score = Math.max(score, perfSubCtx === 'SUPPLIES' ? 86 : 80);
+    }
+  } else if (
+    item.statementType === 'performance' &&
+    !qContra &&
+    !qRepairs &&
+    (classifySemiMachChildKind(rawQuery) !== null ||
+      (perfCtx === 'NON_CASH' && classifyDeprMachChildKind(rawQuery) !== null))
+  ) {
+    if (perfSubCtx === 'REPAIRS') {
+      if (item.id === 'perf-mooe-repairs-mach' || item.id === 'perf-mooe-repairs-semi-mach') {
+        const prefersSemi = hasSemiKeywords(qTokensAll);
+        const isSemiRepair = item.id === 'perf-mooe-repairs-semi-mach';
+        score = Math.max(score, prefersSemi === isSemiRepair ? 86 : 76);
+      }
+    } else if (perfCtx === 'NON_CASH') {
+      if (item.id === DEPR_MACH_UMBRELLA_ID && !hasSemiKeywords(qTokensAll)) {
+        score = Math.max(score, 84);
+      }
+    } else if (item.id === SEMI_MACH_UMBRELLA_ID && classifySemiMachChildKind(rawQuery) !== null) {
+      score = Math.max(score, perfSubCtx === 'SUPPLIES' ? 86 : 80);
+    }
+  } else if (
+    item.statementType === 'performance' &&
+    perfCtx === 'NON_CASH' &&
+    !qContra &&
+    !qRepairs &&
+    item.id === DEPR_BLDG_UMBRELLA_ID &&
+    classifyDeprBldgChildKind(rawQuery) !== null
+  ) {
+    score = Math.max(score, 84);
+  } else if (
+    item.statementType === 'performance' &&
+    perfCtx === 'NON_CASH' &&
+    !qContra &&
+    !qRepairs &&
+    item.id === DEPR_TRANS_UMBRELLA_ID &&
+    classifyDeprTransChildKind(rawQuery) !== null
+  ) {
+    score = Math.max(score, 84);
+  } else if (
+    item.statementType === 'performance' &&
+    !qContra &&
+    !qRepairs &&
+    item.id === OTHER_BONUSES_UMBRELLA_ID &&
+    classifyOtherBonusesChildKind(rawQuery) !== null
+  ) {
+    score = Math.max(score, perfCtx === 'PS' ? 88 : 82);
+  }
+
+  if (score === 0) return 0;
+
   if (qContra !== cContra) {
     score -= 22;
   }
@@ -779,6 +1492,17 @@ function scoreLineItemMatch(
   const cSemi = hasSemiKeywords(cTokensAll);
   if (qSemi !== cSemi) {
     score -= 18;
+  }
+
+  // Strictly separate Semi-Expendable / Supplies Expenses from Repairs and Maintenance
+  if (qRepairs && !cRepairs) {
+    score -= 28;
+  } else if (!qRepairs && cRepairs) {
+    const allowedIndentedRepairChild =
+      perfSubCtx === 'REPAIRS' && item.subgroup === 'Repairs and Maintenance';
+    if (!allowedIndentedRepairChild) {
+      score -= 28;
+    }
   }
 
   const qDist = qTokensAll.includes('distribution');
@@ -793,11 +1517,40 @@ function scoreLineItemMatch(
     item.statementType === 'performance' &&
     NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(normalizeAliasKey(item.name));
 
-  if (sectionContext && item.statementType === 'performance' && !isNonOpDefaultDualItem) {
-    if (itemMatchesPerfContext(item, sectionContext)) {
+  if (perfCtx && item.statementType === 'performance' && !isNonOpDefaultDualItem) {
+    if (itemMatchesPerfContext(item, perfCtx)) {
       score = Math.min(100, score + 4);
     } else {
       score = Math.max(0, score - 8);
+    }
+  }
+
+  if (perfSubCtx && item.statementType === 'performance' && item.group === 'Maintenance and Other Operating Expenses') {
+    if (perfSubCtx === 'SUPPLIES') {
+      if (item.subgroup === 'Supplies and Materials Expenses') {
+        score = Math.min(100, score + 8);
+      } else if (item.subgroup === 'Repairs and Maintenance') {
+        score = Math.max(0, score - 14);
+      }
+    } else if (perfSubCtx === 'REPAIRS') {
+      if (item.subgroup === 'Repairs and Maintenance') {
+        score = Math.min(100, score + 10);
+      } else if (item.subgroup === 'Supplies and Materials Expenses') {
+        score = Math.max(0, score - 14);
+      }
+    }
+  }
+
+  if (cashCtx && item.statementType === 'cash_flows') {
+    if (item.section !== 'CASH_FLOWS') {
+      if (itemMatchesCashFlowContext(item, cashCtx)) {
+        score = Math.min(100, score + 6);
+      } else {
+        score = Math.max(0, score - 14);
+      }
+    }
+    if (cashGroupCtx && item.group === cashGroupCtx) {
+      score = Math.min(100, score + 8);
     }
   }
 
@@ -808,16 +1561,23 @@ export function matchLineItemWithRecommendation(
   rawName: string,
   encodableItems: LineItemDefinition[],
   savedAliases: Record<string, string> = {},
-  sectionContext?: PerfSectionContext
+  sectionContext?: PerfSectionContext | CashFlowSectionContext,
+  subContext?: PerfSubContext | string
 ): LineItemRecommendation {
   const aliasKey = normalizeAliasKey(rawName);
   if (aliasKey && savedAliases[aliasKey]) {
     const aliasItem = encodableItems.find((i) => i.id === savedAliases[aliasKey]);
-    const exactInContext = sectionContext
+    const exactInContext = isPerfSectionContext(sectionContext)
       ? encodableItems.find(
           (i) =>
             normalizeAliasKey(i.name) === aliasKey &&
             itemMatchesPerfContext(i, sectionContext)
+        )
+      : isCashFlowSectionContext(sectionContext)
+      ? encodableItems.find(
+          (i) =>
+            normalizeAliasKey(i.name) === aliasKey &&
+            itemMatchesCashFlowContext(i, sectionContext)
         )
       : undefined;
     if (aliasItem && (!exactInContext || exactInContext.id === aliasItem.id)) {
@@ -837,7 +1597,7 @@ export function matchLineItemWithRecommendation(
     .filter((item) => allowAggregatedDepMatch || item.id !== AGGREGATED_ACCUMULATED_DEPRECIATION_ID)
     .map((item) => ({
       item,
-      confidence: scoreLineItemMatch(rawName, item, sectionContext),
+      confidence: scoreLineItemMatch(rawName, item, sectionContext, subContext),
     }))
     .filter((entry) => entry.confidence >= 35)
     .sort((a, b) => {
@@ -945,6 +1705,7 @@ function buildHierarchyClassifier(
       'Less: Cash Outflows',
       'Receipt of Assistance/Subsidy',
       'Collection of Income/Revenue',
+      'and Books',
     ].forEach(register);
   }
 
@@ -1008,19 +1769,24 @@ export function detectSummaryRowKind(
     }
   } else if (statementType === 'cash_flows') {
     if (
-      /^(?:total\s+)?(?:add\s*:\s*|less\s*:\s*)?cash\s+(?:inflows|outflows)\b/.test(cleaned)
+      /^(?:total\s+)?(?:(?:add|less)\s*:\s*)?cash\s+(?:inflows|outflows)\b/.test(cleaned)
     ) {
       return 'cash_inflows_outflows';
     }
-    if (/^net\s+cash\s+(?:provided|generated|used|from)\b/.test(cleaned)) {
+    if (/^(?:net\s+)?cash\s+(?:provided|generated|used|from)\b/.test(cleaned)) {
       return 'net_cash_activity';
     }
     if (/^(?:net\s+)?increase\s*\/?\s*\(?decrease\)?\s+in\s+cash\b/.test(cleaned)) {
       return 'cash_increase_decrease';
     }
+    const cashDateNormalized = cleaned
+      .replace(/^(?:add|less)\s*:\s*/i, '')
+      .replace(/[.,()–—-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (
-      /^cash\s+(?:and\s+cash\s+equivalents|balance)[,\s]+(?:at\s+)?(?:january\s*1|jan\s*1|beginning|december\s*31|dec\s*31|ending)\b/.test(
-        cleaned
+      /^cash\s+(?:and\s+cash\s+equivalents|balance)\s+(?:as\s+(?:of|at)\s+|at\s+)?(?:january\s*1|jan\s*1|beg(?:inning)?|december\s*31|dec\s*31|end(?:ing)?)\b/.test(
+        cashDateNormalized
       )
     ) {
       return 'cash_beginning_ending';
@@ -1396,6 +2162,10 @@ interface InternalRawRow {
   inEquitySection: boolean;
   equityRole?: EquityRowRole;
   perfContext?: PerfSectionContext;
+  perfSubContext?: PerfSubContext;
+  cashContext?: CashFlowSectionContext;
+  cashGroupContext?: string;
+  isProvisionalZeroUmbrella?: boolean;
   matchesStrictHierarchy: boolean;
   matchesAmbiguousHierarchy: boolean;
   fuzzyHierarchyScore: number;
@@ -1629,32 +2399,138 @@ export function extractPositionRowsFromSheet(
   let passedTotalLiabilities = false;
   let currentPerfContext: PerfSectionContext | undefined =
     statementType === 'performance' ? 'REVENUE' : undefined;
+  let currentPerfSubContext: PerfSubContext | undefined = undefined;
+  let currentCashContext: CashFlowSectionContext | undefined =
+    statementType === 'cash_flows' ? 'CASH_OPERATING_IN' : undefined;
+  let currentCashGroupContext: string | undefined = undefined;
+
+  const cashGroupByNorm = new Map<string, { group: string; cashCtx: CashFlowSectionContext }>();
+  if (statementType === 'cash_flows') {
+    encodableItems.forEach((it) => {
+      if (it.section === 'CASH_FLOWS') return;
+      const gNorm = normalizeAliasKey(it.group);
+      if (!gNorm) return;
+      const isOut = it.subgroup === 'Cash Outflows';
+      const ctx: CashFlowSectionContext =
+        it.section === 'CASH_INVESTING'
+          ? isOut
+            ? 'CASH_INVESTING_OUT'
+            : 'CASH_INVESTING_IN'
+          : it.section === 'CASH_FINANCING'
+          ? isOut
+            ? 'CASH_FINANCING_OUT'
+            : 'CASH_FINANCING_IN'
+          : isOut
+          ? 'CASH_OPERATING_OUT'
+          : 'CASH_OPERATING_IN';
+      if (!cashGroupByNorm.has(`${ctx}::${gNorm}`)) {
+        cashGroupByNorm.set(`${ctx}::${gNorm}`, { group: it.group, cashCtx: ctx });
+      }
+      if (it.group.startsWith('Purchase of Semi-Expendable')) {
+        cashGroupByNorm.set(`${ctx}::andbooks`, { group: it.group, cashCtx: ctx });
+      }
+    });
+  }
+
+  const updateCashContextFromText = (txt: string) => {
+    const cleanedLow = cleanAccountLabel(txt).toLowerCase().trim();
+    const norm = normalizeAliasKey(txt);
+    if (!cleanedLow || !norm) return;
+
+    if (/^(?:cash\s+flows\s+from\s+)?operating\s+activities\b/.test(cleanedLow)) {
+      currentCashContext = 'CASH_OPERATING_IN';
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (/^(?:cash\s+flows\s+from\s+)?investing\s+activities\b/.test(cleanedLow)) {
+      currentCashContext = 'CASH_INVESTING_IN';
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (/^(?:cash\s+flows\s+from\s+)?financing\s+activities\b/.test(cleanedLow)) {
+      currentCashContext = 'CASH_FINANCING_IN';
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (/^(?:add\s*:\s*)?cash\s+inflows\b/.test(cleanedLow)) {
+      if (currentCashContext?.startsWith('CASH_INVESTING')) currentCashContext = 'CASH_INVESTING_IN';
+      else if (currentCashContext?.startsWith('CASH_FINANCING')) currentCashContext = 'CASH_FINANCING_IN';
+      else currentCashContext = 'CASH_OPERATING_IN';
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (/^(?:less\s*:\s*)?cash\s+outflows\b/.test(cleanedLow)) {
+      if (currentCashContext?.startsWith('CASH_INVESTING')) currentCashContext = 'CASH_INVESTING_OUT';
+      else if (currentCashContext?.startsWith('CASH_FINANCING')) currentCashContext = 'CASH_FINANCING_OUT';
+      else currentCashContext = 'CASH_OPERATING_OUT';
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (/^(?:total\s+cash\s+(?:inflows|outflows)|(?:net\s+)?cash\s+(?:provided|generated|used|from)|(?:net\s+)?increase)/.test(cleanedLow)) {
+      currentCashGroupContext = undefined;
+      return;
+    }
+    if (currentCashContext) {
+      const grpEntry = cashGroupByNorm.get(`${currentCashContext}::${norm}`);
+      if (grpEntry) {
+        currentCashGroupContext = grpEntry.group;
+      }
+    }
+  };
 
   const updatePerfContextFromText = (txt: string) => {
     const low = cleanAccountLabel(txt).toLowerCase();
     if (!low) return;
     if (/^revenue\b|^service and business income\b|^shares,\s*grants/.test(low)) {
       currentPerfContext = 'REVENUE';
-    } else if (/^personnel services\b/.test(low)) {
+      currentPerfSubContext = undefined;
+    } else if (
+      /^(?:personnel services|salaries and wages|other compensation|personnel benefit contributions|other personnel benefits)\b/.test(
+        low
+      )
+    ) {
       currentPerfContext = 'PS';
+      currentPerfSubContext = undefined;
     } else if (/^(?:less:\s*)?maintenance and other operating expenses\b/.test(low)) {
       currentPerfContext = 'MOOE';
+      currentPerfSubContext = undefined;
+    } else if (/^supplies and materials\b|^semi[-\s]?expendable\b/.test(low) && !/\brepair|\bmaint(?:enance)?\b/.test(low)) {
+      currentPerfContext = 'MOOE';
+      currentPerfSubContext = 'SUPPLIES';
+    } else if (/^(?:total|sub-?total)\s+(?:supplies and materials|repairs and maintenance)\b/.test(low)) {
+      currentPerfSubContext = undefined;
+    } else if (/^repairs\s*(?:&|and)\s*maintenance\b/.test(low)) {
+      currentPerfContext = 'MOOE';
+      currentPerfSubContext = 'REPAIRS';
+    } else if (
+      /^(?:traveling expenses|training and scholarship|utility expenses|communication expenses|awards\/rewards|awards and rewards|survey,\s*research|confidential,\s*intelligence|demolition|generation,\s*transmission|professional services|general services|taxes,\s*insurance|labor and wages|other maintenance and operating)\b/.test(
+        low
+      )
+    ) {
+      currentPerfContext = 'MOOE';
+      currentPerfSubContext = undefined;
     } else if (/^financial expenses\b/.test(low)) {
       currentPerfContext = 'FIN_EXP';
-    } else if (/^non-cash expenses\b/.test(low)) {
+      currentPerfSubContext = undefined;
+    } else if (/^non-cash expenses\b|^depreciation$/.test(low)) {
       currentPerfContext = 'NON_CASH';
+      currentPerfSubContext = undefined;
     } else if (/^less:\s*financial assistance\/subsidy to\b/.test(low)) {
       currentPerfContext = 'TRANSFERS_TO';
+      currentPerfSubContext = undefined;
     } else if (/^financial assistance\/subsidy from\b/.test(low)) {
       currentPerfContext = 'TRANSFERS_FROM';
+      currentPerfSubContext = undefined;
     } else if (
       /^other\s+non[-\s]?operating\s+income\b|^non[-\s]?operating\s+income\b|^sale of assets\b|^gains$/.test(
         low
       )
     ) {
       currentPerfContext = 'NON_OP';
+      currentPerfSubContext = undefined;
     } else if (/^losses\b|^loss on sale\b/.test(low)) {
       currentPerfContext = 'LOSSES';
+      currentPerfSubContext = undefined;
     }
   };
 
@@ -1701,7 +2577,8 @@ export function extractPositionRowsFromSheet(
             cand.text,
             encodableItems,
             savedAliases,
-            currentPerfContext
+            currentPerfContext || currentCashContext,
+            currentPerfContext ? currentPerfSubContext : currentCashGroupContext
           );
           const effectiveScore = isSum ? 98 : rec.confidence;
           if (effectiveScore >= bestCandidateScore) {
@@ -1721,6 +2598,17 @@ export function extractPositionRowsFromSheet(
           const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
           if (cellTxt && !looksLikeNoteOrCodeOnly(cellTxt)) {
             updatePerfContextFromText(cellTxt);
+          }
+        }
+      }
+    } else if (statementType === 'cash_flows') {
+      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+        updateCashContextFromText(chosenText);
+      } else {
+        for (let c = 0; c < earliestAmountCol; c++) {
+          const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
+          if (cellTxt && !looksLikeNoteOrCodeOnly(cellTxt)) {
+            updateCashContextFromText(cellTxt);
           }
         }
       }
@@ -1762,7 +2650,20 @@ export function extractPositionRowsFromSheet(
       }
     }
 
-    if (!hasAnyNumericCell || !hasAnyNonZeroAmount) continue;
+    const isProvisionalZeroUmbrella =
+      statementType === 'performance' &&
+      Boolean(chosenText) &&
+      !looksLikeNoteOrCodeOnly(chosenText) &&
+      (!hasAnyNumericCell || !hasAnyNonZeroAmount) &&
+      (isSemiFurnBooksUmbrellaLabel(chosenText) ||
+        isSemiMachUmbrellaLabel(chosenText) ||
+        isOtherBonusesUmbrellaLabel(chosenText) ||
+        isDeprBldgUmbrellaLabel(chosenText) ||
+        isDeprMachUmbrellaLabel(chosenText) ||
+        isDeprTransUmbrellaLabel(chosenText) ||
+        isDeprFurnUmbrellaLabel(chosenText));
+
+    if ((!hasAnyNumericCell || !hasAnyNonZeroAmount) && !isProvisionalZeroUmbrella) continue;
     if (!chosenText || looksLikeNoteOrCodeOnly(chosenText)) continue;
 
     // If account code was embedded inside chosenText (e.g. "1010102000 Petty Cash Fund"), capture it
@@ -1822,6 +2723,10 @@ export function extractPositionRowsFromSheet(
       inEquitySection: isPositionStatement && inEquitySection,
       equityRole,
       perfContext: currentPerfContext,
+      perfSubContext: currentPerfSubContext,
+      cashContext: currentCashContext,
+      cashGroupContext: currentCashGroupContext,
+      isProvisionalZeroUmbrella,
       matchesStrictHierarchy,
       matchesAmbiguousHierarchy,
       fuzzyHierarchyScore,
@@ -1842,17 +2747,387 @@ export function extractPositionRowsFromSheet(
       encodableItems.find((i) => /accumulated\s+surplus/i.test(i.name))
     : undefined;
 
+  // Pre-Pass 2 (Performance only): Handle umbrella groupings:
+  //   1. "Semi-Expendable Furniture, Fixtures and Books Expenses" -> Furnitures & Fixtures, Books
+  //   2. "Semi-Expendable Machinery and Equipment Expenses" -> Indented equipment items below (not in DB)
+  //   3. "Other Bonuses and Allowances" -> Special Hardship Allowance, CNA Incentive, PEI, PBB
+  // - If parent amount already equals sum of children for a column -> keep parent amount (no double count).
+  // - If parent amount has no correlation with children (e.g. 0 or partial balance) -> aggregate parent + children.
+  interface UmbrellaParentResolution {
+    mode: 'parent';
+    targetItemId: string;
+    resolvedAmounts: Record<string, number | null>;
+    aggregationNote: string;
+    aggregationBreakdown: AggregationBreakdown;
+  }
+  interface UmbrellaChildResolution {
+    mode: 'consumed_child';
+    reason: string;
+  }
+  const umbrellaResolutionByRawIdx = new Map<
+    number,
+    UmbrellaParentResolution | UmbrellaChildResolution
+  >();
+  const dropProvisionalZeroIndices = new Set<number>();
+
+  // Official leaf accounts (excluding the 3 umbrella parents) so indentation matching
+  // never accidentally consumes valid standalone COA accounts such as
+  // "Semi-Expendable Machinery and Equipment Expenses - Other Equipment" or "Textbooks..."
+  const nonUmbrellaOfficialPerfItems = encodableItems.filter(
+    (item) => item.statementType === 'performance' && !UMBRELLA_PARENT_IDS.has(item.id)
+  );
+  const nonUmbrellaOfficialPerfNorms = new Set(
+    nonUmbrellaOfficialPerfItems.map((item) => normalizeAliasKey(item.name)).filter(Boolean)
+  );
+  const matchesOfficialNonUmbrellaPerfAccount = (rawText: string): boolean => {
+    const norm = normalizeAliasKey(rawText);
+    if (!norm) return false;
+    if (nonUmbrellaOfficialPerfNorms.has(norm)) return true;
+    const cleaned = cleanAccountLabel(rawText);
+    return nonUmbrellaOfficialPerfItems.some(
+      (item) => scoreStringSimilarity(cleaned, item.name) >= 90
+    );
+  };
+
+  interface UmbrellaRuleConfig {
+    parentItemId: string;
+    parentLabel: string;
+    allowContraParent?: boolean;
+    isParentMatch: (raw: InternalRawRow) => boolean;
+    isChildMatch: (raw: InternalRawRow, parent?: InternalRawRow) => boolean;
+    allowParentlessConsolidation: (raw: InternalRawRow) => boolean;
+  }
+
+  const isEligibleDeprIndentedChild = (r: InternalRawRow, parent?: InternalRawRow): boolean => {
+    if (!parent || r.indentScore <= parent.indentScore) return false;
+    const toks = tokenizeAndExpand(r.cleanedName);
+    if (hasContraKeywords(toks) || hasRepairsKeywords(toks) || hasSemiKeywords(toks)) {
+      return false;
+    }
+    return !matchesOfficialNonUmbrellaPerfAccount(r.rawName);
+  };
+
+  const umbrellaRules: UmbrellaRuleConfig[] = [
+    {
+      parentItemId: SEMI_FURN_BOOKS_UMBRELLA_ID,
+      parentLabel: 'Semi-Expendable Furniture, Fixtures and Books Expenses',
+      isParentMatch: (r) =>
+        r.perfSubContext !== 'REPAIRS' &&
+        r.perfContext !== 'NON_CASH' &&
+        isSemiFurnBooksUmbrellaLabel(r.rawName),
+      isChildMatch: (r) =>
+        r.perfSubContext !== 'REPAIRS' &&
+        r.perfContext !== 'NON_CASH' &&
+        classifySemiFurnBooksChildKind(r.rawName) !== null,
+      allowParentlessConsolidation: (r) =>
+        r.perfSubContext === 'SUPPLIES' && classifySemiFurnBooksChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: SEMI_MACH_UMBRELLA_ID,
+      parentLabel: 'Semi-Expendable Machinery and Equipment Expenses',
+      isParentMatch: (r) =>
+        r.perfSubContext !== 'REPAIRS' &&
+        r.perfContext !== 'NON_CASH' &&
+        isSemiMachUmbrellaLabel(r.rawName),
+      isChildMatch: (r, parent) => {
+        if (r.perfSubContext === 'REPAIRS' || r.perfContext === 'NON_CASH') return false;
+        const toks = tokenizeAndExpand(r.cleanedName);
+        if (hasRepairsKeywords(toks) || hasContraKeywords(toks)) return false;
+        if (
+          isSemiFurnBooksUmbrellaLabel(r.rawName) ||
+          isOtherBonusesUmbrellaLabel(r.rawName) ||
+          isSemiMachUmbrellaLabel(r.rawName) ||
+          classifySemiFurnBooksChildKind(r.rawName) !== null ||
+          classifyOtherBonusesChildKind(r.rawName) !== null
+        ) {
+          return false;
+        }
+        // Known sub-equipment label (works whether indented or aligned)
+        if (classifySemiMachChildKind(r.rawName) !== null) return true;
+        // Indented directly below parent AND not an official leaf account in DB
+        if (
+          parent &&
+          r.indentScore > parent.indentScore &&
+          !matchesOfficialNonUmbrellaPerfAccount(r.rawName)
+        ) {
+          return true;
+        }
+        return false;
+      },
+      allowParentlessConsolidation: (r) =>
+        r.perfSubContext === 'SUPPLIES' && classifySemiMachChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: OTHER_BONUSES_UMBRELLA_ID,
+      parentLabel: 'Other Bonuses and Allowances',
+      isParentMatch: (r) => isOtherBonusesUmbrellaLabel(r.rawName),
+      isChildMatch: (r) => classifyOtherBonusesChildKind(r.rawName) !== null,
+      allowParentlessConsolidation: (r) =>
+        (r.perfContext === 'PS' || !r.perfContext) &&
+        classifyOtherBonusesChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: DEPR_BLDG_UMBRELLA_ID,
+      parentLabel: 'Depreciation - Buildings and Other Structures',
+      allowContraParent: true,
+      isParentMatch: (r) => isDeprBldgUmbrellaLabel(r.rawName),
+      isChildMatch: (r, parent) =>
+        classifyDeprBldgChildKind(r.rawName) !== null || isEligibleDeprIndentedChild(r, parent),
+      allowParentlessConsolidation: (r) =>
+        r.perfContext === 'NON_CASH' && classifyDeprBldgChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: DEPR_MACH_UMBRELLA_ID,
+      parentLabel: 'Depreciation - Machinery and Equipment',
+      allowContraParent: true,
+      isParentMatch: (r) => isDeprMachUmbrellaLabel(r.rawName),
+      isChildMatch: (r, parent) =>
+        classifyDeprMachChildKind(r.rawName) !== null || isEligibleDeprIndentedChild(r, parent),
+      allowParentlessConsolidation: (r) =>
+        r.perfContext === 'NON_CASH' && classifyDeprMachChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: DEPR_TRANS_UMBRELLA_ID,
+      parentLabel: 'Depreciation - Transportation Equipment',
+      allowContraParent: true,
+      isParentMatch: (r) => isDeprTransUmbrellaLabel(r.rawName),
+      isChildMatch: (r, parent) =>
+        classifyDeprTransChildKind(r.rawName) !== null || isEligibleDeprIndentedChild(r, parent),
+      allowParentlessConsolidation: (r) =>
+        r.perfContext === 'NON_CASH' && classifyDeprTransChildKind(r.rawName) !== null,
+    },
+    {
+      parentItemId: DEPR_FURN_UMBRELLA_ID,
+      parentLabel: 'Depreciation - Furniture, Fixtures and Books',
+      allowContraParent: true,
+      isParentMatch: (r) => isDeprFurnUmbrellaLabel(r.rawName),
+      isChildMatch: (r, parent) =>
+        classifyDeprFurnChildKind(r.rawName) !== null || isEligibleDeprIndentedChild(r, parent),
+      allowParentlessConsolidation: (r) =>
+        r.perfContext === 'NON_CASH' && classifyDeprFurnChildKind(r.rawName) !== null,
+    },
+  ];
+
+  if (statementType === 'performance') {
+    for (const rule of umbrellaRules) {
+      const ruleDef = encodableItems.find((item) => item.id === rule.parentItemId);
+      if (!ruleDef) continue;
+
+      for (let i = 0; i < rawExtracted.length; i++) {
+        if (umbrellaResolutionByRawIdx.has(i)) continue;
+        const parent = rawExtracted[i];
+        if (
+          parent.strictSummaryKind ||
+          parent.matchesStrictHierarchy ||
+          (parent.isContraName && !rule.allowContraParent)
+        ) {
+          continue;
+        }
+
+        if (rule.isParentMatch(parent)) {
+          const childIndices: number[] = [];
+          for (let j = i + 1; j < rawExtracted.length; j++) {
+            if (umbrellaResolutionByRawIdx.has(j)) break;
+            const child = rawExtracted[j];
+            if (child.strictSummaryKind || child.matchesStrictHierarchy || child.isContraName) break;
+            if (child.indentScore < parent.indentScore) break;
+            if (!rule.isChildMatch(child, parent)) break;
+            childIndices.push(j);
+          }
+
+          if (childIndices.length === 0) {
+            if (parent.isProvisionalZeroUmbrella) {
+              dropProvisionalZeroIndices.add(i);
+            }
+            continue;
+          }
+
+          const resolvedAmounts: Record<string, number | null> = {};
+          const wasAggregatedByTargetId: Record<string, boolean> = {};
+          let aggregatedAnyCol = false;
+          let rolledUpOnlyAnyCol = false;
+
+          activeTargetIds.forEach((tid) => {
+            const pRaw = parent.amountsByTargetId[tid];
+            const pVal = pRaw ?? 0;
+            const childSum = childIndices.reduce(
+              (acc, idx) => acc + (rawExtracted[idx].amountsByTargetId[tid] ?? 0),
+              0
+            );
+            const hasNonZeroChildren = childIndices.some(
+              (idx) => Math.abs(rawExtracted[idx].amountsByTargetId[tid] ?? 0) >= 0.005
+            );
+            const hasNonZeroParent = Math.abs(pVal) >= 0.005;
+
+            if (hasNonZeroChildren && hasNonZeroParent && Math.abs(pVal - childSum) <= 0.05) {
+              resolvedAmounts[tid] = pRaw ?? Math.round(pVal * 10000) / 10000;
+              wasAggregatedByTargetId[tid] = false;
+              rolledUpOnlyAnyCol = true;
+            } else if (hasNonZeroChildren) {
+              resolvedAmounts[tid] = Math.round((pVal + childSum) * 10000) / 10000;
+              wasAggregatedByTargetId[tid] = true;
+              aggregatedAnyCol = true;
+            } else {
+              resolvedAmounts[tid] = pRaw ?? null;
+              wasAggregatedByTargetId[tid] = false;
+            }
+          });
+
+          const hasAnyResolvedNonZero = activeTargetIds.some(
+            (tid) => Math.abs(resolvedAmounts[tid] ?? 0) >= 0.005
+          );
+          if (!hasAnyResolvedNonZero) {
+            if (parent.isProvisionalZeroUmbrella) {
+              dropProvisionalZeroIndices.add(i);
+            }
+            continue;
+          }
+
+          const childNamesList =
+            childIndices.length <= 4
+              ? childIndices.map((idx) => rawExtracted[idx].cleanedName).join(' & ')
+              : `${childIndices
+                  .slice(0, 3)
+                  .map((idx) => rawExtracted[idx].cleanedName)
+                  .join(', ')} + ${childIndices.length - 3} more sub-items`;
+          const noteText =
+            aggregatedAnyCol && rolledUpOnlyAnyCol
+              ? `This account has been aggregated with ${childNamesList} (columns already matching subtotal kept as-is)`
+              : aggregatedAnyCol
+              ? `This account has been aggregated with ${childNamesList} into ${rule.parentLabel}`
+              : `Parent balance already matches breakdown (${childNamesList})`;
+
+          const breakdown: AggregationBreakdown = {
+            parentItemId: rule.parentItemId,
+            parentLabel: rule.parentLabel,
+            parentRawName: parent.cleanedName || parent.rawName,
+            parentExcelRowNumber: parent.excelRowNumber,
+            isParentless: false,
+            parentOwnAmountsByTargetId: { ...parent.amountsByTargetId },
+            resolvedAmountsByTargetId: { ...resolvedAmounts },
+            wasAggregatedByTargetId,
+            children: childIndices.map((cIdx) => ({
+              rawName: rawExtracted[cIdx].rawName,
+              cleanedName: rawExtracted[cIdx].cleanedName,
+              excelRowNumber: rawExtracted[cIdx].excelRowNumber,
+              amountsByTargetId: { ...rawExtracted[cIdx].amountsByTargetId },
+            })),
+          };
+
+          umbrellaResolutionByRawIdx.set(i, {
+            mode: 'parent',
+            targetItemId: rule.parentItemId,
+            resolvedAmounts,
+            aggregationNote: noteText,
+            aggregationBreakdown: breakdown,
+          });
+
+          const childSkipReason = aggregatedAnyCol
+            ? `Aggregated into ${rule.parentLabel} above`
+            : `Already included in ${rule.parentLabel} above`;
+
+          childIndices.forEach((cIdx) => {
+            umbrellaResolutionByRawIdx.set(cIdx, {
+              mode: 'consumed_child',
+              reason: childSkipReason,
+            });
+          });
+        } else if (rule.allowParentlessConsolidation(parent)) {
+          const siblingIndices: number[] = [i];
+          for (let j = i + 1; j < rawExtracted.length; j++) {
+            if (umbrellaResolutionByRawIdx.has(j)) break;
+            const sib = rawExtracted[j];
+            if (sib.strictSummaryKind || sib.matchesStrictHierarchy || sib.isContraName) break;
+            if (!rule.allowParentlessConsolidation(sib)) break;
+            siblingIndices.push(j);
+          }
+
+          if (siblingIndices.length >= 2) {
+            const resolvedAmounts: Record<string, number | null> = {};
+            const wasAggregatedByTargetId: Record<string, boolean> = {};
+            activeTargetIds.forEach((tid) => {
+              const sum = siblingIndices.reduce(
+                (acc, idx) => acc + (rawExtracted[idx].amountsByTargetId[tid] ?? 0),
+                0
+              );
+              const anyValue = siblingIndices.some(
+                (idx) =>
+                  rawExtracted[idx].amountsByTargetId[tid] !== null &&
+                  rawExtracted[idx].amountsByTargetId[tid] !== undefined
+              );
+              resolvedAmounts[tid] = anyValue ? Math.round(sum * 10000) / 10000 : null;
+              wasAggregatedByTargetId[tid] = anyValue && Math.abs(sum) >= 0.005;
+            });
+
+            const childNamesList =
+              siblingIndices.length <= 4
+                ? siblingIndices.map((idx) => rawExtracted[idx].cleanedName).join(' & ')
+                : `${siblingIndices
+                    .slice(0, 3)
+                    .map((idx) => rawExtracted[idx].cleanedName)
+                    .join(', ')} + ${siblingIndices.length - 3} more`;
+
+            const breakdown: AggregationBreakdown = {
+              parentItemId: rule.parentItemId,
+              parentLabel: rule.parentLabel,
+              parentRawName: rule.parentLabel,
+              isParentless: true,
+              parentOwnAmountsByTargetId: {},
+              resolvedAmountsByTargetId: { ...resolvedAmounts },
+              wasAggregatedByTargetId,
+              children: siblingIndices.map((cIdx) => ({
+                rawName: rawExtracted[cIdx].rawName,
+                cleanedName: rawExtracted[cIdx].cleanedName,
+                excelRowNumber: rawExtracted[cIdx].excelRowNumber,
+                amountsByTargetId: { ...rawExtracted[cIdx].amountsByTargetId },
+              })),
+            };
+
+            umbrellaResolutionByRawIdx.set(i, {
+              mode: 'parent',
+              targetItemId: rule.parentItemId,
+              resolvedAmounts,
+              aggregationNote: `This account has been aggregated from ${childNamesList} into ${rule.parentLabel}`,
+              aggregationBreakdown: breakdown,
+            });
+
+            siblingIndices.slice(1).forEach((cIdx) => {
+              umbrellaResolutionByRawIdx.set(cIdx, {
+                mode: 'consumed_child',
+                reason: `Aggregated into ${rule.parentLabel}`,
+              });
+            });
+          }
+        }
+      }
+    }
+  }
+
   // Pass 2: Enforce lowest-level leaf extraction, statement-specific summary rules, and SFP guards
   const finalRows: ExtractedPositionRow[] = [];
 
   for (let i = 0; i < rawExtracted.length; i++) {
+    if (dropProvisionalZeroIndices.has(i)) continue;
     const raw = rawExtracted[i];
+    const umbrellaRes = umbrellaResolutionByRawIdx.get(i);
     let isSummaryRow = false;
     let summaryKind: ExtractedPositionRow['summaryKind'] = raw.strictSummaryKind;
     let summaryReason: string | undefined;
+    let aggregationNote: string | undefined;
+    let aggregationBreakdown: AggregationBreakdown | undefined;
     let isLumpedDepreciation = false;
+    let amountsByTargetId = raw.amountsByTargetId;
 
-    if (isPositionStatement && raw.inEquitySection) {
+    if (umbrellaRes?.mode === 'consumed_child') {
+      isSummaryRow = true;
+      summaryKind = 'hierarchy_group';
+      summaryReason = umbrellaRes.reason;
+    } else if (umbrellaRes?.mode === 'parent') {
+      isSummaryRow = false;
+      amountsByTargetId = umbrellaRes.resolvedAmounts;
+      aggregationNote = umbrellaRes.aggregationNote;
+      aggregationBreakdown = umbrellaRes.aggregationBreakdown;
+    } else if (isPositionStatement && raw.inEquitySection) {
       const isChosenEndingSurplus =
         raw.equityRole === 'ending_surplus_explicit' ||
         (!hasExplicitEndingSurplus && raw.equityRole === 'surplus_unqualified');
@@ -1975,8 +3250,21 @@ export function extractPositionRowsFromSheet(
       (i) => i.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
     );
 
+    const resolvedParentDef =
+      umbrellaRes?.mode === 'parent'
+        ? encodableItems.find((i) => i.id === umbrellaRes.targetItemId)
+        : undefined;
+
     if (isSummaryRow) {
       recommendation = { bestItem: null, confidence: 0, matchType: 'none', alternatives: [] };
+    } else if (umbrellaRes?.mode === 'parent' && resolvedParentDef) {
+      recommendation = {
+        bestItem: resolvedParentDef,
+        confidence: 100,
+        matchType: 'exact',
+        alternatives: [],
+      };
+      autoSelectedId = resolvedParentDef.id;
     } else if (isLumpedDepreciation && aggregatedDepItem) {
       recommendation = {
         bestItem: aggregatedDepItem,
@@ -1998,7 +3286,8 @@ export function extractPositionRowsFromSheet(
         raw.rawName,
         encodableItems,
         savedAliases,
-        raw.perfContext
+        raw.perfContext || raw.cashContext,
+        raw.perfContext ? raw.perfSubContext : raw.cashGroupContext
       );
       autoSelectedId =
         recommendation.bestItem && recommendation.confidence >= 66 ? recommendation.bestItem.id : '';
@@ -2013,11 +3302,13 @@ export function extractPositionRowsFromSheet(
       sourceColIndex: raw.sourceColIndex,
       sourceColLetter: raw.sourceColLetter,
       indentScore: raw.indentScore,
-      amountsByTargetId: raw.amountsByTargetId,
+      amountsByTargetId,
       isSummaryRow,
       isLumpedDepreciation,
       summaryKind,
       summaryReason,
+      aggregationNote,
+      aggregationBreakdown,
       included: !isSummaryRow,
       selectedLineItemId: autoSelectedId,
       recommendation,

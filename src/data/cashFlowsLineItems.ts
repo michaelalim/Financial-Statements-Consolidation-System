@@ -4,7 +4,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   // ==========================================
   // OPERATING ACTIVITIES - CASH INFLOWS
   // ==========================================
-  // Receipt of Notice of Cash Allocation
+  // Receipt of Notice of Cash Allocation (Father)
   {
     id: "cf-op-in-nca-1",
     name: "Receipt of Notice of Cash Allocation",
@@ -56,7 +56,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2005,
   },
 
-  // Collection of Income/Revenues
+  // Collection of Income/Revenues (Father)
   {
     id: "cf-op-in-rev-1",
     name: "Collection of tax revenue",
@@ -108,7 +108,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2015,
   },
 
-  // Receipt of Assistance and Subsidy from Other NGAs, LGUs and GOCCs
+  // Receipt of Assistance and Subsidy from Other NGAs, LGUs and GOCCs (Father)
   {
     id: "cf-op-in-sub-1",
     name: "Subsidy from Other National Government Agencies",
@@ -140,7 +140,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2023,
   },
 
-  // Collection of Receivables
+  // Collection of Receivables (Father)
   {
     id: "cf-op-in-rec-1",
     name: "Collection of loans and receivables",
@@ -182,7 +182,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2034,
   },
 
-  // Receipt of Inter-Agency Fund Transfers
+  // Receipt of Inter-Agency Fund Transfers (Father)
   {
     id: "cf-op-in-inter-1",
     name: "Receipt of cash for the account of NGAs/LGUs/GOCCs",
@@ -195,7 +195,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-in-inter-2",
-    name: "NGAs/LGUs/GOCCs",
+    name: "Receipt of funds for the implementation of projects from NGAs/LGUs/GOCCs",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -214,10 +214,10 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2043,
   },
 
-  // Receipt of Intra-Agency Fund Transfers
+  // Receipt of Intra-Agency Fund Transfers (Father)
   {
     id: "cf-op-in-intra-1",
-    name: "programs/projects",
+    name: "Receipt of funds from CO/ROs/OUs for implementation of programs/projects",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -246,7 +246,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2053,
   },
 
-  // Trust Receipts
+  // Trust Receipts (Father)
   {
     id: "cf-op-in-tr-1",
     name: "Receipt of Disaster Risk Reduction and Management Fund",
@@ -308,7 +308,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2066,
   },
 
-  // Other Receipts
+  // Other Receipts (Father)
   {
     id: "cf-op-in-oth-1",
     name: "Advance collection of income",
@@ -381,7 +381,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-in-oth-8",
-    name: "Expenses",
+    name: "Refund of overpayment of Maintenance and Other Operating Expenses",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -430,7 +430,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2082,
   },
 
-  // Adjustments - Inflow
+  // Adjustments - Inflow (Father)
   {
     id: "cf-op-in-adj-1",
     name: "Restoration of cash for cancelled/lost/stale checks/ADA",
@@ -465,7 +465,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   // ==========================================
   // OPERATING ACTIVITIES - CASH OUTFLOWS
   // ==========================================
-  // Replenishment of Negotiated MDS Checks (for BTr)
+  // Replenishment of Negotiated MDS Checks (for BTr) (Father with single indented leaf)
   {
     id: "cf-op-out-mds-1",
     name: "Replenishment of Negotiated MDS Checks (for BTr)",
@@ -477,7 +477,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2101,
   },
 
-  // Remittance to National Treasury
+  // Remittance to National Treasury (Father)
   {
     id: "cf-op-out-rem-1",
     name: "Remittance of current year's income/revenue",
@@ -510,7 +510,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-out-rem-4",
-    name: "receipts",
+    name: "Remittance of refund of overpayments/other receipts",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -519,7 +519,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2114,
   },
 
-  // Payment of Expenses
+  // Payment of Expenses (Father)
   {
     id: "cf-op-out-exp-1",
     name: "Payment of personnel services",
@@ -581,7 +581,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2126,
   },
 
-  // Payment to Suppliers and Creditors
+  // Payment to Suppliers and Creditors (Direct Leaf)
   {
     id: "cf-op-out-sup-1",
     name: "Payment to Suppliers and Creditors",
@@ -593,7 +593,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2131,
   },
 
-  // Other Payments
+  // Other Payments (Direct Leaf)
   {
     id: "cf-op-out-othpay-1",
     name: "Other Payments",
@@ -605,7 +605,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2141,
   },
 
-  // Purchase of Inventories
+  // Purchase of Inventories (Father)
   {
     id: "cf-op-out-inv-1",
     name: "Purchase of inventories for sale",
@@ -657,10 +657,10 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2155,
   },
 
-  // Purchase of Semi-Expendable Machinery, Equipment, Furniture, Fixtures and Books
+  // Purchase of Semi-Expendable Machinery, Equipment, Furniture, Fixtures and Books (Father)
   {
     id: "cf-op-out-semi-1",
-    name: "Purchase of Semi-Expendable, Machinery and Equipment",
+    name: "Purchase of Semi-Expendable Machinery and Equipment",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -679,7 +679,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2162,
   },
 
-  // Grant of Cash Advances
+  // Grant of Cash Advances (Father)
   {
     id: "cf-op-out-adv-1",
     name: "Advances for operating expenses",
@@ -721,10 +721,10 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2174,
   },
 
-  // Prepayments
+  // Prepayments (Father)
   {
     id: "cf-op-out-prep-1",
-    name: "and equipment (not capitalizable)",
+    name: "Prepayments for supplies and equipment (not capitalizable)",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -783,7 +783,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2186,
   },
 
-  // Refund of Deposits
+  // Refund of Deposits (Father)
   {
     id: "cf-op-out-dep-1",
     name: "Payment of deposits on letter of credits",
@@ -825,7 +825,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2194,
   },
 
-  // Payment of Accounts Payables
+  // Payment of Accounts Payables (Direct Leaf)
   {
     id: "cf-op-out-ap-1",
     name: "Payment of Accounts Payables",
@@ -837,7 +837,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2201,
   },
 
-  // Payment of tax refunds payable
+  // Payment of tax refunds payable (Direct Leaf)
   {
     id: "cf-op-out-taxref-1",
     name: "Payment of tax refunds payable",
@@ -849,7 +849,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2211,
   },
 
-  // Remittance of Personnel Benefit Contributions and Mandatory Deductions
+  // Remittance of Personnel Benefit Contributions and Mandatory Deductions (Father)
   {
     id: "cf-op-out-ded-1",
     name: "Remittance of taxes withheld covered by TRA",
@@ -901,7 +901,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2225,
   },
 
-  // Grant of Financial Assistance/Subsidy
+  // Grant of Financial Assistance/Subsidy (Father)
   {
     id: "cf-op-out-sub-1",
     name: "Subsidy to NGAs",
@@ -953,7 +953,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2235,
   },
 
-  // Release of Inter-Agency Fund Transfers
+  // Release of Inter-Agency Fund Transfers (Father)
   {
     id: "cf-op-out-inter-1",
     name: "Advances to Procurement Service",
@@ -966,7 +966,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-out-inter-2",
-    name: "goods/services as authorized by law",
+    name: "Release of funds to NGAs/LGUs/GOCCs for purchase of goods/services as authorized by law",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -976,7 +976,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-out-inter-3",
-    name: "projects",
+    name: "Release of funds to NGAs/LGUs/GOCCs for implementation of projects",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -995,10 +995,10 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2244,
   },
 
-  // Release of Intra-Agency Fund Transfers
+  // Release of Intra-Agency Fund Transfers (Father)
   {
     id: "cf-op-out-intra-1",
-    name: "consular offices",
+    name: "Issuance of Working Fund to foreign service posts and regional consular offices",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -1037,7 +1037,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2254,
   },
 
-  // Other Disbursements
+  // Other Disbursements (Father)
   {
     id: "cf-op-out-othdisb-1",
     name: "Refund of excess income",
@@ -1090,7 +1090,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-op-out-othdisb-6",
-    name: "Refund of customers'deposit",
+    name: "Refund of customers' deposit",
     statementType: "cash_flows",
     section: "CASH_OPERATING",
     subsection: "Cash Flows from Operating Activities",
@@ -1119,7 +1119,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2268,
   },
 
-  // Reversal of Unutilized NCA
+  // Reversal of Unutilized NCA (Direct Leaf)
   {
     id: "cf-op-out-revnca-1",
     name: "Reversal of Unutilized NCA",
@@ -1131,7 +1131,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2271,
   },
 
-  // Adjustments - Outflow
+  // Adjustments - Outflow (Father)
   {
     id: "cf-op-out-adj-1",
     name: "Reversion/Return of unused NCA",
@@ -1186,7 +1186,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   // ==========================================
   // INVESTING ACTIVITIES - CASH INFLOWS
   // ==========================================
-  // Proceeds from Sale/Disposal of Property, Plant and Equipment
+  // Proceeds from Sale/Disposal of Property, Plant and Equipment (Direct Leaf)
   {
     id: "cf-inv-in-ppe-1",
     name: "Proceeds from Sale/Disposal of Property, Plant and Equipment",
@@ -1198,7 +1198,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2301,
   },
 
-  // Sale of Investments
+  // Sale of Investments (Father)
   {
     id: "cf-inv-in-inv-1",
     name: "Proceeds from sale of stocks/bonds/marketable securities",
@@ -1220,7 +1220,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2312,
   },
 
-  // Receipt of Cash Dividends
+  // Receipt of Cash Dividends (Direct Leaf)
   {
     id: "cf-inv-in-div-1",
     name: "Receipt of Cash Dividends",
@@ -1232,7 +1232,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2321,
   },
 
-  // Proceeds from Matured/Return of Investments
+  // Proceeds from Matured/Return of Investments (Father)
   {
     id: "cf-inv-in-mat-1",
     name: "Redemption of long term investments",
@@ -1274,7 +1274,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2334,
   },
 
-  // Collection of Long-Term Loans
+  // Collection of Long-Term Loans (Father)
   {
     id: "cf-inv-in-loan-1",
     name: "Repayment of long term-loans by GOCC/GFI",
@@ -1296,7 +1296,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2342,
   },
 
-  // Proceeds from Sale of Other Assets
+  // Direct Investing Cash Inflow Leaves (COA GAM)
   {
     id: "cf-inv-in-othast-1",
     name: "Proceeds from Sale of Other Assets",
@@ -1307,11 +1307,51 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     subgroup: "Cash Inflows",
     order: 2351,
   },
+  {
+    id: "cf-inv-in-oth-2",
+    name: "Proceeds from Sale of Investment Property",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Proceeds from Sale of Investment Property",
+    subgroup: "Cash Inflows",
+    order: 2352,
+  },
+  {
+    id: "cf-inv-in-oth-3",
+    name: "Proceeds from Sale of Biological Assets",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Proceeds from Sale of Biological Assets",
+    subgroup: "Cash Inflows",
+    order: 2353,
+  },
+  {
+    id: "cf-inv-in-oth-4",
+    name: "Proceeds from Sale of Intangible Assets",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Proceeds from Sale of Intangible Assets",
+    subgroup: "Cash Inflows",
+    order: 2354,
+  },
+  {
+    id: "cf-inv-in-oth-5",
+    name: "Other Investing Receipts",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Other Investing Receipts",
+    subgroup: "Cash Inflows",
+    order: 2355,
+  },
 
   // ==========================================
   // INVESTING ACTIVITIES - CASH OUTFLOWS
   // ==========================================
-  // Purchase/Construction of Property, Plant and Equipment
+  // Purchase/Construction of Property, Plant and Equipment (Father)
   {
     id: "cf-inv-out-ppe-1",
     name: "Purchase of land",
@@ -1354,7 +1394,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-inv-out-ppe-5",
-    name: "Purchase of  machinery  and equipment",
+    name: "Purchase of machinery and equipment",
     statementType: "cash_flows",
     section: "CASH_INVESTING",
     subsection: "Cash Flows from Investing Activities",
@@ -1404,7 +1444,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-inv-out-ppe-10",
-    name: "Construction/Acquistion of heritage assets",
+    name: "Construction/Acquisition of heritage assets",
     statementType: "cash_flows",
     section: "CASH_INVESTING",
     subsection: "Cash Flows from Investing Activities",
@@ -1484,7 +1524,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-inv-out-ppe-18",
-    name: "(capitalized repair)",
+    name: "Payment for rehabilitation of property, plant and equipment (capitalized repair)",
     statementType: "cash_flows",
     section: "CASH_INVESTING",
     subsection: "Cash Flows from Investing Activities",
@@ -1494,7 +1534,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
   },
   {
     id: "cf-inv-out-ppe-19",
-    name: "and equipment",
+    name: "Payment for major repair/improvement of property, plant and equipment",
     statementType: "cash_flows",
     section: "CASH_INVESTING",
     subsection: "Cash Flows from Investing Activities",
@@ -1503,7 +1543,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2379,
   },
 
-  // Purchase of Bearer Biological Assets
+  // Purchase of Bearer Biological Assets (Father)
   {
     id: "cf-inv-out-bio-1",
     name: "Purchase of trees, plants and crops",
@@ -1525,7 +1565,7 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2382,
   },
 
-  // Grant of Loans
+  // Grant of Loans (Father)
   {
     id: "cf-inv-out-loan-1",
     name: "Release of funds for sub-loans",
@@ -1547,8 +1587,94 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2392,
   },
 
+  // Purchase of Investments (Father - Missing COA GAM items)
+  {
+    id: "cf-inv-out-inv-1",
+    name: "Purchase of stocks/bonds/marketable securities",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Investments",
+    subgroup: "Cash Outflows",
+    order: 2394,
+  },
+  {
+    id: "cf-inv-out-inv-2",
+    name: "Investment in joint venture",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Investments",
+    subgroup: "Cash Outflows",
+    order: 2395,
+  },
+  {
+    id: "cf-inv-out-inv-3",
+    name: "Investment in associates",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Investments",
+    subgroup: "Cash Outflows",
+    order: 2396,
+  },
+  {
+    id: "cf-inv-out-inv-4",
+    name: "Purchase of investment property",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Investments",
+    subgroup: "Cash Outflows",
+    order: 2397,
+  },
+  {
+    id: "cf-inv-out-inv-5",
+    name: "Other long-term investments",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Investments",
+    subgroup: "Cash Outflows",
+    order: 2398,
+  },
+
+  // Purchase of Intangible Assets (Father - Missing COA GAM items)
+  {
+    id: "cf-inv-out-int-1",
+    name: "Purchase of computer software",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Intangible Assets",
+    subgroup: "Cash Outflows",
+    order: 2401,
+  },
+  {
+    id: "cf-inv-out-int-2",
+    name: "Purchase of patents, copyrights and other intangible assets",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Purchase of Intangible Assets",
+    subgroup: "Cash Outflows",
+    order: 2402,
+  },
+
+  // Other Investing Disbursements (Direct Leaf - COA GAM)
+  {
+    id: "cf-inv-out-oth-1",
+    name: "Other Investing Disbursements",
+    statementType: "cash_flows",
+    section: "CASH_INVESTING",
+    subsection: "Cash Flows from Investing Activities",
+    group: "Other Investing Disbursements",
+    subgroup: "Cash Outflows",
+    order: 2405,
+  },
+
   // ==========================================
-  // FINANCING ACTIVITIES
+  // FINANCING ACTIVITIES - CASH INFLOWS
   // ==========================================
   {
     id: "cf-fin-in-1",
@@ -1558,8 +1684,52 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     subsection: "Cash Flows from Financing Activities",
     group: "Financing Cash Inflows",
     subgroup: "Cash Inflows",
-    order: 2401,
+    order: 2421,
   },
+  {
+    id: "cf-fin-in-2",
+    name: "Proceeds from Issuance of Bills and Bonds",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Inflows",
+    subgroup: "Cash Inflows",
+    order: 2422,
+  },
+  {
+    id: "cf-fin-in-3",
+    name: "Proceeds from Domestic Loans",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Inflows",
+    subgroup: "Cash Inflows",
+    order: 2423,
+  },
+  {
+    id: "cf-fin-in-4",
+    name: "Proceeds from Foreign Loans",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Inflows",
+    subgroup: "Cash Inflows",
+    order: 2424,
+  },
+  {
+    id: "cf-fin-in-5",
+    name: "Other Financing Inflows",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Inflows",
+    subgroup: "Cash Inflows",
+    order: 2425,
+  },
+
+  // ==========================================
+  // FINANCING ACTIVITIES - CASH OUTFLOWS
+  // ==========================================
   {
     id: "cf-fin-out-1",
     name: "Payment of Long-Term Liabilities",
@@ -1568,7 +1738,57 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     subsection: "Cash Flows from Financing Activities",
     group: "Financing Cash Outflows",
     subgroup: "Cash Outflows",
-    order: 2411,
+    order: 2431,
+  },
+  {
+    id: "cf-fin-out-2",
+    name: "Payment of Domestic Loans",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Outflows",
+    subgroup: "Cash Outflows",
+    order: 2432,
+  },
+  {
+    id: "cf-fin-out-3",
+    name: "Payment of Foreign Loans",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Outflows",
+    subgroup: "Cash Outflows",
+    order: 2433,
+  },
+  {
+    id: "cf-fin-out-4",
+    name: "Redemption of Bills/Bonds Issued",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Outflows",
+    subgroup: "Cash Outflows",
+    order: 2434,
+  },
+  {
+    id: "cf-fin-out-5",
+    name: "Payment of Finance Lease Payable",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Outflows",
+    subgroup: "Cash Outflows",
+    order: 2435,
+  },
+  {
+    id: "cf-fin-out-6",
+    name: "Other Financing Outflows",
+    statementType: "cash_flows",
+    section: "CASH_FINANCING",
+    subsection: "Cash Flows from Financing Activities",
+    group: "Financing Cash Outflows",
+    subgroup: "Cash Outflows",
+    order: 2436,
   },
 
   // ==========================================
@@ -1585,14 +1805,24 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     order: 2500,
   },
   {
+    id: "cf-sum-fx-effects",
+    name: "Effects of Exchange Rate Changes on Cash and Cash Equivalents",
+    statementType: "cash_flows",
+    section: "CASH_FLOWS",
+    subsection: "Cash Flows from Operating Activities",
+    group: "Cash and Cash Equivalents Reconciliation",
+    subgroup: "FX Effects",
+    order: 2501,
+  },
+  {
     id: "cf-sum-beg-cash",
-    name: "Cash and Cash Equivalents, January 1,",
+    name: "Cash and Cash Equivalents, January 1",
     statementType: "cash_flows",
     section: "CASH_FLOWS",
     subsection: "Cash Flows from Operating Activities",
     group: "Cash and Cash Equivalents Reconciliation",
     subgroup: "Beginning Balance",
-    order: 2501,
+    order: 2502,
   },
   {
     id: "cf-sum-end-cash",
@@ -1602,6 +1832,6 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
     subsection: "Cash Flows from Operating Activities",
     group: "Cash and Cash Equivalents Reconciliation",
     subgroup: "Ending Balance",
-    order: 2502,
+    order: 2503,
   },
 ];

@@ -15,6 +15,7 @@ export interface CashFlowsSummary {
   netFinancing: number;
 
   netIncreaseDecrease: number;
+  fxEffects: number;
   january1Cash: number;
   december31Cash: number;
   isJan1FromPriorDec31: boolean;
@@ -61,7 +62,12 @@ export function calculateCashFlowsSummary(
 
   lineItems.forEach((item) => {
     if ((item.statementType || 'position') !== 'cash_flows') return;
-    if (item.id === 'cf-sum-beg-cash' || item.id === 'cf-sum-end-cash' || item.id === 'cf-sum-net-inc-dec') {
+    if (
+      item.id === 'cf-sum-beg-cash' ||
+      item.id === 'cf-sum-end-cash' ||
+      item.id === 'cf-sum-net-inc-dec' ||
+      item.id === 'cf-sum-fx-effects'
+    ) {
       return;
     }
 
@@ -99,6 +105,8 @@ export function calculateCashFlowsSummary(
     ? explicitNet
     : netOperating + netInvesting + netFinancing;
 
+  const fxEffects = getAmount('cf-sum-fx-effects', yearData);
+
   // 1. Cash and Cash Equivalents, January 1:
   // Should equal the balance of Cash and Cash Equivalents, December 31 of previous period by default
   const prevYear = getComparativeYear(year);
@@ -126,8 +134,8 @@ export function calculateCashFlowsSummary(
   }
 
   // 2. Cash and Cash Equivalents, December 31:
-  // Should equal Increase(Decrease) in Cash and Cash Equivalents added to(subtracted to) January 1
-  const december31Cash = january1Cash + netIncreaseDecrease;
+  // Should equal Increase(Decrease) in Cash and Cash Equivalents + FX Effects + January 1
+  const december31Cash = january1Cash + netIncreaseDecrease + fxEffects;
   const isDec31Calculated = true;
 
   return {
@@ -141,6 +149,7 @@ export function calculateCashFlowsSummary(
     financingOutflows,
     netFinancing,
     netIncreaseDecrease,
+    fxEffects,
     january1Cash,
     december31Cash,
     isJan1FromPriorDec31,

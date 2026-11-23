@@ -1,5 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
+import {
+  Division,
+  LineItemDefinition,
+  FinancialDataStore,
+  DivisionAggregationRecord,
+  AggregationMetadataStore,
+} from '../types/fs';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { getComparativeYear } from '../utils/yearUtils';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
@@ -12,6 +18,8 @@ import {
   Check, 
   FileText, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Layers, 
   RotateCcw,
   CheckCircle2,
@@ -26,6 +34,7 @@ import {
   PenTool,
   Calculator,
   Upload,
+  Info,
   X,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
@@ -153,6 +162,7 @@ interface StagedEntry {
   lineItemId: string;
   rawText?: string;
   amount: string;
+  aggregationRecord?: DivisionAggregationRecord;
 }
 
 interface DataEntryFormProps {
@@ -161,7 +171,13 @@ interface DataEntryFormProps {
   selectedDivisionId: string;
   selectedYear: string;
   dataStore: FinancialDataStore;
-  onSaveBatchAmounts: (year: string, divisionId: string, entries: { lineItemId: string; amount: number }[]) => void;
+  aggregationStore?: AggregationMetadataStore;
+  onSaveBatchAmounts: (
+    year: string,
+    divisionId: string,
+    entries: { lineItemId: string; amount: number }[],
+    aggregationRecords?: DivisionAggregationRecord[]
+  ) => void;
   onDeleteAmount: (year: string, divisionId: string, lineItemId: string) => void;
   onDeleteAllDivisionAmounts: (year: string, divisionId: string) => void;
   onNavigateToViewFS: () => void;
@@ -175,6 +191,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   selectedDivisionId,
   selectedYear,
   dataStore,
+  aggregationStore,
   onSaveBatchAmounts,
   onDeleteAmount,
   onDeleteAllDivisionAmounts,
@@ -196,6 +213,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   >([]);
   const [pendingDeleteRecordedItem, setPendingDeleteRecordedItem] = useState<LineItemDefinition | null>(null);
   const [pendingDeleteSelectedRecorded, setPendingDeleteSelectedRecorded] = useState(false);
+  const [expandedLedgerAggIds, setExpandedLedgerAggIds] = useState<Record<string, boolean>>({});
+  const [isLedgerAggBannerExpanded, setIsLedgerAggBannerExpanded] = useState(false);
   const [isEditingJan1_2024, setIsEditingJan1_2024] = useState(false);
   const [jan1_2024Input, setJan1_2024Input] = useState('');
   const [pendingConfirmJan1_2024, setPendingConfirmJan1_2024] = useState<{
@@ -208,6 +227,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   useEffect(() => {
     setSelectedRecordedIds([]);
     setIsSelectMultipleMode(false);
+    setExpandedLedgerAggIds({});
+    setIsLedgerAggBannerExpanded(false);
     setIsEditingJan1_2024(false);
     setPendingConfirmJan1_2024(null);
   }, [selectedYear, selectedDivisionId, selectedStatement]);
@@ -251,7 +272,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     invalidCount: number;
     validCount: number;
     invalidRows: StagedEntry[];
-    validEntriesToSave: { lineItemId: string; amount: number; rowId: string }[];
+    validEntriesToSave: {
+      lineItemId: string;
+      amount: number;
+      rowId: string;
+      aggregationRecord?: DivisionAggregationRecord;
+    }[];
   }>({
     isOpen: false,
     invalidCount: 0,
@@ -446,10 +472,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       }
 
       // Rule 2: Cash and Cash Equivalents, December 31 of the current year should equal Increase(Decrease)
-      // in Cash and Cash Equivalents added to (subtracted to) Cash and Cash Equivalents, January 1
+      // in Cash and Cash Equivalents + FX Effects added to (subtracted from) Cash and Cash Equivalents, January 1
       const effectiveJan1 = merged['cf-sum-beg-cash'] !== undefined ? merged['cf-sum-beg-cash'] : cashFlowsSummary.january1Cash;
       const effectiveNet = merged['cf-sum-net-inc-dec'] !== undefined ? merged['cf-sum-net-inc-dec'] : cashFlowsSummary.netIncreaseDecrease;
-      merged['cf-sum-end-cash'] = effectiveJan1 + effectiveNet;
+      const effectiveFx = merged['cf-sum-fx-effects'] || 0;
+      merged['cf-sum-end-cash'] = effectiveJan1 + effectiveNet + effectiveFx;
 
       return merged;
     }
@@ -464,6 +491,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     }
     return raw;
   }, [dataStore, selectedYear, selectedDivisionId, selectedStatement, cashFlowsSummary, netAssetsSummary]);
+
+  const divisionAggMap = useMemo(() => {
+    return aggregationStore?.[selectedYear]?.[selectedDivisionId] || {};
+  }, [aggregationStore, selectedYear, selectedDivisionId]);
+
+  const ledgerAggRecords = useMemo(() => {
+    return activeStatementLineItems
+      .map((item) => {
+        const rec = divisionAggMap[item.id];
+        const savedAmt = currentDbEntries[item.id] || 0;
+        if (!rec || Math.abs(savedAmt) < 0.005) return null;
+        return { item, rec };
+      })
+      .filter((entry): entry is { item: LineItemDefinition; rec: DivisionAggregationRecord } => entry !== null);
+  }, [activeStatementLineItems, divisionAggMap, currentDbEntries]);
 
   const handleStartEditJan1_2024 = () => {
     const targetItemId = selectedStatement === 'net_assets' ? 'na-beg-balance' : 'cf-sum-beg-cash';
@@ -691,7 +733,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     const invalidRows = activeRows.filter((r) => isRowLineItemInvalid(r) || isRowAmbiguous(r));
 
     // Extract valid rows with amounts
-    const validEntriesToSave: { lineItemId: string; amount: number; rowId: string }[] = [];
+    const validEntriesToSave: {
+      lineItemId: string;
+      amount: number;
+      rowId: string;
+      aggregationRecord?: DivisionAggregationRecord;
+    }[] = [];
     activeRows.forEach((row) => {
       if (!isRowLineItemInvalid(row) && !isRowAmbiguous(row)) {
         let resolvedId = row.lineItemId;
@@ -702,10 +749,21 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           if (matches.length === 1) resolvedId = matches[0].id;
         }
         if (resolvedId && row.amount && row.amount.trim() !== '') {
+          const parsedAmt = parseNumberInput(row.amount);
+          const resolvedDef = encodableStatementLineItems.find((i) => i.id === resolvedId);
+          const validAggRecord =
+            row.aggregationRecord && Math.abs(parsedAmt - row.aggregationRecord.totalAmount) < 0.01
+              ? {
+                  ...row.aggregationRecord,
+                  lineItemId: resolvedId,
+                  lineItemName: resolvedDef?.name || row.aggregationRecord.lineItemName,
+                }
+              : undefined;
           validEntriesToSave.push({
             lineItemId: resolvedId,
-            amount: parseNumberInput(row.amount),
+            amount: parsedAmt,
             rowId: row.id,
+            aggregationRecord: validAggRecord,
           });
         }
       }
@@ -729,11 +787,16 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       return;
     }
 
+    const aggRecordsToSave = validEntriesToSave
+      .map((e) => e.aggregationRecord)
+      .filter((rec): rec is DivisionAggregationRecord => Boolean(rec));
+
     // Direct save when all active rows are valid:
     onSaveBatchAmounts(
       selectedYear,
       selectedDivisionId,
-      validEntriesToSave.map(({ lineItemId, amount }) => ({ lineItemId, amount }))
+      validEntriesToSave.map(({ lineItemId, amount }) => ({ lineItemId, amount })),
+      aggRecordsToSave.length > 0 ? aggRecordsToSave : undefined
     );
 
     setSaveSuccessMsg(`Saved ${validEntriesToSave.length} entries for ${currentDivision?.name} (FY ${selectedYear}).`);
@@ -748,10 +811,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     const { validEntriesToSave, invalidRows } = erroneousModalState;
 
     if (validEntriesToSave.length > 0) {
+      const aggRecordsToSave = validEntriesToSave
+        .map((e) => e.aggregationRecord)
+        .filter((rec): rec is DivisionAggregationRecord => Boolean(rec));
+
       onSaveBatchAmounts(
         selectedYear,
         selectedDivisionId,
-        validEntriesToSave.map(({ lineItemId, amount }) => ({ lineItemId, amount }))
+        validEntriesToSave.map(({ lineItemId, amount }) => ({ lineItemId, amount })),
+        aggRecordsToSave.length > 0 ? aggRecordsToSave : undefined
       );
       setSaveSuccessMsg(
         `Saved ${validEntriesToSave.length} valid entries to database! ${invalidRows.length} unrecognized item(s) retained in table for correction.`
@@ -1320,6 +1388,20 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                           </div>
                         </div>
                       )}
+
+                      {row.aggregationRecord && (
+                        <div className="rounded-lg bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-800 px-3 py-1.5 text-xs text-sky-900 dark:text-sky-200 flex items-center gap-2 flex-wrap">
+                          <Info className="w-3.5 h-3.5 text-sky-700 dark:text-sky-300 shrink-0" />
+                          <span className="font-bold">
+                            {row.aggregationRecord.wasAggregated
+                              ? 'This account has been aggregated'
+                              : 'Parent matched sub-items'}
+                          </span>
+                          <span>
+                            ({row.aggregationRecord.components.length} sub-item{row.aggregationRecord.components.length === 1 ? '' : 's'} · Total ₱{formatAccounting(row.aggregationRecord.totalAmount)})
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Amount Input with Auto-Advance to Next Line Item & Shift+Enter Save */}
@@ -1557,6 +1639,68 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
         )}
 
+        {/* Aggregated Accounts Notice Banner for Saved Division Data */}
+        {ledgerAggRecords.length > 0 && (
+          <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-sky-300 dark:border-sky-800 bg-sky-50/90 dark:bg-sky-950/40 text-sky-950 dark:text-sky-100 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start gap-2.5">
+                <Info className="w-5 h-5 text-sky-700 dark:text-sky-300 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm sm:text-base font-bold">
+                    Notice — Aggregated Accounts Recorded ({ledgerAggRecords.length})
+                  </div>
+                  <p className="text-xs sm:text-sm text-sky-900/90 dark:text-sky-200/90 mt-0.5">
+                    The accounts below include consolidated sub-items saved for {currentDivision?.name} (FY {selectedYear}). Click &quot;View breakdown&quot; on any account or expand below to inspect the exact amounts.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLedgerAggBannerExpanded((prev) => !prev)}
+                className="self-start sm:self-center inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 dark:bg-slate-900/70 border border-sky-300 dark:border-sky-700 text-xs font-bold text-sky-900 dark:text-sky-200 hover:bg-white dark:hover:bg-slate-900 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {isLedgerAggBannerExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                <span>{isLedgerAggBannerExpanded ? 'Hide Details' : 'View All Aggregated Details'}</span>
+              </button>
+            </div>
+
+            {isLedgerAggBannerExpanded && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-sky-200 dark:border-sky-800/80">
+                {ledgerAggRecords.map(({ item, rec }) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-lg bg-white/90 dark:bg-slate-900/60 border border-sky-200 dark:border-sky-800/80 text-xs space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2 font-bold text-sky-950 dark:text-sky-100">
+                      <span className="truncate">{item.name}</span>
+                      <span className="font-mono shrink-0">₱ {formatAccounting(rec.totalAmount)}</span>
+                    </div>
+                    <div className="text-[11px] font-bold text-sky-700 dark:text-sky-300">
+                      {rec.wasAggregated ? 'This account has been aggregated' : 'Parent amount already equaled sub-items'}
+                    </div>
+                    <div className="space-y-1 pt-1 border-t border-sky-100 dark:border-sky-900/60">
+                      {rec.components.map((comp, idx) => (
+                        <div
+                          key={`${item.id}-banner-comp-${idx}`}
+                          className={`flex items-center justify-between gap-2 ${
+                            comp.isParentOriginal ? 'text-sky-900 dark:text-sky-200 font-semibold' : 'text-th-muted'
+                          }`}
+                        >
+                          <span className="truncate">
+                            {comp.label}
+                            {comp.excelRowNumber ? ` (Row ${comp.excelRowNumber})` : ''}
+                          </span>
+                          <span className="font-mono font-semibold text-th-text shrink-0">₱ {formatAccounting(comp.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Cash Reconciliation Summary for Statement of Cash Flows */}
         {selectedStatement === 'cash_flows' && (
           <div className="mx-6 mt-5 p-4 rounded-xl border-2 border-th-border bg-th-subtle">
@@ -1660,7 +1804,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <div className="p-3.5 bg-emerald-50/80 dark:bg-emerald-950/40 rounded-lg border-2 border-emerald-300 dark:border-emerald-700">
                 <div className="text-sm text-emerald-800 dark:text-emerald-300 font-bold flex items-center justify-between gap-2">
                   <span>Cash &amp; Eq., December 31</span>
-                  <span className="text-xs text-emerald-700 dark:text-emerald-300 font-bold">Jan 1 + Net Change</span>
+                  <span className="text-xs text-emerald-700 dark:text-emerald-300 font-bold">
+                    {Math.abs(cashFlowsSummary.fxEffects) >= 0.005 ? 'Jan 1 + Net Change + FX' : 'Jan 1 + Net Change'}
+                  </span>
                 </div>
                 <div className="text-lg font-extrabold font-mono mt-1 text-emerald-900 dark:text-emerald-200">
                   {formatAccounting(currentDbEntries['cf-sum-end-cash'] !== undefined ? currentDbEntries['cf-sum-end-cash'] : cashFlowsSummary.december31Cash)}
@@ -1868,6 +2014,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     ((selectedStatement === 'cash_flows' && item.id === 'cf-sum-beg-cash') ||
                       (selectedStatement === 'net_assets' && item.id === 'na-beg-balance'));
                   const isAutoComputedCashFlow = NON_ENCODABLE_SUMMARY_IDS.has(item.id) && !isEditable2024Jan1;
+                  const aggRec = divisionAggMap[item.id];
+                  const showAggBadge = Boolean(aggRec && hasValue);
+                  const isAggExpanded = Boolean(expandedLedgerAggIds[item.id]);
 
                   return (
                     <tr
@@ -1915,6 +2064,38 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               Temporary Notice · Excluded from Consolidated FS
                             </span>
                           )}
+                          {showAggBadge && aggRec && (
+                            <>
+                              <span className="inline-flex items-center gap-1 text-xs text-sky-900 dark:text-sky-200 bg-sky-50 dark:bg-sky-950/60 px-2.5 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
+                                <Info className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  {aggRec.wasAggregated
+                                    ? 'This account has been aggregated'
+                                    : 'Parent matched sub-items'}
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedLedgerAggIds((prev) => ({
+                                    ...prev,
+                                    [item.id]: !prev[item.id],
+                                  }));
+                                }}
+                                className="inline-flex items-center gap-1 text-xs font-bold text-sky-800 dark:text-sky-300 hover:underline px-2 py-0.5 rounded-md bg-sky-100/70 dark:bg-sky-900/40 border border-sky-200 dark:border-sky-800 cursor-pointer"
+                              >
+                                {isAggExpanded ? (
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                )}
+                                <span>
+                                  {isAggExpanded ? 'Hide' : 'View'} breakdown ({aggRec.components.length})
+                                </span>
+                              </button>
+                            </>
+                          )}
                           {item.id === 'cf-sum-beg-cash' && (
                             <span className="text-xs text-th-text bg-th-subtle px-2.5 py-0.5 rounded-md font-bold border border-th-border-strong">
                               {selectedYear === '2024' ? 'Adjustable (No 2023 Data)' : 'Default: Prior Dec 31'}
@@ -1959,6 +2140,43 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         {item.subgroup && (
                           <div className="text-sm text-th-muted font-medium mt-0.5">
                             Subgroup: {item.subgroup}
+                          </div>
+                        )}
+                        {showAggBadge && aggRec && isAggExpanded && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-2.5 p-3 rounded-lg bg-sky-50/90 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-800 text-xs space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between gap-2 font-bold text-sky-950 dark:text-sky-100">
+                              <span>Aggregated Line Items &amp; Amounts</span>
+                              {aggRec.sourceFileName && (
+                                <span className="font-normal text-sky-800 dark:text-sky-300 truncate max-w-[220px]">
+                                  Source: {aggRec.sourceFileName}
+                                </span>
+                              )}
+                            </div>
+                            {aggRec.components.map((comp, cIdx) => (
+                              <div
+                                key={`${item.id}-comp-${cIdx}`}
+                                className={`flex items-center justify-between gap-3 ${
+                                  comp.isParentOriginal ? 'text-sky-900 dark:text-sky-200 font-semibold' : 'text-th-muted'
+                                }`}
+                              >
+                                <span>
+                                  {comp.label}
+                                  {comp.excelRowNumber ? ` (Excel Row ${comp.excelRowNumber})` : ''}
+                                </span>
+                                <span className="font-mono font-semibold text-th-text shrink-0">
+                                  ₱ {formatAccounting(comp.amount)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="pt-1.5 border-t border-sky-200 dark:border-sky-800 flex items-center justify-between gap-3 font-bold text-sky-950 dark:text-sky-100">
+                              <span>
+                                {aggRec.wasAggregated ? 'Total Recorded (Aggregated)' : 'Recorded Parent Balance'}
+                              </span>
+                              <span className="font-mono">₱ {formatAccounting(aggRec.totalAmount)}</span>
+                            </div>
                           </div>
                         )}
                       </td>
@@ -2306,6 +2524,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             lineItemId: entry.lineItemId,
             rawText: entry.rawText,
             amount: entry.amount,
+            aggregationRecord: entry.aggregationRecord,
           }));
           setStagedEntries((prev) => {
             const nonBlankPrev = prev.filter((r) => r.lineItemId || r.rawText?.trim() || r.amount?.trim());
@@ -2326,9 +2545,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         onSaveYearsDirectly={(savesByYear, unmatchedToStage) => {
           let totalSaved = 0;
           const yearSummaries: string[] = [];
-          savesByYear.forEach(({ year, entries }) => {
+          savesByYear.forEach(({ year, entries, aggregationRecords }) => {
             if (entries.length > 0) {
-              onSaveBatchAmounts(year, selectedDivisionId, entries);
+              onSaveBatchAmounts(year, selectedDivisionId, entries, aggregationRecords);
               totalSaved += entries.length;
               yearSummaries.push(`FY ${year} (${entries.length})`);
             }
