@@ -21,9 +21,12 @@ import {
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
 import { calculateReport } from './utils/calculations';
+import { calculateCashFlowsSummary } from './utils/cashFlowCalculations';
+import { calculateNetAssetsSummary } from './utils/netAssetsCalculations';
 import { YEAR_RANGE, getComparativeYear, getDefaultFiscalYear } from './utils/yearUtils';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { AccountingAuditDrawer } from './components/AccountingAuditDrawer';
+import { AccountingAuditDrawer, CrossStatementAuditSummary } from './components/AccountingAuditDrawer';
+import { FinancialStatementType } from './components/FinancialStatementSidebar';
 import { DataEntryForm } from './components/DataEntryForm';
 import { DivisionalFSView } from './components/DivisionalFSView';
 import { ConsolidatedFSView } from './components/ConsolidatedFSView';
@@ -35,7 +38,7 @@ import {
   SECOND_NAV_MIN_HEIGHT,
   SECOND_NAV_MAX_HEIGHT,
 } from './context/ThemeContext';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY_DATA = 'deped_ro6_fs_data_v1';
 const LOCAL_STORAGE_KEY_DIVISIONS = 'deped_ro6_divisions_v1';
@@ -48,9 +51,26 @@ const LOCAL_STORAGE_KEY_SELECTED_DIVISION = 'deped_ro6_selected_division_v1';
 const LOCAL_STORAGE_KEY_SELECTED_YEAR = 'deped_ro6_selected_year_v1';
 const LOCAL_STORAGE_KEY_AGGREGATION_METADATA = 'deped_ro6_aggregation_metadata_v1';
 const SESSION_STORAGE_KEY_YEAR = 'deped_ro6_selected_year_session_v1';
+const SESSION_STORAGE_KEY_STATEMENT = 'deped_ro6_selected_statement_session_v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('entry');
+  const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_STORAGE_KEY_STATEMENT);
+      if (
+        saved === 'position' ||
+        saved === 'performance' ||
+        saved === 'cash_flows' ||
+        saved === 'net_assets'
+      ) {
+        return saved;
+      }
+    } catch {
+      // fallback
+    }
+    return 'position';
+  });
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isAuditPinned, setIsAuditPinned] = useState(false);
   const [optionsSubTab, setOptionsSubTab] = useState<OptionsSubTab>('databank');
@@ -212,7 +232,23 @@ export default function App() {
         const missingPerf = DEFAULT_PERFORMANCE_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingCashFlows = DEFAULT_CASH_FLOWS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingNetAssets = DEFAULT_NET_ASSETS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
-        const missing = [...missingPerf, ...missingCashFlows, ...missingNetAssets];
+
+        if (missingCashFlows.length > 0) {
+          const next = [...parsed];
+          missingCashFlows.forEach((item) => {
+            const insertAt = next.findIndex(
+              (existing) => existing.statementType === 'cash_flows' && existing.order > item.order
+            );
+            if (insertAt >= 0) {
+              next.splice(insertAt, 0, item);
+            } else {
+              next.push(item);
+            }
+          });
+          parsed = next;
+        }
+
+        const missing = [...missingPerf, ...missingNetAssets];
         return missing.length > 0 ? [...parsed, ...missing] : parsed;
       }
     } catch {
@@ -344,6 +380,14 @@ export default function App() {
     }
   }, [selectedYear]);
 
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_STORAGE_KEY_STATEMENT, selectedStatement);
+    } catch {
+      // ignore storage write error
+    }
+  }, [selectedStatement]);
+
   // Handlers for Data Entry
   const handleSaveAmount = (year: string, divisionId: string, lineItemId: string, amount: number) => {
     setDataStore((prev) => {
@@ -364,11 +408,19 @@ export default function App() {
     entries: { lineItemId: string; amount: number }[],
     aggregationRecords?: DivisionAggregationRecord[]
   ) => {
+    const batchTotals = new Map<string, number>();
+    entries.forEach(({ lineItemId, amount }) => {
+      batchTotals.set(
+        lineItemId,
+        Math.round(((batchTotals.get(lineItemId) ?? 0) + amount) * 10000) / 10000
+      );
+    });
+
     setDataStore((prev) => {
       const yearCopy = { ...(prev[year] || {}) };
       const divCopy = { ...(yearCopy[divisionId] || {}) };
-      entries.forEach(({ lineItemId, amount }) => {
-        divCopy[lineItemId] = amount;
+      batchTotals.forEach((totalAmount, lineItemId) => {
+        divCopy[lineItemId] = totalAmount;
       });
       yearCopy[divisionId] = divCopy;
       return {
@@ -392,10 +444,10 @@ export default function App() {
         changed = true;
       });
 
-      entries.forEach(({ lineItemId, amount }) => {
+      batchTotals.forEach((totalAmount, lineItemId) => {
         if (recordsById.has(lineItemId)) return;
         const existingRec = divCopy[lineItemId];
-        if (existingRec && (Math.abs(amount) < 0.005 || Math.abs(existingRec.totalAmount - amount) >= 0.01)) {
+        if (existingRec && (Math.abs(totalAmount) < 0.005 || Math.abs(existingRec.totalAmount - totalAmount) >= 0.01)) {
           delete divCopy[lineItemId];
           changed = true;
         }
@@ -605,6 +657,68 @@ export default function App() {
     return calculateReport(lineItems, dataStore, selectedYear, activeDivForChecks);
   }, [lineItems, dataStore, selectedYear, activeDivForChecks]);
 
+  const crossStatementAudit: CrossStatementAuditSummary = useMemo(() => {
+    const perfItems = lineItems.filter((i) => (i.statementType || 'position') === 'performance');
+    const sumPerfNet = (items: LineItemDefinition[]) =>
+      items.reduce((sum, item) => {
+        const v = liveChecksReport.values[item.id] || 0;
+        return sum + (item.isContra ? -v : v);
+      }, 0);
+    const revItems = perfItems.filter((i) => i.section === 'REVENUE');
+    const expItems = perfItems.filter((i) => i.section === 'EXPENSES');
+    const trItems = perfItems.filter((i) => i.section === 'TRANSFERS');
+    const trFromItems = trItems.filter((i) => !i.group.startsWith('Less:'));
+    const trToItems = trItems.filter((i) => i.group.startsWith('Less:'));
+    const nonOpItems = perfItems.filter((i) => i.section === 'NON_OPERATING');
+    const lossItems = perfItems.filter((i) => i.section === 'LOSSES');
+
+    const perfTotalRevenue = sumPerfNet(revItems);
+    const perfTotalExpenses = sumPerfNet(expItems);
+    const netTransfers = sumPerfNet(trFromItems) - sumPerfNet(trToItems);
+    const netNonOp = sumPerfNet(nonOpItems);
+    const totalLosses = lossItems.reduce(
+      (sum, item) => sum + Math.abs(liveChecksReport.values[item.id] || 0),
+      0
+    );
+    const perfNetSurplusDeficit =
+      perfTotalRevenue - perfTotalExpenses + netTransfers + netNonOp - totalLosses;
+
+    const cfSummary = calculateCashFlowsSummary(lineItems, dataStore, selectedYear, activeDivForChecks);
+    const naSummary = calculateNetAssetsSummary(dataStore, selectedYear, activeDivForChecks);
+    const sfpCashAndCashEquivalents =
+      liveChecksReport.groupTotals['Current Assets__Cash and Cash Equivalents'] || 0;
+
+    return {
+      sfpCashAndCashEquivalents,
+      perfTotalRevenue,
+      perfTotalExpenses,
+      perfNetSurplusDeficit,
+      cfNetOperating: cfSummary.netOperating,
+      cfNetInvesting: cfSummary.netInvesting,
+      cfNetFinancing: cfSummary.netFinancing,
+      cfNetIncreaseDecrease: cfSummary.netIncreaseDecrease,
+      cfBeginningCash: cfSummary.january1Cash,
+      cfEndingCash: cfSummary.december31Cash,
+      cfHasData:
+        Math.abs(cfSummary.netOperating) >= 0.005 ||
+        Math.abs(cfSummary.netInvesting) >= 0.005 ||
+        Math.abs(cfSummary.netFinancing) >= 0.005 ||
+        Math.abs(cfSummary.netIncreaseDecrease) >= 0.005 ||
+        Math.abs(cfSummary.january1Cash) >= 0.005 ||
+        Math.abs(cfSummary.december31Cash) >= 0.005,
+      naBeginningBalance: naSummary.january1Balance,
+      naRestatedBalance: naSummary.restatedBalance,
+      naSurplusForPeriod: naSummary.surplusDeficitForPeriod,
+      naEndingBalance: naSummary.december31Balance,
+      naHasData:
+        Math.abs(naSummary.january1Balance) >= 0.005 ||
+        Math.abs(naSummary.restatedBalance) >= 0.005 ||
+        Math.abs(naSummary.surplusDeficitForPeriod) >= 0.005 ||
+        Math.abs(naSummary.totalCalendarYearChanges) >= 0.005 ||
+        Math.abs(naSummary.december31Balance) >= 0.005,
+    };
+  }, [lineItems, dataStore, selectedYear, activeDivForChecks, liveChecksReport]);
+
   const liabilitiesPlusEquity = liveChecksReport.totalLiabilities + liveChecksReport.totalEquity;
   const isBalanced = Math.abs(liveChecksReport.totalAssets - liabilitiesPlusEquity) < 0.01;
 
@@ -766,15 +880,18 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              <span
-                className={`inline-flex items-center gap-1.5 font-bold px-3.5 rounded-xl text-sm border-2 whitespace-nowrap shrink-0 ${navControlHeightClass} ${
+              <button
+                type="button"
+                onClick={() => setIsAuditOpen((prev) => !prev)}
+                className={`inline-flex items-center gap-1.5 font-bold px-3.5 rounded-xl text-sm border-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${navControlHeightClass} ${
                   isBalanced
-                    ? 'bg-th-subtle text-th-text border-th-border-strong'
-                    : 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-800'
+                    ? 'bg-th-subtle hover:bg-th-subtle-hover text-th-text border-th-border-strong'
+                    : 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900/80 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-800'
                 }`}
+                title="Click to inspect Balance Sheet & Cross-Statement Checks"
               >
                 {isBalanced ? 'Balanced (A = L + E)' : 'Balance Variance'}
-              </span>
+              </button>
             </div>
           </div>
 
@@ -825,9 +942,7 @@ export default function App() {
         <div className="bg-th-subtle border-b border-th-border-strong px-4 sm:px-6 lg:px-8 py-3 transition-colors no-print">
           <div className="max-w-[1780px] mx-auto flex items-center justify-between gap-3 text-sm font-bold text-th-text">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold">
-                ✓
-              </span>
+              <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400 shrink-0" />
               <span>{transferToastMessage}</span>
             </div>
             <button
@@ -861,6 +976,8 @@ export default function App() {
                 onNavigateToViewFS={() => setActiveTab('divisional')}
                 onAddLineItemPrompt={(name, group) => setPendingAddLineItem({ name, group })}
                 onDeleteLineItemPrompt={(item) => setPendingDeleteLineItem(item)}
+                selectedStatement={selectedStatement}
+                onSelectStatement={setSelectedStatement}
               />
             )}
 
@@ -874,6 +991,9 @@ export default function App() {
                 onSelectYear={setSelectedYear}
                 dataStore={dataStore}
                 aggregationStore={aggregationStore}
+                onSaveAmount={handleSaveAmount}
+                selectedStatement={selectedStatement}
+                onSelectStatement={setSelectedStatement}
               />
             )}
 
@@ -884,6 +1004,8 @@ export default function App() {
                 selectedYear={selectedYear}
                 onSelectYear={setSelectedYear}
                 dataStore={dataStore}
+                selectedStatement={selectedStatement}
+                onSelectStatement={setSelectedStatement}
               />
             )}
 
@@ -915,6 +1037,8 @@ export default function App() {
                 onSaveAmount={handleSaveAmount}
                 onResetBenchmark={handleResetBenchmark}
                 onTransferDivisionData={handleTransferDivisionData}
+                selectedStatement={selectedStatement}
+                onSelectStatement={setSelectedStatement}
               />
             )}
           </main>
@@ -934,6 +1058,7 @@ export default function App() {
             totalEquity={liveChecksReport.totalEquity}
             selectedYear={selectedYear}
             divisionName={currentEntityName}
+            crossStatementAudit={crossStatementAudit}
           />
         </div>
       </div>

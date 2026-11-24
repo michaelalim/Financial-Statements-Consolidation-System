@@ -723,6 +723,16 @@ export const DEFAULT_CASH_FLOWS_LINE_ITEMS: LineItemDefinition[] = [
 
   // Prepayments (Father)
   {
+    id: "cf-op-out-prep-0",
+    name: "Advances to Contractors for repair and maintenance of property, plant and equipment (not capitalizable)",
+    statementType: "cash_flows",
+    section: "CASH_OPERATING",
+    subsection: "Cash Flows from Operating Activities",
+    group: "Prepayments",
+    subgroup: "Cash Outflows",
+    order: 2180,
+  },
+  {
     id: "cf-op-out-prep-1",
     name: "Prepayments for supplies and equipment (not capitalizable)",
     statementType: "cash_flows",

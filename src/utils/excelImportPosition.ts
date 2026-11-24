@@ -88,7 +88,10 @@ export interface ExtractedPositionRow {
     | 'cash_inflows_outflows'
     | 'net_cash_activity'
     | 'cash_increase_decrease'
+    | 'cash_beginning'
     | 'cash_beginning_ending'
+    | 'cash_checking_ignored'
+    | 'net_assets_beginning'
     | 'net_assets_summary'
     | 'subtotal'
     | 'hierarchy_group'
@@ -266,6 +269,106 @@ export function parseExcelNumericCell(rawVal: unknown, formattedText?: string): 
   return { hasValue: true, value: negative ? -Math.abs(parsed) : parsed };
 }
 
+interface ParsedSheetGrid {
+  rows: unknown[][];
+  totalRows: number;
+  totalCols: number;
+}
+
+const SHEET_GRID_CACHE = new WeakMap<XLSX.WorkSheet, ParsedSheetGrid>();
+
+function fastDecodeCellAddress(addr: string): { r: number; c: number } | null {
+  let i = 0;
+  const len = addr.length;
+  let c = 0;
+  while (i < len) {
+    const code = addr.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      c = c * 26 + (code - 64);
+      i++;
+    } else {
+      break;
+    }
+  }
+  if (i === 0 || i === len) return null;
+  let r = 0;
+  while (i < len) {
+    const code = addr.charCodeAt(i);
+    if (code >= 48 && code <= 57) {
+      r = r * 10 + (code - 48);
+      i++;
+    } else {
+      return null;
+    }
+  }
+  if (r <= 0 || c <= 0) return null;
+  return { r: r - 1, c: c - 1 };
+}
+
+function getTrimmedSheetGrid(sheet: XLSX.WorkSheet): ParsedSheetGrid {
+  const cached = SHEET_GRID_CACHE.get(sheet);
+  if (cached) return cached;
+
+  const rows: unknown[][] = [];
+  let maxRow = -1;
+  let maxCol = -1;
+
+  const keys = Object.keys(sheet);
+  for (let k = 0; k < keys.length; k++) {
+    const key = keys[k];
+    if (key.charCodeAt(0) === 33) continue; // skip '!' metadata keys
+    const cell = sheet[key] as XLSX.CellObject | undefined;
+    if (!cell) continue;
+    const hasContent =
+      (cell.v !== undefined && cell.v !== null && cell.v !== '') ||
+      (typeof cell.w === 'string' && cell.w.trim() !== '') ||
+      (typeof cell.f === 'string' && cell.f.trim() !== '');
+    if (!hasContent) continue;
+
+    const coords = fastDecodeCellAddress(key) || XLSX.utils.decode_cell(key);
+    const { r, c } = coords;
+    if (r < 0 || c < 0) continue;
+
+    let rowArr = rows[r];
+    if (!rowArr) {
+      rowArr = [];
+      rows[r] = rowArr;
+    }
+    rowArr[c] = cell.v !== undefined ? cell.v : '';
+    if (r > maxRow) maxRow = r;
+    if (c > maxCol) maxCol = c;
+  }
+
+  const result: ParsedSheetGrid = {
+    rows,
+    totalRows: maxRow >= 0 ? maxRow + 1 : 0,
+    totalCols: maxCol >= 0 ? maxCol + 1 : 0,
+  };
+  SHEET_GRID_CACHE.set(sheet, result);
+  return result;
+}
+
+function getSheetTopTextSample(sheet: XLSX.WorkSheet, maxRows = 14, maxCols = 30): string {
+  const parts: string[] = [];
+  const keys = Object.keys(sheet);
+  for (let k = 0; k < keys.length; k++) {
+    const key = keys[k];
+    if (key.charCodeAt(0) === 33) continue;
+    const coords = fastDecodeCellAddress(key);
+    if (!coords || coords.r >= maxRows || coords.c >= maxCols) continue;
+    const cell = sheet[key] as XLSX.CellObject | undefined;
+    if (!cell) continue;
+    const txt =
+      typeof cell.w === 'string' && cell.w.trim() !== ''
+        ? cell.w
+        : cell.v !== undefined && cell.v !== null
+        ? String(cell.v)
+        : '';
+    if (txt) parts.push(txt);
+  }
+  return parts.join(' ');
+}
+
 /**
  * Inspects a worksheet to locate the year header row (e.g., Row 8 with 2025 in Col E and 2024 in Col F)
  * and lists candidate numeric columns.
@@ -276,9 +379,7 @@ export function inspectPositionWorksheet(
   preferredCurrentYear: string,
   preferredComparativeYear: string
 ): SheetInspectionResult {
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
-  const totalRows = rows.length;
-  const totalCols = rows.reduce((max, r) => (Array.isArray(r) ? Math.max(max, r.length) : max), 0);
+  const { rows, totalRows, totalCols } = getTrimmedSheetGrid(sheet);
 
   const countNumbersBelow = (rowIdx: number, colIdx: number): number => {
     let count = 0;
@@ -410,12 +511,8 @@ export function pickBestPositionSheetName(
 
   for (const name of names) {
     const sheet = workbook.Sheets[name];
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
-    const topText = rows
-      .slice(0, 14)
-      .flat()
-      .map((v) => String(v ?? ''))
-      .join(' ');
+    if (!sheet) continue;
+    const topText = getSheetTopTextSample(sheet, 14, 30);
 
     if (statementType === 'performance') {
       if (
@@ -584,71 +681,115 @@ function singularizeToken(tok: string): string {
   return tok;
 }
 
+let dlBuffer = new Int32Array(4096);
+
 function damerauLevenshtein(a: string, b: string): number {
   const la = a.length;
   const lb = b.length;
   if (la === 0) return lb;
   if (lb === 0) return la;
+  if (a === b) return 0;
 
-  const dp: number[][] = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
-  for (let i = 0; i <= la; i++) dp[i][0] = i;
-  for (let j = 0; j <= lb; j++) dp[0][j] = j;
+  const stride = lb + 1;
+  const needed = (la + 1) * stride;
+  if (dlBuffer.length < needed) {
+    dlBuffer = new Int32Array(Math.max(needed, dlBuffer.length * 2));
+  }
+  const dp = dlBuffer;
+
+  for (let i = 0; i <= la; i++) dp[i * stride] = i;
+  for (let j = 0; j <= lb; j++) dp[j] = j;
 
   for (let i = 1; i <= la; i++) {
+    const ai = a.charCodeAt(i - 1);
+    const aiPrev = i > 1 ? a.charCodeAt(i - 2) : 0;
+    const rowOff = i * stride;
+    const prevRowOff = (i - 1) * stride;
+    const prev2RowOff = (i - 2) * stride;
     for (let j = 1; j <= lb; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      let val = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        val = Math.min(val, dp[i - 2][j - 2] + 1);
+      const bj = b.charCodeAt(j - 1);
+      const cost = ai === bj ? 0 : 1;
+      let val = dp[prevRowOff + j] + 1;
+      const ins = dp[rowOff + j - 1] + 1;
+      if (ins < val) val = ins;
+      const sub = dp[prevRowOff + j - 1] + cost;
+      if (sub < val) val = sub;
+      if (i > 1 && j > 1 && ai === b.charCodeAt(j - 2) && aiPrev === bj) {
+        const trans = dp[prev2RowOff + j - 2] + 1;
+        if (trans < val) val = trans;
       }
-      dp[i][j] = val;
+      dp[rowOff + j] = val;
     }
   }
-  return dp[la][lb];
+  return dp[la * stride + lb];
 }
+
+const TOKEN_SIM_CACHE = new Map<string, number>();
 
 function tokenSimilarity(a: string, b: string): number {
   if (a === b) return 1;
+  const key = a < b ? `${a}\x00${b}` : `${b}\x00${a}`;
+  const cached = TOKEN_SIM_CACHE.get(key);
+  if (cached !== undefined) return cached;
+
   const sa = singularizeToken(a);
   const sb = singularizeToken(b);
-  if (sa === sb) return 0.96;
-
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0) return 1;
-
-  if (maxLen >= 5 && (a.startsWith(b) || b.startsWith(a))) {
-    const minLen = Math.min(a.length, b.length);
-    if (minLen >= 4) {
-      return Math.max(0.72, minLen / maxLen);
+  let res: number;
+  if (sa === sb) {
+    res = 0.96;
+  } else {
+    const maxLen = Math.max(a.length, b.length);
+    if (maxLen === 0) {
+      res = 1;
+    } else if (maxLen >= 5 && (a.startsWith(b) || b.startsWith(a)) && Math.min(a.length, b.length) >= 4) {
+      res = Math.max(0.72, Math.min(a.length, b.length) / maxLen);
+    } else {
+      const dist = Math.min(damerauLevenshtein(a, b), damerauLevenshtein(sa, sb));
+      res = Math.max(0, 1 - dist / maxLen);
     }
   }
 
-  const dist = Math.min(damerauLevenshtein(a, b), damerauLevenshtein(sa, sb));
-  return Math.max(0, 1 - dist / maxLen);
+  if (TOKEN_SIM_CACHE.size > 30000) TOKEN_SIM_CACHE.clear();
+  TOKEN_SIM_CACHE.set(key, res);
+  return res;
 }
 
-function diceBigramSimilarity(a: string, b: string): number {
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  if (a.length < 2 || b.length < 2) return 0;
-
-  const bigramsA = new Map<string, number>();
-  for (let i = 0; i < a.length - 1; i++) {
-    const bg = a.slice(i, i + 2);
-    bigramsA.set(bg, (bigramsA.get(bg) || 0) + 1);
+function buildSortedBigrams(str: string): Uint16Array {
+  if (str.length < 2) return new Uint16Array(0);
+  const arr = new Uint16Array(str.length - 1);
+  for (let i = 0; i < str.length - 1; i++) {
+    arr[i] = ((str.charCodeAt(i) & 0xff) << 8) | (str.charCodeAt(i + 1) & 0xff);
   }
+  arr.sort();
+  return arr;
+}
 
+function countSortedBigramIntersection(a: Uint16Array, b: Uint16Array): number {
+  let i = 0;
+  let j = 0;
   let matches = 0;
-  for (let i = 0; i < b.length - 1; i++) {
-    const bg = b.slice(i, i + 2);
-    const count = bigramsA.get(bg) || 0;
-    if (count > 0) {
+  const la = a.length;
+  const lb = b.length;
+  while (i < la && j < lb) {
+    const va = a[i];
+    const vb = b[j];
+    if (va === vb) {
       matches++;
-      bigramsA.set(bg, count - 1);
+      i++;
+      j++;
+    } else if (va < vb) {
+      i++;
+    } else {
+      j++;
     }
   }
+  return matches;
+}
 
-  return (2 * matches) / (a.length - 1 + (b.length - 1));
+function diceBigramSimilarityFromSorted(aStrLen: number, aBigrams: Uint16Array, bStrLen: number, bBigrams: Uint16Array): number {
+  if (aStrLen < 2 || bStrLen < 2) return 0;
+  const matches = countSortedBigramIntersection(aBigrams, bBigrams);
+  return (2 * matches) / (aBigrams.length + bBigrams.length);
 }
 
 const CONTRA_KEYWORDS = ['impairment', 'accumulated', 'depreciation', 'amortization', 'contra'];
@@ -1150,67 +1291,118 @@ function classifyDeprFurnChildKind(rawText: string): 'furniture' | 'books' | nul
   return classifySemiFurnBooksChildKind(cleaned);
 }
 
-function scoreStringSimilarity(rawQuery: string, targetLabel: string): number {
-  const cleanedQuery = cleanAccountLabel(rawQuery);
-  if (!cleanedQuery) return 0;
+interface PreparedLabelInfo {
+  cleaned: string;
+  lower: string;
+  alpha: string;
+  tokensAll: string[];
+  expandedAlpha: string;
+  singAlpha: string;
+  contentSet: string[];
+  bigrams: Uint16Array;
+  hasContra: boolean;
+  hasSemi: boolean;
+  hasRepairs: boolean;
+  hasDist: boolean;
+  hasInv: boolean;
+}
 
-  const qLower = cleanedQuery.toLowerCase();
-  const cLower = targetLabel.toLowerCase().trim();
-  if (qLower === cLower) return 100;
+const PREPARED_LABEL_CACHE = new Map<string, PreparedLabelInfo>();
 
-  const qAlpha = qLower.replace(/[^a-z0-9]/g, '');
-  const cAlpha = cLower.replace(/[^a-z0-9]/g, '');
-  if (qAlpha && qAlpha === cAlpha) return 99;
+function getPreparedLabel(raw: string): PreparedLabelInfo {
+  const cached = PREPARED_LABEL_CACHE.get(raw);
+  if (cached) return cached;
 
-  const qTokensAll = tokenizeAndExpand(cleanedQuery);
-  const cTokensAll = tokenizeAndExpand(targetLabel);
-  const qExpandedAlpha = qTokensAll.join('');
-  const cExpandedAlpha = cTokensAll.join('');
+  const cleaned = cleanAccountLabel(raw);
+  const lower = cleaned.toLowerCase();
+  const alpha = lower.replace(/[^a-z0-9]/g, '');
+  const tokensAll = tokenizeAndExpand(cleaned);
+  const expandedAlpha = tokensAll.join('');
+  const singAlpha = tokensAll.map(singularizeToken).join('');
+  const content = tokensAll.filter((t) => !STOP_WORDS.has(t));
+  const contentSet = content.length > 0 ? content : tokensAll;
+  const bigrams = buildSortedBigrams(expandedAlpha);
 
-  if (qExpandedAlpha && qExpandedAlpha === cExpandedAlpha) return 97;
+  const info: PreparedLabelInfo = {
+    cleaned,
+    lower,
+    alpha,
+    tokensAll,
+    expandedAlpha,
+    singAlpha,
+    contentSet,
+    bigrams,
+    hasContra: hasContraKeywords(tokensAll),
+    hasSemi: hasSemiKeywords(tokensAll),
+    hasRepairs: hasRepairsKeywords(tokensAll),
+    hasDist: tokensAll.includes('distribution'),
+    hasInv: tokensAll.includes('inventory') || tokensAll.includes('inventories'),
+  };
 
-  const qSingAlpha = qTokensAll.map(singularizeToken).join('');
-  const cSingAlpha = cTokensAll.map(singularizeToken).join('');
-  if (qSingAlpha && qSingAlpha === cSingAlpha) return 95;
+  if (PREPARED_LABEL_CACHE.size > 8000) PREPARED_LABEL_CACHE.clear();
+  PREPARED_LABEL_CACHE.set(raw, info);
+  return info;
+}
 
-  const qContent = qTokensAll.filter((t) => !STOP_WORDS.has(t));
-  const cContent = cTokensAll.filter((t) => !STOP_WORDS.has(t));
-  const qSet = qContent.length > 0 ? qContent : qTokensAll;
-  const cSet = cContent.length > 0 ? cContent : cTokensAll;
+function scorePreparedSimilarity(q: PreparedLabelInfo, c: PreparedLabelInfo, minRelevantBase = 0): number {
+  if (!q.cleaned) return 0;
+  if (q.lower === c.lower) return 100;
+  if (q.alpha && q.alpha === c.alpha) return 99;
+  if (q.expandedAlpha && q.expandedAlpha === c.expandedAlpha) return 97;
+  if (q.singAlpha && q.singAlpha === c.singAlpha) return 95;
 
-  if (qSet.length === 0 || cSet.length === 0) return 0;
+  const qSet = q.contentSet;
+  const cSet = c.contentSet;
+  const qLen = qSet.length;
+  const cLen = cSet.length;
+  if (qLen === 0 || cLen === 0) return 0;
 
+  // Compute both forwardSum and backwardBest in a single symmetric pass
+  const backwardBest = new Float64Array(cLen);
   let forwardSum = 0;
-  for (const qt of qSet) {
-    let best = 0;
-    for (const ct of cSet) {
-      const s = tokenSimilarity(qt, ct);
-      if (s > best) best = s;
+  for (let i = 0; i < qLen; i++) {
+    const qt = qSet[i];
+    let fBest = 0;
+    for (let j = 0; j < cLen; j++) {
+      const s = tokenSimilarity(qt, cSet[j]);
+      if (s > fBest) fBest = s;
+      if (s > backwardBest[j]) backwardBest[j] = s;
     }
-    forwardSum += best;
+    forwardSum += fBest;
   }
-  const forwardAvg = forwardSum / qSet.length;
+  const forwardAvg = forwardSum / qLen;
 
   let backwardSum = 0;
-  for (const ct of cSet) {
-    let best = 0;
-    for (const qt of qSet) {
-      const s = tokenSimilarity(ct, qt);
-      if (s > best) best = s;
-    }
-    backwardSum += best;
+  for (let j = 0; j < cLen; j++) {
+    backwardSum += backwardBest[j];
   }
-  const backwardAvg = backwardSum / cSet.length;
+  const backwardAvg = backwardSum / cLen;
 
   const tokenF1 =
     forwardAvg + backwardAvg > 0 ? (2 * forwardAvg * backwardAvg) / (forwardAvg + backwardAvg) : 0;
 
-  const bigramSim = diceBigramSimilarity(qExpandedAlpha, cExpandedAlpha);
-  const maxStrLen = Math.max(qExpandedAlpha.length, cExpandedAlpha.length);
-  const fullEditSim =
-    maxStrLen > 0 ? Math.max(0, 1 - damerauLevenshtein(qExpandedAlpha, cExpandedAlpha) / maxStrLen) : 0;
+  const bigramSim = diceBigramSimilarityFromSorted(
+    q.expandedAlpha.length,
+    q.bigrams,
+    c.expandedAlpha.length,
+    c.bigrams
+  );
 
-  return Math.max(0, Math.min(94, Math.round((tokenF1 * 0.62 + bigramSim * 0.22 + fullEditSim * 0.16) * 94)));
+  // Skip full-string Damerau-Levenshtein when even a 1.0 fullEditSim cannot reach minRelevantBase
+  const prelimNoEdit = tokenF1 * 0.62 + bigramSim * 0.22;
+  if (minRelevantBase > 0 && (prelimNoEdit + 0.16) * 94 < minRelevantBase) {
+    return 0;
+  }
+
+  const maxStrLen = Math.max(q.expandedAlpha.length, c.expandedAlpha.length);
+  const fullEditSim =
+    maxStrLen > 0 ? Math.max(0, 1 - damerauLevenshtein(q.expandedAlpha, c.expandedAlpha) / maxStrLen) : 0;
+
+  return Math.max(0, Math.min(94, Math.round((prelimNoEdit + fullEditSim * 0.16) * 94)));
+}
+
+function scoreStringSimilarity(rawQuery: string, targetLabel: string): number {
+  return scorePreparedSimilarity(getPreparedLabel(rawQuery), getPreparedLabel(targetLabel));
 }
 
 type PerfSectionContext =
@@ -1234,6 +1426,8 @@ type CashFlowSectionContext =
   | 'CASH_FINANCING_IN'
   | 'CASH_FINANCING_OUT';
 
+type NetAssetsSectionContext = 'BEG_ADJ' | 'CY_CHANGES';
+
 function isPerfSectionContext(ctx?: string): ctx is PerfSectionContext {
   return (
     ctx === 'REVENUE' ||
@@ -1252,6 +1446,197 @@ function isCashFlowSectionContext(ctx?: string): ctx is CashFlowSectionContext {
   return Boolean(ctx && ctx.startsWith('CASH_'));
 }
 
+function isNetAssetsSectionContext(ctx?: string): ctx is NetAssetsSectionContext {
+  return ctx === 'BEG_ADJ' || ctx === 'CY_CHANGES';
+}
+
+function stripTrailingNetAssetsFootnote(text: string): string {
+  const cleaned = cleanAccountLabel(text);
+  const match = cleaned.match(/^(.*\S)\s+(?:[\(\[]?\d{1,2}[\)\]]?)$/);
+  if (!match) return cleaned;
+  const prefix = match[1].trim();
+  if (/(?:january|jan|december|dec|year|fy|no\.?|note|part|quarter|q)$/i.test(prefix)) {
+    return cleaned;
+  }
+  return prefix;
+}
+
+function isNetAssetsEndingBalanceText(rawText: string): boolean {
+  const withoutFootnote = stripTrailingNetAssetsFootnote(rawText);
+  if (!withoutFootnote) return false;
+  const naCleaned = withoutFootnote
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (
+    /^(?:total\s+)?(?:balance|net\s+assets\s*\/?\s*equity)\s*(?:,?\s*(?:at|of|as\s+(?:at|of))|,)?\s*(?:december\s*31|dec\.?\s*31|end(?:ing)?(?:\s+of\s+period)?)\b/.test(
+      naCleaned
+    ) || /^ending\s+balance\b/.test(naCleaned)
+  );
+}
+
+function isNetAssetsSummaryOrHeaderText(cleanedLower: string): boolean {
+  if (!cleanedLower) return true;
+  if (/^(?:sub-?total|total\b|grand\s+total\b)/.test(cleanedLower)) return true;
+  if (/^add\s*\/?\s*\(?deduct\)?\s*:?$/.test(cleanedLower)) return true;
+  if (/^restated\s+balance\s*:?$/.test(cleanedLower)) return true;
+  if (isNetAssetsEndingBalanceText(cleanedLower)) {
+    return true;
+  }
+  if (
+    /^(?:adjustments\s+to\s+beginning\s+balance|changes\s+in\s+net\s+assets\s*\/?\s*equity(?:\s+for\s+the\s+(?:calendar\s+)?(?:year|period))?)\s*:?$/.test(
+      cleanedLower
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function classifyCanonicalNetAssetsItemId(
+  rawText: string,
+  ctx?: NetAssetsSectionContext
+): string | null {
+  const withoutFootnote = stripTrailingNetAssetsFootnote(rawText);
+  if (!withoutFootnote) return null;
+  const lower = withoutFootnote
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (
+    /^(?:balance|net\s+assets\s*\/?\s*equity)\s*(?:at|of|as\s+(?:at|of)|,)?\s*(?:january\s*1|jan\.?\s*1|beginning(?:\s+of\s+period)?)\b/.test(
+      lower
+    ) ||
+    /^beginning\s+balance\b/.test(lower)
+  ) {
+    return 'na-beg-balance';
+  }
+
+  if (isNetAssetsSummaryOrHeaderText(lower)) return null;
+
+  const norm = withoutFootnote.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!norm) return null;
+
+  // 1. Adjustment of net revenue recognized directly in net assets/equity
+  if (
+    norm === 'adjustmentofnetrevenuerecognizeddirectlyinnetassetsequity' ||
+    norm === 'adjustmentsofnetrevenuerecognizeddirectlyinnetassetsequity' ||
+    norm === 'adjustmentofnetrevenuedirectlyrecognizedinnetassetsequity' ||
+    (lower.includes('net revenue') &&
+      (lower.includes('recognized') || lower.includes('directly') || lower.includes('net assets'))) ||
+    scoreStringSimilarity(
+      withoutFootnote,
+      'Adjustment of net revenue recognized directly in net assets/equity'
+    ) >= 80
+  ) {
+    return 'na-cy-net-revenue-adj';
+  }
+
+  // 2. Changes in Accounting Policy
+  if (
+    norm === 'changesinaccountingpolicy' ||
+    norm === 'changeinaccountingpolicy' ||
+    norm === 'changesinaccountingpolicies' ||
+    scoreStringSimilarity(withoutFootnote, 'Changes in Accounting Policy') >= 84
+  ) {
+    return 'na-adj-accounting-policy';
+  }
+
+  // 3. Prior period errors (also COA variants like "Prior Period Adjustments/Unrecorded Income and Expenses")
+  if (
+    norm === 'priorperioderrors' ||
+    norm === 'priorperioderror' ||
+    norm === 'correctionofpriorperioderrors' ||
+    norm === 'priorperiodadjustmentsunrecordedincomeandexpenses' ||
+    norm === 'priorperiodadjustmentsunrecordedincomeexpenses' ||
+    norm === 'priorperiodadjustments' ||
+    norm === 'priorperiodadjustment' ||
+    norm === 'unrecordedincomeandexpenses' ||
+    (/\bprior\s+period\b/.test(lower) && /\b(?:error|errors|adjustment|adjustments)\b/.test(lower)) ||
+    (/\bunrecorded\b/.test(lower) && /\bincome\b/.test(lower) && /\bexpense/.test(lower)) ||
+    scoreStringSimilarity(withoutFootnote, 'Prior period errors') >= 84 ||
+    scoreStringSimilarity(
+      withoutFootnote,
+      'Prior Period Adjustments/Unrecorded Income and Expenses'
+    ) >= 82
+  ) {
+    return 'na-adj-prior-period-errors';
+  }
+
+  // 4. Surplus/(Deficit) for the Period
+  if (
+    norm === 'surplusdeficitfortheperiod' ||
+    norm === 'surplusfortheperiod' ||
+    norm === 'deficitfortheperiod' ||
+    norm === 'netsurplusdeficitfortheperiod' ||
+    norm === 'netsurplusfortheperiod' ||
+    norm === 'surplusdeficitforthecalendaryear' ||
+    (/^(?:net\s+)?(?:surplus|deficit)(?:\s*\/?\s*\(?(?:surplus|deficit)\)?)?\s+(?:for|of)\s+(?:the\s+)?(?:period|year|calendar\s+year)\b/.test(
+      lower
+    ))
+  ) {
+    return 'na-cy-surplus-deficit';
+  }
+
+  // 5. Other Adjustments
+  if (
+    norm === 'otheradjustments' ||
+    norm === 'otheradjustment' ||
+    scoreStringSimilarity(withoutFootnote, 'Other Adjustments') >= 88
+  ) {
+    return 'na-adj-other-adjustments';
+  }
+
+  // 6. Others
+  if (
+    norm === 'others' ||
+    norm === 'otherchangesinnetassetsequity' ||
+    norm === 'otherchanges'
+  ) {
+    return ctx === 'BEG_ADJ' && norm === 'others' ? 'na-adj-other-adjustments' : 'na-cy-others';
+  }
+
+  return null;
+}
+
+function classifyNetRevenueAdjustmentChildLabel(rawText: string): boolean {
+  const withoutFootnote = stripTrailingNetAssetsFootnote(rawText);
+  if (!withoutFootnote) return false;
+  const lower = withoutFootnote
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!lower || isNetAssetsSummaryOrHeaderText(lower)) return false;
+  if (classifyCanonicalNetAssetsItemId(rawText) !== null) return false;
+
+  if (/^closing(?:\s*\/?\s*adjustment)?\s+of\s+cash\b/.test(lower)) {
+    return true;
+  }
+  if (
+    /\btreasury\s*\/?\s*agency\s+deposit\b/.test(lower) &&
+    /\b(?:closing|adjustment|regular|special|trust)\b/.test(lower)
+  ) {
+    return true;
+  }
+  if (/\btax\s+remittance\s+advice\b/.test(lower) && /\b(?:closing|cash|bir|boc|btr)\b/.test(lower)) {
+    return true;
+  }
+  if (
+    /\bconstructive\s*(?:income|disbursement|disbursements)\b/.test(lower) ||
+    /\bconstructivedisbursements?\b/.test(lower)
+  ) {
+    return true;
+  }
+  if (/^reversal\s+of\s+impairments?(?:\s+loss(?:es)?)?\b/.test(lower)) {
+    return true;
+  }
+  return false;
+}
+
 const PERFORMANCE_SYNONYM_GROUPS: string[][] = [
   ['retirementandlifeinsurancepremiums', 'lifeandretirementinsurancecontributions'],
   ['employeescompensationinsurancepremiums', 'ecccontributions'],
@@ -1268,6 +1653,17 @@ const CASH_FLOWS_SYNONYM_GROUPS: string[][] = [
   ['receiptofsharesgrantsanddonations', 'receiptofsharesgrantsanddonation'],
   ['repaymentoflongtermloansbygoccgfi', 'repaymentoflongtermloansbygoccsgfis'],
   ['collectionofreceivablefromauditdisallowances', 'collectionofreceivablesfromauditdisallowances'],
+  [
+    'cashandcashequivalentsjanuary1',
+    'cashandcashequivalentsjan1',
+    'cashandcashequivalentsbeginning',
+    'cashandcashequivalentsbeg',
+    'cashandcashequivalentsasofjanuary1',
+    'cashandcashequivalentsatjanuary1',
+    'cashbalancejanuary1',
+    'cashbalancebeginning',
+    'beginningcashandcashequivalents',
+  ],
 ];
 
 function arePerformanceSynonyms(a: string, b: string): boolean {
@@ -1315,6 +1711,10 @@ function resolveCashFlowClippedTargetId(
     case 'andequipmentnotcapitalizable':
     case 'equipmentnotcapitalizable':
       return 'cf-op-out-prep-1';
+    case 'plantandequipmentnotcapitalizable':
+    case 'propertyplantandequipmentnotcapitalizable':
+    case 'ofpropertyplantandequipmentnotcapitalizable':
+      return 'cf-op-out-prep-0';
     case 'goodsservicesasauthorizedbylaw':
     case 'forpurchaseofgoodsservicesasauthorizedbylaw':
       return 'cf-op-out-inter-2';
@@ -1378,98 +1778,242 @@ function itemMatchesPerfContext(item: LineItemDefinition, ctx: PerfSectionContex
   }
 }
 
+function normalizeUacsKey(code?: string): string {
+  return (code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 const NON_OP_DEFAULT_AMBIGUOUS_KEYS = new Set(['miscellaneousincome', 'othergains']);
 
-function scoreLineItemMatch(
-  rawQuery: string,
-  item: LineItemDefinition,
-  sectionContext?: PerfSectionContext | CashFlowSectionContext,
-  subContext?: PerfSubContext | string
-): number {
-  let score = scoreStringSimilarity(rawQuery, item.name);
-  if (arePerformanceSynonyms(rawQuery, item.name) || areCashFlowsSynonyms(rawQuery, item.name)) {
-    score = Math.max(score, 95);
+interface IndexedEncodableItems {
+  byId: Map<string, LineItemDefinition>;
+  byNormName: Map<string, LineItemDefinition[]>;
+  byNormUacs: Map<string, LineItemDefinition[]>;
+  itemMeta: Map<
+    string,
+    {
+      prep: PreparedLabelInfo;
+      normName: string;
+      cContra: boolean;
+      isNonOpDual: boolean;
+    }
+  >;
+}
+
+const ENCODABLE_ITEMS_INDEX_CACHE = new WeakMap<LineItemDefinition[], IndexedEncodableItems>();
+
+function getIndexedEncodableItems(encodableItems: LineItemDefinition[]): IndexedEncodableItems {
+  const cached = ENCODABLE_ITEMS_INDEX_CACHE.get(encodableItems);
+  if (cached) return cached;
+
+  const byId = new Map<string, LineItemDefinition>();
+  const byNormName = new Map<string, LineItemDefinition[]>();
+  const byNormUacs = new Map<string, LineItemDefinition[]>();
+  const itemMeta = new Map<
+    string,
+    {
+      prep: PreparedLabelInfo;
+      normName: string;
+      cContra: boolean;
+      isNonOpDual: boolean;
+    }
+  >();
+
+  for (let i = 0; i < encodableItems.length; i++) {
+    const item = encodableItems[i];
+    byId.set(item.id, item);
+    const prep = getPreparedLabel(item.name);
+    const normName = normalizeAliasKey(item.name);
+    if (normName) {
+      let arr = byNormName.get(normName);
+      if (!arr) {
+        arr = [];
+        byNormName.set(normName, arr);
+      }
+      arr.push(item);
+    }
+    const normUacs = normalizeUacsKey(item.uacs);
+    if (normUacs) {
+      let uArr = byNormUacs.get(normUacs);
+      if (!uArr) {
+        uArr = [];
+        byNormUacs.set(normUacs, uArr);
+      }
+      uArr.push(item);
+    }
+    itemMeta.set(item.id, {
+      prep,
+      normName,
+      cContra: Boolean(item.isContra) || prep.hasContra,
+      isNonOpDual: item.statementType === 'performance' && NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(normName),
+    });
   }
 
+  const indexed: IndexedEncodableItems = { byId, byNormName, byNormUacs, itemMeta };
+  ENCODABLE_ITEMS_INDEX_CACHE.set(encodableItems, indexed);
+  return indexed;
+}
+
+interface PrecomputedQueryMatchMeta {
+  rawQuery: string;
+  qPrep: PreparedLabelInfo;
+  normQuery: string;
+  cashCtx?: CashFlowSectionContext;
+  perfCtx?: PerfSectionContext;
+  netAssetsCtx?: NetAssetsSectionContext;
+  cashGroupCtx?: string;
+  perfSubCtx?: PerfSubContext;
+  clippedTargetId?: string;
+  isCashBeginning: boolean;
+  netAssetsCanonicalId: string | null;
+  isNetAssetsRevenueChild: boolean;
+  perfSemiFurnKind: 'furniture' | 'books' | null;
+  perfSemiMachKind: string | null;
+  perfDeprMachKind: string | null;
+  perfDeprBldgKind: 'buildings' | 'school_buildings' | 'other_structures' | null;
+  perfDeprTransKind: 'motor_vehicles' | 'other_trans_equip' | null;
+  perfOtherBonusesKind: 'hardship' | 'cna' | 'pei' | 'pbb' | null;
+}
+
+function buildPrecomputedQueryMeta(
+  rawQuery: string,
+  statementTypeHint: StatementType | undefined,
+  sectionContext?: PerfSectionContext | CashFlowSectionContext | NetAssetsSectionContext,
+  subContext?: PerfSubContext | string
+): PrecomputedQueryMatchMeta {
+  const cleanedForNa =
+    statementTypeHint === 'net_assets' ? stripTrailingNetAssetsFootnote(rawQuery) : rawQuery;
+  const qPrep = getPreparedLabel(cleanedForNa);
+  const normQuery = normalizeAliasKey(cleanedForNa);
   const cashCtx = isCashFlowSectionContext(sectionContext) ? sectionContext : undefined;
   const perfCtx = isPerfSectionContext(sectionContext) ? sectionContext : undefined;
+  const netAssetsCtx = isNetAssetsSectionContext(sectionContext) ? sectionContext : undefined;
   const cashGroupCtx = cashCtx ? subContext : undefined;
   const perfSubCtx = !cashCtx ? (subContext as PerfSubContext | undefined) : undefined;
 
-  if (item.statementType === 'cash_flows') {
-    const normQuery = normalizeAliasKey(rawQuery);
-    const clippedTargetId = resolveCashFlowClippedTargetId(normQuery, cashCtx, cashGroupCtx);
-    if (clippedTargetId && item.id === clippedTargetId) {
+  const isCash = statementTypeHint === 'cash_flows' || Boolean(cashCtx);
+  const isPerf = statementTypeHint === 'performance' || Boolean(perfCtx);
+  const isNetAssets = statementTypeHint === 'net_assets' || Boolean(netAssetsCtx);
+  const canPerfUmbrellaChild = isPerf && !qPrep.hasContra && !qPrep.hasRepairs;
+  const netAssetsCanonicalId = isNetAssets
+    ? classifyCanonicalNetAssetsItemId(rawQuery, netAssetsCtx)
+    : null;
+
+  return {
+    rawQuery,
+    qPrep,
+    normQuery,
+    cashCtx,
+    perfCtx,
+    netAssetsCtx,
+    cashGroupCtx,
+    perfSubCtx,
+    clippedTargetId: isCash ? resolveCashFlowClippedTargetId(normQuery, cashCtx, cashGroupCtx) : undefined,
+    isCashBeginning: isCash && detectSummaryRowKind(rawQuery, 'cash_flows') === 'cash_beginning',
+    netAssetsCanonicalId,
+    isNetAssetsRevenueChild:
+      isNetAssets && !netAssetsCanonicalId && classifyNetRevenueAdjustmentChildLabel(rawQuery),
+    perfSemiFurnKind: canPerfUmbrellaChild ? classifySemiFurnBooksChildKind(rawQuery) : null,
+    perfSemiMachKind: canPerfUmbrellaChild ? classifySemiMachChildKind(rawQuery) : null,
+    perfDeprMachKind:
+      canPerfUmbrellaChild && perfCtx === 'NON_CASH' ? classifyDeprMachChildKind(rawQuery) : null,
+    perfDeprBldgKind:
+      canPerfUmbrellaChild && perfCtx === 'NON_CASH' ? classifyDeprBldgChildKind(rawQuery) : null,
+    perfDeprTransKind:
+      canPerfUmbrellaChild && perfCtx === 'NON_CASH' ? classifyDeprTransChildKind(rawQuery) : null,
+    perfOtherBonusesKind: canPerfUmbrellaChild ? classifyOtherBonusesChildKind(rawQuery) : null,
+  };
+}
+
+function scoreLineItemMatchFast(
+  q: PrecomputedQueryMatchMeta,
+  item: LineItemDefinition,
+  cMeta: { prep: PreparedLabelInfo; normName: string; cContra: boolean; isNonOpDual: boolean }
+): number {
+  let score = scorePreparedSimilarity(q.qPrep, cMeta.prep, 18);
+
+  if (item.statementType === 'performance') {
+    if (arePerformanceSynonyms(q.rawQuery, item.name)) {
+      score = Math.max(score, 95);
+    }
+  } else if (item.statementType === 'cash_flows') {
+    if (areCashFlowsSynonyms(q.rawQuery, item.name)) {
+      score = Math.max(score, 95);
+    }
+    if (q.clippedTargetId && item.id === q.clippedTargetId) {
       score = Math.max(score, 96);
+    }
+    if (item.id === 'cf-sum-beg-cash' && q.isCashBeginning) {
+      score = Math.max(score, 98);
+    }
+  } else if (item.statementType === 'net_assets') {
+    if (q.netAssetsCanonicalId === item.id) {
+      score = Math.max(score, 98);
+    } else if (q.netAssetsCanonicalId && q.netAssetsCanonicalId !== item.id) {
+      score = Math.max(0, score - 24);
+    } else if (q.isNetAssetsRevenueChild && item.id === 'na-cy-net-revenue-adj') {
+      score = Math.max(score, 90);
     }
   }
 
-  const qTokensAll = tokenizeAndExpand(cleanAccountLabel(rawQuery));
-  const cTokensAll = tokenizeAndExpand(item.name);
+  const qContra = q.qPrep.hasContra;
+  const cContra = cMeta.cContra;
+  const qRepairs = q.qPrep.hasRepairs;
+  const cRepairs = cMeta.prep.hasRepairs;
 
-  const qContra = hasContraKeywords(qTokensAll);
-  const cContra = Boolean(item.isContra) || hasContraKeywords(cTokensAll);
-  const qRepairs = hasRepairsKeywords(qTokensAll);
-  const cRepairs = hasRepairsKeywords(cTokensAll);
-
-  // Educated fallback when Financial Performance has standalone child lines under
-  // Semi-Expendable Furniture, Fixtures & Books Expenses, Semi-Expendable Machinery & Equipment Expenses,
-  // or Other Bonuses and Allowances
   if (
     item.statementType === 'performance' &&
     !qContra &&
     !qRepairs &&
-    classifySemiFurnBooksChildKind(rawQuery) !== null
+    q.perfSemiFurnKind !== null
   ) {
-    if (perfSubCtx === 'REPAIRS') {
+    if (q.perfSubCtx === 'REPAIRS') {
       if (item.id === 'perf-mooe-repairs-furn' || item.id === 'perf-mooe-repairs-semi-furn') {
-        const prefersSemi = hasSemiKeywords(qTokensAll);
+        const prefersSemi = q.qPrep.hasSemi;
         const isSemiRepair = item.id === 'perf-mooe-repairs-semi-furn';
         score = Math.max(score, prefersSemi === isSemiRepair ? 86 : 76);
       }
-    } else if (perfCtx === 'NON_CASH') {
-      if (item.id === DEPR_FURN_UMBRELLA_ID && !hasSemiKeywords(qTokensAll)) {
+    } else if (q.perfCtx === 'NON_CASH') {
+      if (item.id === DEPR_FURN_UMBRELLA_ID && !q.qPrep.hasSemi) {
         score = Math.max(score, 84);
       }
     } else if (item.id === SEMI_FURN_BOOKS_UMBRELLA_ID) {
-      score = Math.max(score, perfSubCtx === 'SUPPLIES' ? 86 : 80);
+      score = Math.max(score, q.perfSubCtx === 'SUPPLIES' ? 86 : 80);
     }
   } else if (
     item.statementType === 'performance' &&
     !qContra &&
     !qRepairs &&
-    (classifySemiMachChildKind(rawQuery) !== null ||
-      (perfCtx === 'NON_CASH' && classifyDeprMachChildKind(rawQuery) !== null))
+    (q.perfSemiMachKind !== null || (q.perfCtx === 'NON_CASH' && q.perfDeprMachKind !== null))
   ) {
-    if (perfSubCtx === 'REPAIRS') {
+    if (q.perfSubCtx === 'REPAIRS') {
       if (item.id === 'perf-mooe-repairs-mach' || item.id === 'perf-mooe-repairs-semi-mach') {
-        const prefersSemi = hasSemiKeywords(qTokensAll);
+        const prefersSemi = q.qPrep.hasSemi;
         const isSemiRepair = item.id === 'perf-mooe-repairs-semi-mach';
         score = Math.max(score, prefersSemi === isSemiRepair ? 86 : 76);
       }
-    } else if (perfCtx === 'NON_CASH') {
-      if (item.id === DEPR_MACH_UMBRELLA_ID && !hasSemiKeywords(qTokensAll)) {
+    } else if (q.perfCtx === 'NON_CASH') {
+      if (item.id === DEPR_MACH_UMBRELLA_ID && !q.qPrep.hasSemi) {
         score = Math.max(score, 84);
       }
-    } else if (item.id === SEMI_MACH_UMBRELLA_ID && classifySemiMachChildKind(rawQuery) !== null) {
-      score = Math.max(score, perfSubCtx === 'SUPPLIES' ? 86 : 80);
+    } else if (item.id === SEMI_MACH_UMBRELLA_ID && q.perfSemiMachKind !== null) {
+      score = Math.max(score, q.perfSubCtx === 'SUPPLIES' ? 86 : 80);
     }
   } else if (
     item.statementType === 'performance' &&
-    perfCtx === 'NON_CASH' &&
+    q.perfCtx === 'NON_CASH' &&
     !qContra &&
     !qRepairs &&
     item.id === DEPR_BLDG_UMBRELLA_ID &&
-    classifyDeprBldgChildKind(rawQuery) !== null
+    q.perfDeprBldgKind !== null
   ) {
     score = Math.max(score, 84);
   } else if (
     item.statementType === 'performance' &&
-    perfCtx === 'NON_CASH' &&
+    q.perfCtx === 'NON_CASH' &&
     !qContra &&
     !qRepairs &&
     item.id === DEPR_TRANS_UMBRELLA_ID &&
-    classifyDeprTransChildKind(rawQuery) !== null
+    q.perfDeprTransKind !== null
   ) {
     score = Math.max(score, 84);
   } else if (
@@ -1477,9 +2021,9 @@ function scoreLineItemMatch(
     !qContra &&
     !qRepairs &&
     item.id === OTHER_BONUSES_UMBRELLA_ID &&
-    classifyOtherBonusesChildKind(rawQuery) !== null
+    q.perfOtherBonusesKind !== null
   ) {
-    score = Math.max(score, perfCtx === 'PS' ? 88 : 82);
+    score = Math.max(score, q.perfCtx === 'PS' ? 88 : 82);
   }
 
   if (score === 0) return 0;
@@ -1488,51 +2032,44 @@ function scoreLineItemMatch(
     score -= 22;
   }
 
-  const qSemi = hasSemiKeywords(qTokensAll);
-  const cSemi = hasSemiKeywords(cTokensAll);
-  if (qSemi !== cSemi) {
+  if (q.qPrep.hasSemi !== cMeta.prep.hasSemi) {
     score -= 18;
   }
 
-  // Strictly separate Semi-Expendable / Supplies Expenses from Repairs and Maintenance
   if (qRepairs && !cRepairs) {
     score -= 28;
   } else if (!qRepairs && cRepairs) {
     const allowedIndentedRepairChild =
-      perfSubCtx === 'REPAIRS' && item.subgroup === 'Repairs and Maintenance';
+      q.perfSubCtx === 'REPAIRS' && item.subgroup === 'Repairs and Maintenance';
     if (!allowedIndentedRepairChild) {
       score -= 28;
     }
   }
 
-  const qDist = qTokensAll.includes('distribution');
-  const cDist = cTokensAll.includes('distribution');
-  const qInv = qTokensAll.includes('inventory') || qTokensAll.includes('inventories');
-  const cInv = cTokensAll.includes('inventory') || cTokensAll.includes('inventories');
-  if ((qDist && !cDist && cInv) || (qInv && !cInv && cDist)) {
+  if ((q.qPrep.hasDist && !cMeta.prep.hasDist && cMeta.prep.hasInv) || (q.qPrep.hasInv && !cMeta.prep.hasInv && cMeta.prep.hasDist)) {
     score -= 12;
   }
 
-  const isNonOpDefaultDualItem =
-    item.statementType === 'performance' &&
-    NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(normalizeAliasKey(item.name));
-
-  if (perfCtx && item.statementType === 'performance' && !isNonOpDefaultDualItem) {
-    if (itemMatchesPerfContext(item, perfCtx)) {
+  if (q.perfCtx && item.statementType === 'performance' && !cMeta.isNonOpDual) {
+    if (itemMatchesPerfContext(item, q.perfCtx)) {
       score = Math.min(100, score + 4);
     } else {
       score = Math.max(0, score - 8);
     }
   }
 
-  if (perfSubCtx && item.statementType === 'performance' && item.group === 'Maintenance and Other Operating Expenses') {
-    if (perfSubCtx === 'SUPPLIES') {
+  if (
+    q.perfSubCtx &&
+    item.statementType === 'performance' &&
+    item.group === 'Maintenance and Other Operating Expenses'
+  ) {
+    if (q.perfSubCtx === 'SUPPLIES') {
       if (item.subgroup === 'Supplies and Materials Expenses') {
         score = Math.min(100, score + 8);
       } else if (item.subgroup === 'Repairs and Maintenance') {
         score = Math.max(0, score - 14);
       }
-    } else if (perfSubCtx === 'REPAIRS') {
+    } else if (q.perfSubCtx === 'REPAIRS') {
       if (item.subgroup === 'Repairs and Maintenance') {
         score = Math.min(100, score + 10);
       } else if (item.subgroup === 'Supplies and Materials Expenses') {
@@ -1541,15 +2078,15 @@ function scoreLineItemMatch(
     }
   }
 
-  if (cashCtx && item.statementType === 'cash_flows') {
+  if (q.cashCtx && item.statementType === 'cash_flows') {
     if (item.section !== 'CASH_FLOWS') {
-      if (itemMatchesCashFlowContext(item, cashCtx)) {
+      if (itemMatchesCashFlowContext(item, q.cashCtx)) {
         score = Math.min(100, score + 6);
       } else {
         score = Math.max(0, score - 14);
       }
     }
-    if (cashGroupCtx && item.group === cashGroupCtx) {
+    if (q.cashGroupCtx && item.group === q.cashGroupCtx) {
       score = Math.min(100, score + 8);
     }
   }
@@ -1561,24 +2098,21 @@ export function matchLineItemWithRecommendation(
   rawName: string,
   encodableItems: LineItemDefinition[],
   savedAliases: Record<string, string> = {},
-  sectionContext?: PerfSectionContext | CashFlowSectionContext,
-  subContext?: PerfSubContext | string
+  sectionContext?: PerfSectionContext | CashFlowSectionContext | NetAssetsSectionContext,
+  subContext?: PerfSubContext | string,
+  accountCode?: string
 ): LineItemRecommendation {
+  const indexed = getIndexedEncodableItems(encodableItems);
   const aliasKey = normalizeAliasKey(rawName);
   if (aliasKey && savedAliases[aliasKey]) {
-    const aliasItem = encodableItems.find((i) => i.id === savedAliases[aliasKey]);
-    const exactInContext = isPerfSectionContext(sectionContext)
-      ? encodableItems.find(
-          (i) =>
-            normalizeAliasKey(i.name) === aliasKey &&
-            itemMatchesPerfContext(i, sectionContext)
-        )
-      : isCashFlowSectionContext(sectionContext)
-      ? encodableItems.find(
-          (i) =>
-            normalizeAliasKey(i.name) === aliasKey &&
-            itemMatchesCashFlowContext(i, sectionContext)
-        )
+    const aliasItem = indexed.byId.get(savedAliases[aliasKey]);
+    const normMatches = indexed.byNormName.get(aliasKey);
+    const exactInContext = normMatches
+      ? isPerfSectionContext(sectionContext)
+        ? normMatches.find((i) => itemMatchesPerfContext(i, sectionContext))
+        : isCashFlowSectionContext(sectionContext)
+        ? normMatches.find((i) => itemMatchesCashFlowContext(i, sectionContext))
+        : undefined
       : undefined;
     if (aliasItem && (!exactInContext || exactInContext.id === aliasItem.id)) {
       return {
@@ -1593,24 +2127,45 @@ export function matchLineItemWithRecommendation(
   const allowAggregatedDepMatch =
     isLumpedAccumulatedDepreciation(rawName) || /\baggregated\b/i.test(rawName);
 
-  const scored = encodableItems
-    .filter((item) => allowAggregatedDepMatch || item.id !== AGGREGATED_ACCUMULATED_DEPRECIATION_ID)
-    .map((item) => ({
-      item,
-      confidence: scoreLineItemMatch(rawName, item, sectionContext, subContext),
-    }))
-    .filter((entry) => entry.confidence >= 35)
-    .sort((a, b) => {
-      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-      const aNorm = normalizeAliasKey(a.item.name);
-      const bNorm = normalizeAliasKey(b.item.name);
-      if (aNorm === bNorm && NON_OP_DEFAULT_AMBIGUOUS_KEYS.has(aNorm)) {
-        const aNonOp = a.item.section === 'NON_OPERATING' ? 0 : 1;
-        const bNonOp = b.item.section === 'NON_OPERATING' ? 0 : 1;
-        if (aNonOp !== bNonOp) return aNonOp - bNonOp;
-      }
-      return a.item.order - b.item.order;
-    });
+  const normQueryUacs = accountCode && indexed.byNormUacs.size > 0 ? normalizeUacsKey(accountCode) : '';
+  const uacsCandidates = normQueryUacs
+    ? (indexed.byNormUacs.get(normQueryUacs) || []).filter(
+        (item) => allowAggregatedDepMatch || item.id !== AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+      )
+    : [];
+  if (uacsCandidates.length === 1) {
+    return {
+      bestItem: uacsCandidates[0],
+      confidence: 100,
+      matchType: 'exact',
+      alternatives: [],
+    };
+  }
+  const uacsMatchIds = uacsCandidates.length > 1 ? new Set(uacsCandidates.map((i) => i.id)) : null;
+
+  const statementTypeHint = encodableItems[0]?.statementType;
+  const queryMeta = buildPrecomputedQueryMeta(
+    rawName,
+    statementTypeHint,
+    sectionContext,
+    subContext
+  );
+
+  const scored: { item: LineItemDefinition; confidence: number; meta: { normName: string; isNonOpDual: boolean } }[] = [];
+  for (let i = 0; i < encodableItems.length; i++) {
+    const item = encodableItems[i];
+    if (!allowAggregatedDepMatch && item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) {
+      continue;
+    }
+    const cMeta = indexed.itemMeta.get(item.id)!;
+    let confidence = scoreLineItemMatchFast(queryMeta, item, cMeta);
+    if (uacsMatchIds?.has(item.id)) {
+      confidence = Math.min(100, Math.max(confidence, 85) + 12);
+    }
+    if (confidence >= 35) {
+      scored.push({ item, confidence, meta: cMeta });
+    }
+  }
 
   if (scored.length === 0) {
     return {
@@ -1620,6 +2175,16 @@ export function matchLineItemWithRecommendation(
       alternatives: [],
     };
   }
+
+  scored.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    if (a.meta.normName === b.meta.normName && a.meta.isNonOpDual) {
+      const aNonOp = a.item.section === 'NON_OPERATING' ? 0 : 1;
+      const bNonOp = b.item.section === 'NON_OPERATING' ? 0 : 1;
+      if (aNonOp !== bNonOp) return aNonOp - bNonOp;
+    }
+    return a.item.order - b.item.order;
+  });
 
   const top = scored[0];
   let matchType: MatchConfidenceType = 'low';
@@ -1631,7 +2196,7 @@ export function matchLineItemWithRecommendation(
     bestItem: top.item,
     confidence: top.confidence,
     matchType,
-    alternatives: scored.slice(0, 3),
+    alternatives: scored.slice(0, 3).map((s) => ({ item: s.item, confidence: s.confidence })),
   };
 }
 
@@ -1776,28 +2341,87 @@ export function detectSummaryRowKind(
     if (/^(?:net\s+)?cash\s+(?:provided|generated|used|from)\b/.test(cleaned)) {
       return 'net_cash_activity';
     }
-    if (/^(?:net\s+)?increase\s*\/?\s*\(?decrease\)?\s+in\s+cash\b/.test(cleaned)) {
+    const cashIncDecNormalized = cleaned
+      .replace(/^(?:(?:add|less)(?:\s*\/\s*\(?less\)?)?\s*:\s*)+/i, '')
+      .replace(/^(?:total|net)\s+/i, '')
+      .replace(/&/g, ' and ')
+      .replace(/[\/()[\],–—-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const cashIncDecTokens = cashIncDecNormalized.split(' ').filter(Boolean);
+    const hasFuzzyCashIncDec =
+      cashIncDecTokens.length >= 4 &&
+      (cashIncDecTokens[0] === 'inc' || tokenSimilarity(cashIncDecTokens[0], 'increase') >= 0.72) &&
+      (cashIncDecTokens[1] === 'dec' ||
+        tokenSimilarity(cashIncDecTokens[1], 'decrease') >= 0.72 ||
+        (cashIncDecTokens[1] === 'or' &&
+          cashIncDecTokens[2] !== undefined &&
+          (cashIncDecTokens[2] === 'dec' || tokenSimilarity(cashIncDecTokens[2], 'decrease') >= 0.72))) &&
+      /\b(?:in|of)\s+cash\b/.test(cashIncDecNormalized) &&
+      !cashIncDecNormalized.includes('exchange') &&
+      !cashIncDecNormalized.includes('rate');
+    const hasSingleIncOrDecInCash =
+      /^(?:increase|decrease|increse|decrese)\s+(?:in|of)\s+cash(?:\s+and\s+cash\s+equiv(?:alent|alents)?)?$/.test(
+        cashIncDecNormalized
+      );
+    if (
+      /^(?:net\s+)?increase\s*\/?\s*\(?decrease\)?\s+(?:in|of)\s+cash\b/.test(cleaned) ||
+      hasFuzzyCashIncDec ||
+      hasSingleIncOrDecInCash
+    ) {
       return 'cash_increase_decrease';
     }
     const cashDateNormalized = cleaned
       .replace(/^(?:add|less)\s*:\s*/i, '')
+      .replace(/&/g, ' and ')
       .replace(/[.,()–—-]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (
-      /^cash\s+(?:and\s+cash\s+equivalents|balance)\s+(?:as\s+(?:of|at)\s+|at\s+)?(?:january\s*1|jan\s*1|beg(?:inning)?|december\s*31|dec\s*31|end(?:ing)?)\b/.test(
+      /^cash\s+(?:and\s+cash\s+equivalents|balance)\s+(?:as\s+(?:of|at)\s+|at\s+)?(?:january\s*1|jan\s*1|beg(?:inning)?)\b/.test(
+        cashDateNormalized
+      ) ||
+      /^beg(?:inning)?\s+cash\s+(?:and\s+cash\s+equivalents|balance)\b/.test(cashDateNormalized)
+    ) {
+      return 'cash_beginning';
+    }
+    if (
+      /^cash\s+(?:and\s+cash\s+equivalents|balance)\s+(?:as\s+(?:of|at)\s+|at\s+)?(?:december\s*31|dec\s*31|end(?:ing)?)\b/.test(
         cashDateNormalized
       )
     ) {
       return 'cash_beginning_ending';
     }
+    // FUTURE TODO: Cash Flows Excel worksheets often include a "CHECKING" row (used to verify
+    // Ending Cash against the Statement of Financial Position). Ignore it during import for now;
+    // cross-statement checking will be added once all financial statements are finalized.
+    const checkingNormalized = cleaned
+      .replace(/[:\-–—.,()\[\]\/]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (/^(?:(?:for|cash(?:\s+flows?)?|scf)\s+)?checking\b/.test(checkingNormalized)) {
+      return 'cash_checking_ignored';
+    }
   } else if (statementType === 'net_assets') {
+    const naCleaned = cleaned.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
     if (
-      /^balance\s+(?:at|of|as\s+(?:at|of))\s+(?:january\s*1|jan\s*1|beginning|december\s*31|dec\s*31|end)\b/.test(
-        cleaned
+      /^(?:balance|net\s+assets\s*\/?\s*equity)\s*(?:at|of|as\s+(?:at|of)|,)?\s*(?:january\s*1|jan\.?\s*1|beginning(?:\s+of\s+period)?)\b/.test(
+        naCleaned
       ) ||
-      /^restated\s+balance\b/.test(cleaned) ||
-      /^total\s+(?:adjustments|changes\s+in\s+net\s+assets)\b/.test(cleaned)
+      /^beginning\s+balance\b/.test(naCleaned)
+    ) {
+      return 'net_assets_beginning';
+    }
+    if (
+      isNetAssetsEndingBalanceText(naCleaned) ||
+      /^restated\s+balance\b/.test(naCleaned) ||
+      /^add\s*\/?\s*\(?deduct\)?\s*:?$/.test(naCleaned) ||
+      /^(?:adjustments\s+to\s+beginning\s+balance|changes\s+in\s+net\s+assets\s*\/?\s*equity(?:\s+for\s+the\s+(?:calendar\s+)?(?:year|period))?)\s*:?$/.test(
+        naCleaned
+      ) ||
+      /^total\s+(?:adjustments(?:\s+to\s+beginning\s+balance)?|changes\s+in\s+net\s+assets(?:\s*\/?\s*equity)?)\b/.test(
+        naCleaned
+      )
     ) {
       return 'net_assets_summary';
     }
@@ -2165,6 +2789,7 @@ interface InternalRawRow {
   perfSubContext?: PerfSubContext;
   cashContext?: CashFlowSectionContext;
   cashGroupContext?: string;
+  netAssetsContext?: NetAssetsSectionContext;
   isProvisionalZeroUmbrella?: boolean;
   matchesStrictHierarchy: boolean;
   matchesAmbiguousHierarchy: boolean;
@@ -2230,7 +2855,10 @@ const MAJOR_SECTION_BOUNDARY_KINDS = new Set<
   'cash_inflows_outflows',
   'net_cash_activity',
   'cash_increase_decrease',
+  'cash_beginning',
   'cash_beginning_ending',
+  'cash_checking_ignored',
+  'net_assets_beginning',
   'net_assets_summary',
 ]);
 
@@ -2275,7 +2903,7 @@ function checkIfRollupOfRowsBelow(
   activeTargetIds: string[],
   maxLookahead = 25,
   depth = 0
-): { isRollup: boolean; childCount: number } {
+): { isRollup: boolean; childCount: number; singleMatchedChildIdx?: number } {
   const parent = allRows[parentIdx];
   const nonZeroTargets = activeTargetIds.filter((tid) => {
     const v = parent.amountsByTargetId[tid];
@@ -2292,6 +2920,7 @@ function checkIfRollupOfRowsBelow(
   const parentIndent = parent.indentScore;
   let hasEnteredIndentedBlock = false;
   let leafChildrenCount = 0;
+  let firstLeafChildIdx: number | undefined = undefined;
   const limit = Math.min(allRows.length, parentIdx + 1 + maxLookahead);
 
   for (let j = parentIdx + 1; j < limit; j++) {
@@ -2347,6 +2976,9 @@ function checkIfRollupOfRowsBelow(
     }
 
     leafChildrenCount++;
+    if (leafChildrenCount === 1) {
+      firstLeafChildIdx = j;
+    }
     activeTargetIds.forEach((tid) => {
       const val = child.amountsByTargetId[tid];
       if (val !== null && val !== undefined) {
@@ -2362,7 +2994,11 @@ function checkIfRollupOfRowsBelow(
     });
 
     if (allTargetsMatch && leafChildrenCount >= 1) {
-      return { isRollup: true, childCount: leafChildrenCount };
+      return {
+        isRollup: true,
+        childCount: leafChildrenCount,
+        singleMatchedChildIdx: leafChildrenCount === 1 ? firstLeafChildIdx : undefined,
+      };
     }
   }
 
@@ -2389,9 +3025,16 @@ export function extractPositionRowsFromSheet(
   if (activeTargets.length === 0) return [];
 
   const isPositionStatement = statementType === 'position';
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true });
+  const { rows } = getTrimmedSheetGrid(sheet);
   const earliestAmountCol = Math.min(...activeTargets.map((t) => t.colIndex));
   const hierarchy = buildHierarchyClassifier(encodableItems, statementType);
+  const strictHierarchyPreps = hierarchy.strictHierarchyLabels.map((lbl) => getPreparedLabel(lbl));
+  const ambiguousHierarchyPreps = hierarchy.ambiguousHierarchyLabels.map((lbl) => getPreparedLabel(lbl));
+
+  const activeTargetIds = activeTargets.map((t) => t.id);
+  const hasTarget2024 = activeTargets.some((t) => t.targetYear === '2024');
+  const hasBegCashEncodableItem = encodableItems.some((i) => i.id === 'cf-sum-beg-cash');
+  const hasBegNetAssetsEncodableItem = encodableItems.some((i) => i.id === 'na-beg-balance');
 
   // Pass 1: Extract raw candidate rows with metadata & section context
   const rawExtracted: InternalRawRow[] = [];
@@ -2403,6 +3046,9 @@ export function extractPositionRowsFromSheet(
   let currentCashContext: CashFlowSectionContext | undefined =
     statementType === 'cash_flows' ? 'CASH_OPERATING_IN' : undefined;
   let currentCashGroupContext: string | undefined = undefined;
+  let currentNetAssetsContext: NetAssetsSectionContext | undefined =
+    statementType === 'net_assets' ? 'BEG_ADJ' : undefined;
+  let passedNetAssetsEndingBalance = false;
 
   const cashGroupByNorm = new Map<string, { group: string; cashCtx: CashFlowSectionContext }>();
   if (statementType === 'cash_flows') {
@@ -2466,7 +3112,12 @@ export function extractPositionRowsFromSheet(
       currentCashGroupContext = undefined;
       return;
     }
-    if (/^(?:total\s+cash\s+(?:inflows|outflows)|(?:net\s+)?cash\s+(?:provided|generated|used|from)|(?:net\s+)?increase)/.test(cleanedLow)) {
+    if (
+      /^(?:total\s+cash\s+(?:inflows|outflows)|(?:net\s+)?cash\s+(?:provided|generated|used|from)|(?:net\s+)?increase)/.test(
+        cleanedLow
+      ) ||
+      detectSummaryRowKind(txt, 'cash_flows') !== undefined
+    ) {
       currentCashGroupContext = undefined;
       return;
     }
@@ -2534,95 +3185,38 @@ export function extractPositionRowsFromSheet(
     }
   };
 
+  const resolveNetAssetsContextFromText = (
+    txt: string,
+    prev: NetAssetsSectionContext | undefined
+  ): NetAssetsSectionContext | undefined => {
+    const low = stripTrailingNetAssetsFootnote(txt).toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!low) return prev;
+    if (
+      /^(?:balance|net\s+assets\s*\/?\s*equity)\s*(?:at|of|as\s+(?:at|of)|,)?\s*(?:january\s*1|jan\.?\s*1|beginning)\b/.test(
+        low
+      ) ||
+      /^adjustments\s+to\s+beginning\s+balance\b/.test(low)
+    ) {
+      return 'BEG_ADJ';
+    }
+    if (
+      /^restated\s+balance\b/.test(low) ||
+      /^changes\s+in\s+net\s+assets\s*\/?\s*equity\b/.test(low) ||
+      classifyCanonicalNetAssetsItemId(txt, 'CY_CHANGES') === 'na-cy-net-revenue-adj' ||
+      classifyCanonicalNetAssetsItemId(txt, 'CY_CHANGES') === 'na-cy-surplus-deficit'
+    ) {
+      return 'CY_CHANGES';
+    }
+    return prev;
+  };
+
   for (let r = Math.max(0, startRowIndex); r < rows.length; r++) {
+    // Audit/checking rows placed after "Balance at December 31" on Statement of Changes in Net Assets/Equity are ignored
+    if (statementType === 'net_assets' && passedNetAssetsEndingBalance) break;
     const row = rows[r];
     if (!Array.isArray(row)) continue;
 
-    // Inspect descriptive text before the earliest amount column first (so amount-less section headers
-    // like "NET ASSETS/EQUITY" or "Financial Expenses" still update section context)
-    let accountCode: string | undefined;
-    for (let c = 0; c < earliestAmountCol; c++) {
-      const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
-      if (isAccountCodeCell(cellTxt)) {
-        accountCode = cellTxt.trim();
-        break;
-      }
-    }
-
-    let chosenCol = -1;
-    let chosenText = '';
-
-    if (lineItemColOverride !== 'auto') {
-      if (lineItemColOverride < earliestAmountCol) {
-        chosenCol = lineItemColOverride;
-        chosenText = getFormattedCellText(sheet, r, chosenCol, row[chosenCol]);
-      }
-    } else {
-      const candidateCells: { col: number; text: string }[] = [];
-      for (let c = 0; c < earliestAmountCol; c++) {
-        const text = getFormattedCellText(sheet, r, c, row[c]);
-        if (text && !looksLikeNoteOrCodeOnly(text)) {
-          candidateCells.push({ col: c, text });
-        }
-      }
-
-      if (candidateCells.length === 1) {
-        chosenCol = candidateCells[0].col;
-        chosenText = candidateCells[0].text;
-      } else if (candidateCells.length > 1) {
-        let bestCandidateScore = -1;
-        for (const cand of candidateCells) {
-          const isSum = Boolean(detectSummaryRowKind(cand.text, statementType));
-          const rec = matchLineItemWithRecommendation(
-            cand.text,
-            encodableItems,
-            savedAliases,
-            currentPerfContext || currentCashContext,
-            currentPerfContext ? currentPerfSubContext : currentCashGroupContext
-          );
-          const effectiveScore = isSum ? 98 : rec.confidence;
-          if (effectiveScore >= bestCandidateScore) {
-            bestCandidateScore = effectiveScore;
-            chosenCol = cand.col;
-            chosenText = cand.text;
-          }
-        }
-      }
-    }
-
-    if (statementType === 'performance') {
-      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
-        updatePerfContextFromText(chosenText);
-      } else {
-        for (let c = 0; c < earliestAmountCol; c++) {
-          const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
-          if (cellTxt && !looksLikeNoteOrCodeOnly(cellTxt)) {
-            updatePerfContextFromText(cellTxt);
-          }
-        }
-      }
-    } else if (statementType === 'cash_flows') {
-      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
-        updateCashContextFromText(chosenText);
-      } else {
-        for (let c = 0; c < earliestAmountCol; c++) {
-          const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
-          if (cellTxt && !looksLikeNoteOrCodeOnly(cellTxt)) {
-            updateCashContextFromText(cellTxt);
-          }
-        }
-      }
-    }
-
-    if (isPositionStatement && chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
-      if (isEquitySectionEntryText(chosenText) || passedTotalLiabilities) {
-        inEquitySection = true;
-      }
-      if (detectSummaryRowKind(chosenText, statementType) === 'total_liabilities') {
-        passedTotalLiabilities = true;
-      }
-    }
-
+    // Inspect numeric target columns first so empty/header-only rows skip expensive multi-column scoring
     const amountsByTargetId: Record<string, number | null> = {};
     const formulas: string[] = [];
     let hasAnyNonZeroAmount = false;
@@ -2650,21 +3244,141 @@ export function extractPositionRowsFromSheet(
       }
     }
 
-    const isProvisionalZeroUmbrella =
-      statementType === 'performance' &&
-      Boolean(chosenText) &&
-      !looksLikeNoteOrCodeOnly(chosenText) &&
-      (!hasAnyNumericCell || !hasAnyNonZeroAmount) &&
-      (isSemiFurnBooksUmbrellaLabel(chosenText) ||
-        isSemiMachUmbrellaLabel(chosenText) ||
-        isOtherBonusesUmbrellaLabel(chosenText) ||
-        isDeprBldgUmbrellaLabel(chosenText) ||
-        isDeprMachUmbrellaLabel(chosenText) ||
-        isDeprTransUmbrellaLabel(chosenText) ||
-        isDeprFurnUmbrellaLabel(chosenText));
+    let accountCode: string | undefined;
+    const candidateCells: { col: number; text: string }[] = [];
+    for (let c = 0; c < earliestAmountCol; c++) {
+      const cellTxt = getFormattedCellText(sheet, r, c, row[c]);
+      if (!cellTxt) continue;
+      if (!accountCode && isAccountCodeCell(cellTxt)) {
+        accountCode = cellTxt.trim();
+        continue;
+      }
+      if (!looksLikeNoteOrCodeOnly(cellTxt)) {
+        candidateCells.push({ col: c, text: cellTxt });
+      }
+    }
 
-    if ((!hasAnyNumericCell || !hasAnyNonZeroAmount) && !isProvisionalZeroUmbrella) continue;
-    if (!chosenText || looksLikeNoteOrCodeOnly(chosenText)) continue;
+    let chosenCol = -1;
+    let chosenText = '';
+
+    if (lineItemColOverride !== 'auto') {
+      if (lineItemColOverride < earliestAmountCol) {
+        chosenCol = lineItemColOverride;
+        chosenText = getFormattedCellText(sheet, r, chosenCol, row[chosenCol]);
+      }
+    } else if (candidateCells.length === 1) {
+      chosenCol = candidateCells[0].col;
+      chosenText = candidateCells[0].text;
+    } else if (candidateCells.length > 1) {
+      if (hasAnyNumericCell && hasAnyNonZeroAmount) {
+        let bestCandidateScore = -1;
+        for (const cand of candidateCells) {
+          const isSum = Boolean(detectSummaryRowKind(cand.text, statementType));
+          const rec = isSum
+            ? null
+            : matchLineItemWithRecommendation(
+                cand.text,
+                encodableItems,
+                savedAliases,
+                currentPerfContext || currentCashContext || currentNetAssetsContext,
+                currentPerfContext ? currentPerfSubContext : currentCashGroupContext
+              );
+          const effectiveScore = isSum ? 98 : (rec?.confidence ?? 0);
+          if (effectiveScore >= bestCandidateScore) {
+            bestCandidateScore = effectiveScore;
+            chosenCol = cand.col;
+            chosenText = cand.text;
+          }
+        }
+      } else {
+        chosenCol = candidateCells[candidateCells.length - 1].col;
+        chosenText = candidateCells[candidateCells.length - 1].text;
+      }
+    }
+
+    if (statementType === 'performance') {
+      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+        updatePerfContextFromText(chosenText);
+      } else {
+        for (let c = 0; c < candidateCells.length; c++) {
+          updatePerfContextFromText(candidateCells[c].text);
+        }
+      }
+    } else if (statementType === 'cash_flows') {
+      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+        updateCashContextFromText(chosenText);
+      } else {
+        for (let c = 0; c < candidateCells.length; c++) {
+          updateCashContextFromText(candidateCells[c].text);
+        }
+      }
+    } else if (statementType === 'net_assets') {
+      if (chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+        currentNetAssetsContext = resolveNetAssetsContextFromText(chosenText, currentNetAssetsContext);
+      } else {
+        for (let c = 0; c < candidateCells.length; c++) {
+          currentNetAssetsContext = resolveNetAssetsContextFromText(
+            candidateCells[c].text,
+            currentNetAssetsContext
+          );
+        }
+      }
+    }
+
+    if (isPositionStatement && chosenText && !looksLikeNoteOrCodeOnly(chosenText)) {
+      if (isEquitySectionEntryText(chosenText) || passedTotalLiabilities) {
+        inEquitySection = true;
+      }
+      if (detectSummaryRowKind(chosenText, statementType) === 'total_liabilities') {
+        passedTotalLiabilities = true;
+      }
+    }
+
+    const netAssetsProvisionalCanonicalId =
+      statementType === 'net_assets' &&
+      chosenText &&
+      !looksLikeNoteOrCodeOnly(chosenText) &&
+      (!hasAnyNumericCell || !hasAnyNonZeroAmount)
+        ? classifyCanonicalNetAssetsItemId(chosenText, currentNetAssetsContext)
+        : null;
+
+    const isProvisionalZeroUmbrella =
+      (statementType === 'performance' &&
+        Boolean(chosenText) &&
+        !looksLikeNoteOrCodeOnly(chosenText) &&
+        (!hasAnyNumericCell || !hasAnyNonZeroAmount) &&
+        (isSemiFurnBooksUmbrellaLabel(chosenText) ||
+          isSemiMachUmbrellaLabel(chosenText) ||
+          isOtherBonusesUmbrellaLabel(chosenText) ||
+          isDeprBldgUmbrellaLabel(chosenText) ||
+          isDeprMachUmbrellaLabel(chosenText) ||
+          isDeprTransUmbrellaLabel(chosenText) ||
+          isDeprFurnUmbrellaLabel(chosenText))) ||
+      (statementType === 'net_assets' &&
+        Boolean(netAssetsProvisionalCanonicalId) &&
+        (netAssetsProvisionalCanonicalId !== 'na-beg-balance' ||
+          (hasTarget2024 && hasBegNetAssetsEncodableItem)));
+
+    const hitNetAssetsEndingBalanceOnThisRow =
+      statementType === 'net_assets' &&
+      (rawExtracted.length > 0 || currentNetAssetsContext === 'CY_CHANGES') &&
+      ((Boolean(chosenText) &&
+        !looksLikeNoteOrCodeOnly(chosenText) &&
+        isNetAssetsEndingBalanceText(chosenText)) ||
+        candidateCells.some((c) => isNetAssetsEndingBalanceText(c.text)));
+
+    if ((!hasAnyNumericCell || !hasAnyNonZeroAmount) && !isProvisionalZeroUmbrella) {
+      if (hitNetAssetsEndingBalanceOnThisRow) {
+        passedNetAssetsEndingBalance = true;
+      }
+      continue;
+    }
+    if (!chosenText || looksLikeNoteOrCodeOnly(chosenText)) {
+      if (hitNetAssetsEndingBalanceOnThisRow) {
+        passedNetAssetsEndingBalance = true;
+      }
+      continue;
+    }
 
     // If account code was embedded inside chosenText (e.g. "1010102000 Petty Cash Fund"), capture it
     if (!accountCode) {
@@ -2674,11 +3388,12 @@ export function extractPositionRowsFromSheet(
       }
     }
 
-    const cleanedName = cleanAccountLabel(chosenText);
+    const chosenPrep = getPreparedLabel(chosenText);
+    const cleanedName = chosenPrep.cleaned;
     const leadingSpaces =
       chosenCol >= 0 ? getCellLeadingIndentSpaces(sheet, r, chosenCol, row[chosenCol]) : 0;
     const indentScore = Math.max(0, chosenCol) * 100 + Math.min(99, leadingSpaces);
-    const isContraName = hasContraKeywords(tokenizeAndExpand(cleanedName));
+    const isContraName = chosenPrep.hasContra;
     const strictSummaryKind = detectSummaryRowKind(chosenText, statementType);
     const isLumpedDep = isPositionStatement && isLumpedAccumulatedDepreciation(chosenText);
     const isNetPpeSummary = isPositionStatement && isNetPPESummaryRow(chosenText);
@@ -2686,15 +3401,21 @@ export function extractPositionRowsFromSheet(
       isPositionStatement && inEquitySection ? classifyEquityRow(chosenText) : undefined;
 
     let maxStrictScore = 0;
-    for (const hLabel of hierarchy.strictHierarchyLabels) {
-      const s = scoreStringSimilarity(chosenText, hLabel);
-      if (s > maxStrictScore) maxStrictScore = s;
+    for (let h = 0; h < strictHierarchyPreps.length; h++) {
+      const s = scorePreparedSimilarity(chosenPrep, strictHierarchyPreps[h], 68);
+      if (s > maxStrictScore) {
+        maxStrictScore = s;
+        if (maxStrictScore >= 97) break;
+      }
     }
 
     let maxAmbiguousScore = 0;
-    for (const hLabel of hierarchy.ambiguousHierarchyLabels) {
-      const s = scoreStringSimilarity(chosenText, hLabel);
-      if (s > maxAmbiguousScore) maxAmbiguousScore = s;
+    for (let h = 0; h < ambiguousHierarchyPreps.length; h++) {
+      const s = scorePreparedSimilarity(chosenPrep, ambiguousHierarchyPreps[h], 68);
+      if (s > maxAmbiguousScore) {
+        maxAmbiguousScore = s;
+        if (maxAmbiguousScore >= 97) break;
+      }
     }
 
     const isExactLeafName = hierarchy.leafNormSet.has(normalizeAliasKey(chosenText));
@@ -2726,17 +3447,21 @@ export function extractPositionRowsFromSheet(
       perfSubContext: currentPerfSubContext,
       cashContext: currentCashContext,
       cashGroupContext: currentCashGroupContext,
+      netAssetsContext: currentNetAssetsContext,
       isProvisionalZeroUmbrella,
       matchesStrictHierarchy,
       matchesAmbiguousHierarchy,
       fuzzyHierarchyScore,
     });
+
+    if (hitNetAssetsEndingBalanceOnThisRow) {
+      passedNetAssetsEndingBalance = true;
+    }
   }
 
   // Determine whether this spreadsheet consistently includes UACS/account codes on leaf rows
   const codedRowCount = rawExtracted.filter((r) => Boolean(r.accountCode)).length;
   const sheetUsesAccountCodes = codedRowCount >= 3;
-  const activeTargetIds = activeTargets.map((t) => t.id);
 
   // Check if Equity portion has an explicit "Accumulated Surplus/(Deficit, end)" row (SFP only)
   const hasExplicitEndingSurplus =
@@ -3101,6 +3826,263 @@ export function extractPositionRowsFromSheet(
         }
       }
     }
+  } else if (statementType === 'net_assets') {
+    const encodableById = new Map<string, LineItemDefinition>();
+    encodableItems.forEach((it) => encodableById.set(it.id, it));
+
+    for (let i = 0; i < rawExtracted.length; i++) {
+      if (umbrellaResolutionByRawIdx.has(i)) continue;
+      const parent = rawExtracted[i];
+
+      const parentCanonicalId = classifyCanonicalNetAssetsItemId(
+        parent.rawName,
+        parent.netAssetsContext
+      );
+      const isAllowedBeginning =
+        parentCanonicalId === 'na-beg-balance' && hasTarget2024 && hasBegNetAssetsEncodableItem;
+
+      if (parentCanonicalId && (parentCanonicalId !== 'na-beg-balance' || isAllowedBeginning)) {
+        const parentDef = encodableById.get(parentCanonicalId);
+        if (!parentDef) {
+          if (parent.isProvisionalZeroUmbrella) {
+            dropProvisionalZeroIndices.add(i);
+          }
+          continue;
+        }
+
+        const isNetRevParent = parentCanonicalId === 'na-cy-net-revenue-adj';
+        const childIndices: number[] = [];
+        let hasEnteredIndentedBlock = false;
+
+        for (let j = i + 1; j < rawExtracted.length; j++) {
+          if (umbrellaResolutionByRawIdx.has(j)) break;
+          const child = rawExtracted[j];
+          if (child.strictSummaryKind) break;
+          if (classifyCanonicalNetAssetsItemId(child.rawName, child.netAssetsContext) !== null) {
+            break;
+          }
+          if (!isNetRevParent && classifyNetRevenueAdjustmentChildLabel(child.rawName)) {
+            break;
+          }
+          if (child.netAssetsContext !== parent.netAssetsContext) {
+            break;
+          }
+          if (child.sourceColIndex < parent.sourceColIndex) {
+            break;
+          }
+          if (child.indentScore > parent.indentScore) {
+            hasEnteredIndentedBlock = true;
+          } else if (
+            hasEnteredIndentedBlock &&
+            child.indentScore <= parent.indentScore &&
+            !(isNetRevParent && classifyNetRevenueAdjustmentChildLabel(child.rawName))
+          ) {
+            break;
+          }
+          childIndices.push(j);
+        }
+
+        if (childIndices.length === 0) {
+          if (parent.isProvisionalZeroUmbrella) {
+            dropProvisionalZeroIndices.add(i);
+          }
+          continue;
+        }
+
+        const allChildrenAreIndented = childIndices.every(
+          (idx) => rawExtracted[idx].indentScore > parent.indentScore
+        );
+        const allChildrenMatchKnownNetRev =
+          isNetRevParent &&
+          childIndices.every((idx) =>
+            classifyNetRevenueAdjustmentChildLabel(rawExtracted[idx].rawName)
+          );
+        const parentMatchesChildSumAllCols = activeTargetIds.every((tid) => {
+          const pVal = parent.amountsByTargetId[tid] ?? 0;
+          const cSum = childIndices.reduce(
+            (acc, idx) => acc + (rawExtracted[idx].amountsByTargetId[tid] ?? 0),
+            0
+          );
+          return Math.abs(pVal - cSum) <= 0.05;
+        });
+
+        const shouldAggregateChildren =
+          isNetRevParent ||
+          Boolean(parent.isProvisionalZeroUmbrella) ||
+          allChildrenAreIndented ||
+          allChildrenMatchKnownNetRev ||
+          parentMatchesChildSumAllCols ||
+          parent.hasSumFormula;
+
+        if (!shouldAggregateChildren) {
+          continue;
+        }
+
+        const resolvedAmounts: Record<string, number | null> = {};
+        const wasAggregatedByTargetId: Record<string, boolean> = {};
+        let aggregatedAnyCol = false;
+        let rolledUpOnlyAnyCol = false;
+
+        activeTargetIds.forEach((tid) => {
+          const pRaw = parent.amountsByTargetId[tid];
+          const pVal = pRaw ?? 0;
+          const childSum = childIndices.reduce(
+            (acc, idx) => acc + (rawExtracted[idx].amountsByTargetId[tid] ?? 0),
+            0
+          );
+          const hasNonZeroChildren = childIndices.some(
+            (idx) => Math.abs(rawExtracted[idx].amountsByTargetId[tid] ?? 0) >= 0.005
+          );
+          const hasNonZeroParent = Math.abs(pVal) >= 0.005;
+
+          if (hasNonZeroChildren && hasNonZeroParent && Math.abs(pVal - childSum) <= 0.05) {
+            resolvedAmounts[tid] = pRaw ?? Math.round(pVal * 10000) / 10000;
+            wasAggregatedByTargetId[tid] = false;
+            rolledUpOnlyAnyCol = true;
+          } else if (hasNonZeroChildren) {
+            resolvedAmounts[tid] = Math.round((pVal + childSum) * 10000) / 10000;
+            wasAggregatedByTargetId[tid] = true;
+            aggregatedAnyCol = true;
+          } else {
+            resolvedAmounts[tid] = pRaw ?? null;
+            wasAggregatedByTargetId[tid] = false;
+          }
+        });
+
+        const hasAnyResolvedNonZero = activeTargetIds.some(
+          (tid) => Math.abs(resolvedAmounts[tid] ?? 0) >= 0.005
+        );
+        if (!hasAnyResolvedNonZero) {
+          if (parent.isProvisionalZeroUmbrella) {
+            dropProvisionalZeroIndices.add(i);
+          }
+          continue;
+        }
+
+        const childNamesList =
+          childIndices.length <= 4
+            ? childIndices.map((idx) => rawExtracted[idx].cleanedName).join(' & ')
+            : `${childIndices
+                .slice(0, 3)
+                .map((idx) => rawExtracted[idx].cleanedName)
+                .join(', ')} + ${childIndices.length - 3} more sub-items`;
+        const noteText =
+          aggregatedAnyCol && rolledUpOnlyAnyCol
+            ? `This account has been aggregated with ${childNamesList} (columns already matching subtotal kept as-is)`
+            : aggregatedAnyCol
+            ? `This account has been aggregated with ${childNamesList} into ${parentDef.name}`
+            : `Parent balance already matches breakdown (${childNamesList})`;
+
+        const breakdown: AggregationBreakdown = {
+          parentItemId: parentDef.id,
+          parentLabel: parentDef.name,
+          parentRawName: stripTrailingNetAssetsFootnote(parent.cleanedName || parent.rawName),
+          parentExcelRowNumber: parent.excelRowNumber,
+          isParentless: false,
+          parentOwnAmountsByTargetId: { ...parent.amountsByTargetId },
+          resolvedAmountsByTargetId: { ...resolvedAmounts },
+          wasAggregatedByTargetId,
+          children: childIndices.map((cIdx) => ({
+            rawName: rawExtracted[cIdx].rawName,
+            cleanedName: rawExtracted[cIdx].cleanedName,
+            excelRowNumber: rawExtracted[cIdx].excelRowNumber,
+            amountsByTargetId: { ...rawExtracted[cIdx].amountsByTargetId },
+          })),
+        };
+
+        umbrellaResolutionByRawIdx.set(i, {
+          mode: 'parent',
+          targetItemId: parentDef.id,
+          resolvedAmounts,
+          aggregationNote: noteText,
+          aggregationBreakdown: breakdown,
+        });
+
+        const childSkipReason = aggregatedAnyCol
+          ? `Aggregated into ${parentDef.name} above`
+          : `Already included in ${parentDef.name} above`;
+
+        childIndices.forEach((cIdx) => {
+          umbrellaResolutionByRawIdx.set(cIdx, {
+            mode: 'consumed_child',
+            reason: childSkipReason,
+          });
+        });
+      } else if (
+        !parent.strictSummaryKind &&
+        classifyNetRevenueAdjustmentChildLabel(parent.rawName)
+      ) {
+        // Parentless consolidation when division omitted the "Adjustment of net revenue..." heading row
+        const netRevDef = encodableById.get('na-cy-net-revenue-adj');
+        if (!netRevDef) continue;
+
+        const siblingIndices: number[] = [i];
+        for (let j = i + 1; j < rawExtracted.length; j++) {
+          if (umbrellaResolutionByRawIdx.has(j)) break;
+          const sib = rawExtracted[j];
+          if (sib.strictSummaryKind) break;
+          if (!classifyNetRevenueAdjustmentChildLabel(sib.rawName)) break;
+          siblingIndices.push(j);
+        }
+
+        if (siblingIndices.length >= 2) {
+          const resolvedAmounts: Record<string, number | null> = {};
+          const wasAggregatedByTargetId: Record<string, boolean> = {};
+          activeTargetIds.forEach((tid) => {
+            const sum = siblingIndices.reduce(
+              (acc, idx) => acc + (rawExtracted[idx].amountsByTargetId[tid] ?? 0),
+              0
+            );
+            const anyValue = siblingIndices.some(
+              (idx) =>
+                rawExtracted[idx].amountsByTargetId[tid] !== null &&
+                rawExtracted[idx].amountsByTargetId[tid] !== undefined
+            );
+            resolvedAmounts[tid] = anyValue ? Math.round(sum * 10000) / 10000 : null;
+            wasAggregatedByTargetId[tid] = anyValue && Math.abs(sum) >= 0.005;
+          });
+
+          const childNamesList =
+            siblingIndices.length <= 4
+              ? siblingIndices.map((idx) => rawExtracted[idx].cleanedName).join(' & ')
+              : `${siblingIndices
+                  .slice(0, 3)
+                  .map((idx) => rawExtracted[idx].cleanedName)
+                  .join(', ')} + ${siblingIndices.length - 3} more`;
+
+          const breakdown: AggregationBreakdown = {
+            parentItemId: netRevDef.id,
+            parentLabel: netRevDef.name,
+            parentRawName: netRevDef.name,
+            isParentless: true,
+            parentOwnAmountsByTargetId: {},
+            resolvedAmountsByTargetId: { ...resolvedAmounts },
+            wasAggregatedByTargetId,
+            children: siblingIndices.map((cIdx) => ({
+              rawName: rawExtracted[cIdx].rawName,
+              cleanedName: rawExtracted[cIdx].cleanedName,
+              excelRowNumber: rawExtracted[cIdx].excelRowNumber,
+              amountsByTargetId: { ...rawExtracted[cIdx].amountsByTargetId },
+            })),
+          };
+
+          umbrellaResolutionByRawIdx.set(i, {
+            mode: 'parent',
+            targetItemId: netRevDef.id,
+            resolvedAmounts,
+            aggregationNote: `This account has been aggregated from ${childNamesList} into ${netRevDef.name}`,
+            aggregationBreakdown: breakdown,
+          });
+
+          siblingIndices.slice(1).forEach((cIdx) => {
+            umbrellaResolutionByRawIdx.set(cIdx, {
+              mode: 'consumed_child',
+              reason: `Aggregated into ${netRevDef.name}`,
+            });
+          });
+        }
+      }
+    }
   }
 
   // Pass 2: Enforce lowest-level leaf extraction, statement-specific summary rules, and SFP guards
@@ -3160,22 +4142,53 @@ export function extractPositionRowsFromSheet(
       isSummaryRow = true;
       summaryKind = 'net_value';
       summaryReason = 'Net PPE summary row (auto-computed)';
+    } else if (
+      statementType === 'cash_flows' &&
+      raw.strictSummaryKind === 'cash_beginning' &&
+      hasTarget2024 &&
+      hasBegCashEncodableItem
+    ) {
+      // Allow FY 2024 Beginning Cash ("Cash and Cash Equivalents, January 1") to be imported & encoded
+      isSummaryRow = false;
+      summaryKind = undefined;
+    } else if (
+      statementType === 'net_assets' &&
+      raw.strictSummaryKind === 'net_assets_beginning' &&
+      hasTarget2024 &&
+      hasBegNetAssetsEncodableItem
+    ) {
+      // Allow FY 2024 Beginning Net Assets/Equity ("Balance at January 1") to be imported & encoded
+      isSummaryRow = false;
+      summaryKind = undefined;
     } else if (raw.strictSummaryKind) {
       isSummaryRow = true;
       summaryReason =
         raw.strictSummaryKind === 'net_value'
           ? 'Net Value row (auto-computed)'
+          : raw.strictSummaryKind === 'cash_checking_ignored'
+          ? 'Checking / verification row (ignored for now — reserved for future final FS check)'
+          : raw.strictSummaryKind === 'cash_beginning'
+          ? 'Beginning Cash (auto-computed from prior year Dec 31 for FY 2025+)'
+          : raw.strictSummaryKind === 'cash_increase_decrease'
+          ? 'Increase/(Decrease) in Cash and Cash Equivalents (auto-computed from Operating, Investing & Financing cash flows)'
           : raw.strictSummaryKind === 'cash_beginning_ending' ||
-            raw.strictSummaryKind === 'cash_increase_decrease' ||
             raw.strictSummaryKind === 'net_cash_activity'
           ? 'Cash Flow reconciliation / net activity row (auto-computed)'
           : raw.strictSummaryKind === 'cash_inflows_outflows'
           ? 'Cash Inflows / Outflows subtotal row (auto-computed)'
+          : raw.strictSummaryKind === 'net_assets_beginning'
+          ? 'Beginning Balance (auto-computed from prior year Dec 31 for FY 2025+)'
           : raw.strictSummaryKind === 'net_assets_summary'
-          ? 'Beginning / Restated / Ending Balance row (auto-computed)'
+          ? 'Restated / Ending Balance or section header row (auto-computed)'
           : raw.strictSummaryKind === 'surplus_deficit'
           ? 'Surplus/(Deficit) summary row (auto-computed)'
           : 'Total / Subtotal row (skipped)';
+    } else if (
+      statementType === 'net_assets' &&
+      classifyCanonicalNetAssetsItemId(raw.rawName, raw.netAssetsContext) !== null
+    ) {
+      // Canonical Net Assets items are already resolved in Pre-Pass 2; never skip as hierarchy wrapper
+      isSummaryRow = false;
     } else if (raw.matchesStrictHierarchy) {
       isSummaryRow = true;
       summaryKind = 'hierarchy_group';
@@ -3229,6 +4242,22 @@ export function extractPositionRowsFromSheet(
     } else if (!raw.accountCode) {
       const rollup = checkIfRollupOfRowsBelow(rawExtracted, i, activeTargetIds);
       const hasIndentedChildren = hasIndentedNonContraChild(rawExtracted, i);
+      const singleChild =
+        rollup.isRollup && rollup.childCount === 1 && rollup.singleMatchedChildIdx !== undefined
+          ? rawExtracted[rollup.singleMatchedChildIdx]
+          : undefined;
+      const isSingleLeafWrapper = Boolean(
+        singleChild &&
+          !singleChild.strictSummaryKind &&
+          singleChild.isContraName === raw.isContraName &&
+          raw.cashContext === singleChild.cashContext &&
+          raw.perfContext === singleChild.perfContext &&
+          ((hasIndentedChildren && singleChild.indentScore > raw.indentScore) ||
+            (singleChild.indentScore >= raw.indentScore &&
+              (normalizeAliasKey(raw.cleanedName) === normalizeAliasKey(singleChild.cleanedName) ||
+                scoreStringSimilarity(raw.cleanedName, singleChild.cleanedName) >= 92)))
+      );
+
       if (
         rollup.isRollup &&
         rollup.childCount >= 2 &&
@@ -3240,6 +4269,34 @@ export function extractPositionRowsFromSheet(
         isSummaryRow = true;
         summaryKind = 'hierarchy_group';
         summaryReason = `Higher-level rollup of ${rollup.childCount} items below`;
+      } else if (isSingleLeafWrapper) {
+        isSummaryRow = true;
+        summaryKind = 'hierarchy_group';
+        summaryReason =
+          singleChild && singleChild.indentScore > raw.indentScore
+            ? 'Group header wrapping single indented leaf account below'
+            : 'Group/wrapper row duplicating single leaf account below';
+      }
+    } else {
+      const nextRow = rawExtracted[i + 1];
+      if (
+        nextRow &&
+        !nextRow.strictSummaryKind &&
+        nextRow.isContraName === raw.isContraName &&
+        raw.cashContext === nextRow.cashContext &&
+        raw.perfContext === nextRow.perfContext &&
+        nextRow.indentScore >= raw.indentScore &&
+        (normalizeAliasKey(raw.cleanedName) === normalizeAliasKey(nextRow.cleanedName) ||
+          scoreStringSimilarity(raw.cleanedName, nextRow.cleanedName) >= 92) &&
+        activeTargetIds.every((tid) => {
+          const a = raw.amountsByTargetId[tid] ?? 0;
+          const b = nextRow.amountsByTargetId[tid] ?? 0;
+          return Math.abs(a - b) <= 0.05;
+        })
+      ) {
+        isSummaryRow = true;
+        summaryKind = 'hierarchy_group';
+        summaryReason = 'Group/wrapper row duplicating single leaf account below';
       }
     }
 
@@ -3286,8 +4343,9 @@ export function extractPositionRowsFromSheet(
         raw.rawName,
         encodableItems,
         savedAliases,
-        raw.perfContext || raw.cashContext,
-        raw.perfContext ? raw.perfSubContext : raw.cashGroupContext
+        raw.perfContext || raw.cashContext || raw.netAssetsContext,
+        raw.perfContext ? raw.perfSubContext : raw.cashGroupContext,
+        raw.accountCode
       );
       autoSelectedId =
         recommendation.bestItem && recommendation.confidence >= 66 ? recommendation.bestItem.id : '';
@@ -3397,10 +4455,24 @@ export function compareTargetAgainstDatabase(
       return;
     }
 
+    if (
+      (statementType === 'cash_flows' &&
+        r.selectedLineItemId === 'cf-sum-beg-cash' &&
+        target.targetYear !== '2024') ||
+      (statementType === 'net_assets' &&
+        r.selectedLineItemId === 'na-beg-balance' &&
+        target.targetYear !== '2024')
+    ) {
+      return;
+    }
+
     const def = itemById.get(r.selectedLineItemId);
     if (!def) return;
     const normalizedAmt = def.isContra ? Math.abs(rawAmt) : rawAmt;
-    uploadedMap.set(def.id, normalizedAmt);
+    uploadedMap.set(
+      def.id,
+      Math.round(((uploadedMap.get(def.id) ?? 0) + normalizedAmt) * 10000) / 10000
+    );
   });
 
   let databaseItemCount = 0;
@@ -3458,6 +4530,17 @@ export function compareTargetAgainstDatabase(
   };
 
   encodableItems.forEach((item) => {
+    if (
+      (statementType === 'cash_flows' &&
+        item.id === 'cf-sum-beg-cash' &&
+        target.targetYear !== '2024') ||
+      (statementType === 'net_assets' &&
+        item.id === 'na-beg-balance' &&
+        target.targetYear !== '2024')
+    ) {
+      return;
+    }
+
     const dbRaw = existingYearDivisionData?.[item.id] ?? 0;
     const dbNormalized = item.isContra ? Math.abs(dbRaw) : dbRaw;
     const uploadedVal = uploadedMap.get(item.id) ?? 0;

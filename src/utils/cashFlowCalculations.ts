@@ -25,6 +25,11 @@ export interface CashFlowsSummary {
 /**
  * Computes the complete Statement of Cash Flows summary and reconciliation balances
  * for a specific division and year, or consolidated across all divisions.
+ *
+ * FUTURE TODO: Add cross-statement "CHECKING" verification (e.g., SCF December 31 Cash
+ * vs. Statement of Financial Position Cash and Cash Equivalents) once all financial
+ * statements are finalized. Currently, "CHECKING" rows in Cash Flows Excel imports are
+ * ignored via `cash_checking_ignored` in `excelImportPosition.ts`.
  */
 export function calculateCashFlowsSummary(
   lineItems: LineItemDefinition[],

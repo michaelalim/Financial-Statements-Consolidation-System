@@ -80,7 +80,22 @@ export function matchLineItemForgiving(
     return { matched: true, score: 75 };
   }
 
-  // 5. All query tokens exist inside the item's name
+  // 5. UACS code match (if assigned)
+  if (item.uacs) {
+    const uacsLower = item.uacs.toLowerCase();
+    const uacsAlpha = normalizeAlphanumeric(item.uacs);
+    if (uacsLower === trimmed || (queryAlpha && uacsAlpha === queryAlpha)) {
+      return { matched: true, score: 98 };
+    }
+    if (uacsLower.startsWith(trimmed) || (queryAlpha && uacsAlpha.startsWith(queryAlpha))) {
+      return { matched: true, score: 88 };
+    }
+    if (uacsLower.includes(trimmed) || (queryAlpha && uacsAlpha.includes(queryAlpha))) {
+      return { matched: true, score: 74 };
+    }
+  }
+
+  // 6. All query tokens exist inside the item's name
   if (queryTokens.length > 0) {
     const nameTokens = getAlphanumericTokens(item.name);
     const allTokensMatchName = queryTokens.every(
@@ -117,7 +132,41 @@ export function matchLineItemForgiving(
   return { matched: false, score: 0 };
 }
 
-export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> = ({
+interface LineItemsLookupMeta {
+  byId: Map<string, LineItemDefinition>;
+  duplicateNormalizedNames: Set<string>;
+}
+
+const LINE_ITEMS_META_CACHE = new WeakMap<LineItemDefinition[], LineItemsLookupMeta>();
+const EMPTY_LINE_ITEMS: LineItemDefinition[] = [];
+const EMPTY_INDEX_MAP = new Map<string, number>();
+const EMPTY_GROUPED_ITEMS: { [key: string]: LineItemDefinition[] } = {};
+
+function getLineItemsLookupMeta(lineItems: LineItemDefinition[]): LineItemsLookupMeta {
+  const cached = LINE_ITEMS_META_CACHE.get(lineItems);
+  if (cached) return cached;
+
+  const byId = new Map<string, LineItemDefinition>();
+  const counts = new Map<string, number>();
+  for (let i = 0; i < lineItems.length; i++) {
+    const item = lineItems[i];
+    byId.set(item.id, item);
+    const key = normalizeAlphanumeric(item.name);
+    if (key) {
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  const dups = new Set<string>();
+  counts.forEach((count, key) => {
+    if (count > 1) dups.add(key);
+  });
+
+  const meta: LineItemsLookupMeta = { byId, duplicateNormalizedNames: dups };
+  LINE_ITEMS_META_CACHE.set(lineItems, meta);
+  return meta;
+}
+
+const SearchableLineItemSelectInner: React.FC<SearchableLineItemSelectProps> = ({
   lineItems,
   selectedItemId,
   onSelectItem,
@@ -153,32 +202,26 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
   const itemButtonRefs = useRef<{ [key: number]: HTMLButtonElement | null }>({});
   const isClearingRef = useRef(false);
   const lastHighlightSourceRef = useRef<'keyboard' | 'mouse'>('keyboard');
+  const onOpenStateChangeRef = useRef(onOpenStateChange);
+  onOpenStateChangeRef.current = onOpenStateChange;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const { byId: itemsById, duplicateNormalizedNames } = useMemo(
+    () => getLineItemsLookupMeta(lineItems),
+    [lineItems]
+  );
 
   const selectedItem = useMemo(() => {
-    return lineItems.find((i) => i.id === selectedItemId);
-  }, [lineItems, selectedItemId]);
+    return selectedItemId ? itemsById.get(selectedItemId) : undefined;
+  }, [itemsById, selectedItemId]);
 
-  const duplicateNormalizedNames = useMemo(() => {
-    const counts = new Map<string, number>();
-    lineItems.forEach((item) => {
-      const key = normalizeAlphanumeric(item.name);
-      if (key) {
-        counts.set(key, (counts.get(key) || 0) + 1);
-      }
-    });
-    const dups = new Set<string>();
-    counts.forEach((count, key) => {
-      if (count > 1) dups.add(key);
-    });
-    return dups;
-  }, [lineItems]);
-
-  const updateIsOpen = (nextState: boolean) => {
+  const updateIsOpen = useCallback((nextState: boolean) => {
+    if (isOpenRef.current === nextState) return;
+    isOpenRef.current = nextState;
     setIsOpen(nextState);
-    if (onOpenStateChange) {
-      onOpenStateChange(nextState);
-    }
-  };
+    onOpenStateChangeRef.current?.(nextState);
+  }, []);
 
   // Clear stale internal search query whenever the dropdown is closed or selection changes externally
   useEffect(() => {
@@ -187,8 +230,9 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     }
   }, [selectedItemId, isOpen]);
 
-  // Close dropdown on outside click (supporting portaled menu)
+  // Close dropdown on outside click (only attach listener while open!)
   useEffect(() => {
+    if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (
@@ -201,7 +245,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen, updateIsOpen]);
 
   const updatePosition = useCallback(() => {
     if (!containerRef.current) return;
@@ -253,8 +297,9 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     };
   }, [isOpen, usePortal, updatePosition]);
 
-  // Filter & rank items using forgiving non-alphanumeric matching
+  // Filter & rank items using forgiving non-alphanumeric matching (only when dropdown is open)
   const filteredItems = useMemo(() => {
+    if (!isOpen) return EMPTY_LINE_ITEMS;
     const q = searchQuery.trim();
     if (!q) return lineItems;
 
@@ -278,19 +323,21 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     });
 
     return scoredItems.map((s) => s.item);
-  }, [lineItems, searchQuery]);
+  }, [isOpen, lineItems, searchQuery]);
 
   // Map each item ID to its flat index for keyboard highlighting
   const itemIndexMap = useMemo(() => {
+    if (!isOpen) return EMPTY_INDEX_MAP;
     const map = new Map<string, number>();
     filteredItems.forEach((item, idx) => {
       map.set(item.id, idx);
     });
     return map;
-  }, [filteredItems]);
+  }, [isOpen, filteredItems]);
 
   // Reset highlighted index when filtered items change
   useEffect(() => {
+    if (!isOpen) return;
     lastHighlightSourceRef.current = 'keyboard';
     if (filteredItems.length > 0) {
       if (selectedItemId && itemIndexMap.has(selectedItemId)) {
@@ -301,10 +348,11 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     } else {
       setHighlightedIndex(-1);
     }
-  }, [filteredItems, selectedItemId, itemIndexMap]);
+  }, [isOpen, filteredItems, selectedItemId, itemIndexMap]);
 
   // Group filtered items by subsection & group
   const groupedItems = useMemo(() => {
+    if (!isOpen) return EMPTY_GROUPED_ITEMS;
     const groups: { [key: string]: LineItemDefinition[] } = {};
     filteredItems.forEach((item) => {
       const key = `${item.subsection} · ${item.group}`;
@@ -312,14 +360,15 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
       groups[key].push(item);
     });
     return groups;
-  }, [filteredItems]);
+  }, [isOpen, filteredItems]);
 
   const activePreviewItem = useMemo(() => {
+    if (!isOpen) return null;
     if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
       return filteredItems[highlightedIndex];
     }
     return null;
-  }, [filteredItems, highlightedIndex]);
+  }, [isOpen, filteredItems, highlightedIndex]);
 
   // Scroll highlighted item into view only for keyboard navigation or initial open (never yank on mouse hover)
   useEffect(() => {
@@ -464,7 +513,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     : searchQuery;
 
   const inputHoverTitle = selectedItem
-    ? `${selectedItem.name} (${selectedItem.subsection} › ${selectedItem.group}${
+    ? `${selectedItem.uacs ? `[UACS ${selectedItem.uacs}] ` : ''}${selectedItem.name} (${selectedItem.subsection} › ${selectedItem.group}${
         selectedItem.subgroup ? ` › ${selectedItem.subgroup}` : ''
       })`
     : displayValue || undefined;
@@ -591,6 +640,12 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
             </span>
           )}
 
+          {selectedItem?.uacs && (
+            <span className="text-[11px] font-mono font-bold text-th-accent-text bg-th-subtle px-2 py-0.5 rounded-md border border-th-border-strong shrink-0">
+              {selectedItem.uacs}
+            </span>
+          )}
+
           {selectedItem?.isContra && (
             <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
               Contra
@@ -709,7 +764,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                         const isSelected = selectedItemId === item.id;
                         const itemIndex = itemIndexMap.get(item.id) ?? -1;
                         const isHighlighted = highlightedIndex === itemIndex;
-                        const optionTitle = `${item.name}\n${item.subsection} › ${item.group}${
+                        const optionTitle = `${item.uacs ? `[UACS ${item.uacs}] ` : ''}${item.name}\n${item.subsection} › ${item.group}${
                           item.subgroup ? ` › ${item.subgroup}` : ''
                         }${item.isContra ? ' [Contra]' : ''}`;
 
@@ -779,6 +834,11 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                              {item.uacs && (
+                                <span className="text-xs font-mono font-bold text-th-accent-text bg-th-subtle px-2 py-0.5 rounded-md border border-th-border-strong">
+                                  {item.uacs}
+                                </span>
+                              )}
                               {item.isContra && (
                                 <span className="text-xs text-th-text bg-th-subtle px-2 py-0.5 rounded-md font-bold border border-th-border-strong">
                                   Contra
@@ -803,6 +863,7 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-th-muted">
                     Hovered / Highlighted Item
+                    {activePreviewItem.uacs ? ` · UACS ${activePreviewItem.uacs}` : ''}
                   </span>
                   {activePreviewItem.isContra && (
                     <span className="text-xs font-bold px-2 py-0.5 rounded bg-th-surface border border-th-border-strong text-th-text">
@@ -829,3 +890,5 @@ export const SearchableLineItemSelect: React.FC<SearchableLineItemSelectProps> =
     </div>
   );
 };
+
+export const SearchableLineItemSelect = React.memo(SearchableLineItemSelectInner);

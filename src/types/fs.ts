@@ -36,6 +36,7 @@ export type SubsectionType =
 export interface LineItemDefinition {
   id: string;
   name: string;
+  uacs?: string; // Unified Account Code Structure (optional)
   statementType?: StatementType; // defaults to 'position'
   section: SectionType;
   subsection: SubsectionType;

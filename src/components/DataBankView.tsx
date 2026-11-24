@@ -48,13 +48,17 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
 
   // Find banked items matching search and filters
   const filteredBankedItems = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    const qAlpha = q.replace(/[^a-z0-9]/g, '');
     return lineItems.filter((item) => {
-      const q = searchQuery.toLowerCase().trim();
+      const uacsLower = (item.uacs || '').toLowerCase();
+      const uacsAlpha = uacsLower.replace(/[^a-z0-9]/g, '');
       const matchesSearch =
         !q ||
         item.name.toLowerCase().includes(q) ||
         item.group.toLowerCase().includes(q) ||
-        (item.subgroup && item.subgroup.toLowerCase().includes(q));
+        (item.subgroup && item.subgroup.toLowerCase().includes(q)) ||
+        (uacsLower && (uacsLower.includes(q) || (qAlpha !== '' && uacsAlpha.includes(qAlpha))));
 
       const matchesClass =
         selectedClassificationFilter === 'all' || item.subsection === selectedClassificationFilter;
@@ -98,6 +102,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
       [],
       [
         'Line Item ID',
+        'UACS Code',
         'Account Title',
         'Classification',
         'Group',
@@ -113,6 +118,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
       const prior = reportPrior.values[item.id] || 0;
       rows.push([
         item.id,
+        `"${item.uacs || ''}"`,
         `"${item.name}"`,
         `"${item.subsection}"`,
         `"${item.group}"`,
@@ -244,8 +250,13 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               <div className="text-xs uppercase tracking-wider text-th-muted font-bold mb-1">
                 Account Inquiry &amp; Subgroup Bank Details
               </div>
-              <h3 className="text-lg font-bold text-th-text flex items-center gap-2">
-                {highlightedItem.name}
+              <h3 className="text-lg font-bold text-th-text flex items-center gap-2 flex-wrap">
+                <span>{highlightedItem.name}</span>
+                {highlightedItem.uacs && (
+                  <span className="text-xs font-mono font-bold text-th-accent-text bg-th-subtle px-2 py-0.5 rounded border border-th-border-strong">
+                    UACS {highlightedItem.uacs}
+                  </span>
+                )}
                 {highlightedItem.isContra && (
                   <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded font-semibold border border-amber-200 dark:border-amber-800">
                     Contra Account
@@ -434,8 +445,13 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
                     }`}
                   >
                     <td className="py-3 px-4 font-medium text-th-text">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold">{item.name}</span>
+                        {item.uacs && (
+                          <span className="text-xs font-mono font-bold text-th-accent-text bg-th-subtle px-1.5 py-0.5 rounded border border-th-border-strong">
+                            {item.uacs}
+                          </span>
+                        )}
                         {item.isContra && (
                           <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
                             Contra

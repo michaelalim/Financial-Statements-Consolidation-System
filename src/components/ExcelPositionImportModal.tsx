@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
   LineItemDefinition,
@@ -8,7 +8,9 @@ import {
 } from '../types/fs';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
-import { formatAccounting } from '../utils/formatters';
+import { formatAccounting, parseNumberInput } from '../utils/formatters';
+import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
+import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
 import { SearchableLineItemSelect } from './SearchableLineItemSelect';
 import { DraftStatementPreview } from './DraftStatementPreview';
 import {
@@ -46,6 +48,8 @@ import {
   FileText,
   ListChecks,
   Database,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 const STATEMENT_TITLE_MAP: Record<StatementType, string> = {
@@ -54,6 +58,590 @@ const STATEMENT_TITLE_MAP: Record<StatementType, string> = {
   cash_flows: 'Statement of Cash Flows',
   net_assets: 'Statement of Changes in Net Assets/Equity',
 };
+
+const EMPTY_LINE_ITEMS: LineItemDefinition[] = [];
+const EMPTY_MANUAL_TEXT_MAP: Record<string, string> = {};
+
+const formatItemPlacementPath = (item: LineItemDefinition): string => {
+  const parts = [item.subsection, item.group, item.subgroup]
+    .filter((part): part is string => Boolean(part))
+    .filter((part, idx, arr) => idx === 0 || part.toLowerCase() !== arr[idx - 1]?.toLowerCase());
+  return parts.join(' → ');
+};
+
+interface DbComparisonTargetEntry {
+  target: YearImportColumnTarget;
+  comparison: DatabaseTargetComparison;
+  isPriorComparativeYear: boolean;
+  isVerifyOnly: boolean;
+  overrideKey: string;
+}
+
+const EMPTY_DB_COMPARISON_MAP: Record<string, DbComparisonTargetEntry> = {};
+
+interface ImportReviewRowProps {
+  row: ExtractedPositionRow;
+  gridCols: string;
+  statementType: StatementType;
+  encodableItems: LineItemDefinition[];
+  enabledTargets: YearImportColumnTarget[];
+  selectedDef: LineItemDefinition | undefined;
+  isDup: boolean;
+  dupInfo: { groupNumber: number; peers: ExtractedPositionRow[] } | undefined;
+  hasMultipleDupGroups: boolean;
+  isPulsed: boolean;
+  isDropdownOpen: boolean;
+  rememberAlias: boolean;
+  isExpandedAgg: boolean;
+  showCompareDupButton: boolean;
+  sameNameVariants: LineItemDefinition[];
+  dbComparisonByTargetId: Record<string, DbComparisonTargetEntry>;
+  manualAmountTextByKey: Record<string, string>;
+  onToggleInclude: (rowId: string) => void;
+  onRemoveManualRow: (rowId: string) => void;
+  onUpdateManualRowName: (rowId: string, value: string) => void;
+  onUpdateManualRowAmount: (rowId: string, targetId: string, rawInput: string) => void;
+  onBlurManualRowAmount: (rowId: string, targetId: string) => void;
+  onSelectLineItem: (rowId: string, lineItemId: string) => void;
+  onDropdownOpenChange: (rowId: string, open: boolean) => void;
+  onToggleRememberAlias: (rowId: string, checked: boolean) => void;
+  onToggleExpandAgg: (rowId: string) => void;
+  onJumpToRow: (targetRowId: string) => void;
+  onShowDuplicatesFilter: () => void;
+}
+
+const ImportReviewRow = React.memo<ImportReviewRowProps>(({
+  row,
+  gridCols,
+  statementType,
+  encodableItems,
+  enabledTargets,
+  selectedDef,
+  isDup,
+  dupInfo,
+  hasMultipleDupGroups,
+  isPulsed,
+  isDropdownOpen,
+  rememberAlias,
+  isExpandedAgg,
+  showCompareDupButton,
+  sameNameVariants,
+  dbComparisonByTargetId,
+  manualAmountTextByKey,
+  onToggleInclude,
+  onRemoveManualRow,
+  onUpdateManualRowName,
+  onUpdateManualRowAmount,
+  onBlurManualRowAmount,
+  onSelectLineItem,
+  onDropdownOpenChange,
+  onToggleRememberAlias,
+  onToggleExpandAgg,
+  onJumpToRow,
+  onShowDuplicatesFilter,
+}) => {
+  const isManualRow = row.rowId.startsWith('manual-row-');
+  const matchType = row.userModified ? 'exact' : row.recommendation.matchType;
+  const labelDiffersFromOfficial =
+    !isManualRow &&
+    Boolean(selectedDef) &&
+    normalizeAliasKey(row.rawName) !== normalizeAliasKey(selectedDef!.name);
+
+  return (
+    <div
+      id={`import-row-${row.rowId}`}
+      className={`px-4 py-3.5 grid gap-4 items-start transition-colors scroll-mt-24 ${
+        !isDropdownOpen ? '[content-visibility:auto] [contain-intrinsic-size:auto_116px]' : ''
+      } ${
+        !row.included
+          ? 'opacity-60 bg-th-subtle/50'
+          : isDup
+          ? 'bg-amber-500/12 dark:bg-amber-500/15 border-l-4 border-l-amber-500 hover:bg-amber-500/18 dark:hover:bg-amber-500/20'
+          : isManualRow
+          ? 'bg-sky-500/5 border-l-4 border-l-sky-500/70 hover:bg-sky-500/10'
+          : 'hover:bg-th-subtle/40'
+      } ${isPulsed ? 'ring-2 ring-inset ring-amber-400 bg-amber-500/25' : ''} ${
+        isDropdownOpen ? 'relative z-40' : 'relative z-auto'
+      }`}
+      style={{ gridTemplateColumns: gridCols }}
+    >
+      {/* Large Senior-Friendly Include / Skip Toggle Button */}
+      <div className="flex flex-col items-stretch gap-1.5 pt-0.5">
+        <label
+          className={`inline-flex items-center justify-center gap-2 px-3 py-2 min-h-[42px] w-full rounded-xl border-2 text-sm font-bold cursor-pointer select-none transition-colors ${
+            !row.included
+              ? 'bg-th-surface border-th-border text-th-muted hover:border-th-border-strong'
+              : isDup
+              ? 'bg-amber-500/15 border-amber-500/60 text-amber-900 dark:text-amber-100 hover:bg-amber-500/25'
+              : 'bg-th-subtle border-th-border-strong text-th-text hover:bg-th-subtle-hover'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={row.included}
+            onChange={() => onToggleInclude(row.rowId)}
+            className="w-4 h-4 cursor-pointer accent-th-accent shrink-0"
+            aria-label={
+              isManualRow
+                ? 'Include manual line'
+                : `Include row ${row.excelRowNumber}`
+            }
+          />
+          <span>{row.included ? 'Include' : 'Skip'}</span>
+        </label>
+        {isManualRow && (
+          <button
+            type="button"
+            onClick={() => onRemoveManualRow(row.rowId)}
+            className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-rose-700 dark:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 cursor-pointer transition-colors"
+            title="Remove this manually added line"
+          >
+            <Trash2 className="w-3 h-3 shrink-0" />
+            <span>Remove</span>
+          </button>
+        )}
+      </div>
+
+      {/* Raw Excel text & clean metadata (or editable label for manual rows) */}
+      <div className="min-w-0 pt-0.5 space-y-1">
+        {isManualRow ? (
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={row.rawName}
+                onChange={(e) => onUpdateManualRowName(row.rowId, e.target.value)}
+                placeholder="Optional description (auto-fills from account)"
+                className="flex-1 min-w-[160px] px-3 py-1.5 rounded-lg bg-th-input border border-th-border-strong text-sm sm:text-base font-bold text-th-text focus:outline-none focus:ring-2 focus:ring-th-accent"
+              />
+              {isDup && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[11px] font-extrabold uppercase tracking-wider shrink-0">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>
+                    Duplicate{hasMultipleDupGroups && dupInfo ? ` #${dupInfo.groupNumber}` : ''}
+                  </span>
+                </span>
+              )}
+            </div>
+            <div className="text-xs sm:text-sm text-sky-800 dark:text-sky-300 font-semibold">
+              Added manually on review form
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`text-base sm:text-lg font-bold break-words leading-snug ${
+                  row.included &&
+                  (row.isLumpedDepreciation ||
+                    row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID)
+                    ? 'text-red-700 dark:text-red-400'
+                    : isDup
+                    ? 'text-amber-950 dark:text-amber-100'
+                    : 'text-th-text'
+                }`}
+              >
+                {row.rawName}
+              </span>
+              {isDup && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[11px] font-extrabold uppercase tracking-wider shrink-0">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>
+                    Duplicate{hasMultipleDupGroups && dupInfo ? ` #${dupInfo.groupNumber}` : ''}
+                  </span>
+                </span>
+              )}
+            </div>
+            <div className="text-sm text-th-muted font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>Excel Row {row.excelRowNumber}</span>
+              {row.sourceColLetter && row.sourceColLetter !== '?' && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>Col {row.sourceColLetter}</span>
+                </>
+              )}
+              {row.accountCode && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono font-semibold text-th-text">
+                    Code {row.accountCode}
+                  </span>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {!row.included && row.isSummaryRow && row.summaryReason && (
+          <div className="text-sm font-semibold text-th-muted">
+            Skipped automatically: {row.summaryReason}
+          </div>
+        )}
+
+        {/* Clear plain-language match status (no pill sandwiches) */}
+        {row.included && !row.selectedLineItemId && (
+          <div className="inline-flex items-center gap-1.5 text-sm font-bold text-rose-700 dark:text-rose-300">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>Needs an official account — choose on the right</span>
+          </div>
+        )}
+        {row.included &&
+          (row.isLumpedDepreciation ||
+            row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) && (
+            <div className="inline-flex items-center gap-1.5 text-sm font-bold text-red-700 dark:text-red-400">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>
+                Temporary Aggregated Notice (red/bold in FS after PPE) — excludes division from Consolidated FS
+              </span>
+            </div>
+          )}
+        {row.included &&
+          !(
+            row.isLumpedDepreciation ||
+            row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+          ) &&
+          row.selectedLineItemId &&
+          matchType === 'suggested' && (
+          <div className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-300">
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>Best guess ({row.recommendation.confidence}%) — please verify</span>
+          </div>
+        )}
+        {row.included &&
+          !(
+            row.isLumpedDepreciation ||
+            row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+          ) &&
+          row.selectedLineItemId &&
+          matchType === 'alias' && (
+          <div className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+            <BookmarkCheck className="w-4 h-4 shrink-0" />
+            <span>Matched using your saved wording</span>
+          </div>
+        )}
+        {row.included &&
+          !isManualRow &&
+          !(
+            row.isLumpedDepreciation ||
+            row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
+          ) &&
+          row.selectedLineItemId &&
+          (matchType === 'exact' || matchType === 'normalized') && (
+            <div className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+              <Check className="w-4 h-4 shrink-0" />
+              <span>Matched automatically</span>
+            </div>
+          )}
+        {row.included && isManualRow && row.selectedLineItemId && (
+          <div className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+            <Check className="w-4 h-4 shrink-0" />
+            <span>Ready to save</span>
+          </div>
+        )}
+        {row.included &&
+          statementType === 'cash_flows' &&
+          row.selectedLineItemId === 'cf-sum-beg-cash' && (
+            <div className="text-xs sm:text-sm font-semibold text-sky-800 dark:text-sky-300">
+              FY 2024 beginning balance will be saved (FY 2025+ auto-computes from prior Dec 31).
+            </div>
+          )}
+        {row.included && row.aggregationNote && (
+          <div className="rounded-lg bg-sky-500/10 border border-sky-500/30 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-sky-900 dark:text-sky-200 space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>{row.aggregationNote}</span>
+              {row.aggregationBreakdown && (
+                <button
+                  type="button"
+                  onClick={() => onToggleExpandAgg(row.rowId)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-950 dark:text-sky-100 text-xs font-bold cursor-pointer shrink-0 transition-colors"
+                >
+                  {isExpandedAgg ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Hide Breakdown</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>
+                        View Breakdown ({row.aggregationBreakdown.children.length} sub-items)
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+            {isExpandedAgg && row.aggregationBreakdown && (
+              <div className="mt-1.5 pt-1.5 border-t border-sky-500/25 space-y-1 text-xs font-medium">
+                {!row.aggregationBreakdown.isParentless && (
+                  <div className="flex items-center justify-between gap-2 text-sky-950 dark:text-sky-100">
+                    <span className="truncate">
+                      {row.aggregationBreakdown.parentRawName} (Original parent)
+                    </span>
+                    <span className="font-mono font-bold tabular-nums shrink-0">
+                      {enabledTargets
+                        .map((t) => {
+                          const v =
+                            row.aggregationBreakdown!.parentOwnAmountsByTargetId[
+                              t.id
+                            ];
+                          return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                        })
+                        .join(' · ')}
+                    </span>
+                  </div>
+                )}
+                {row.aggregationBreakdown.children.map((ch, cIdx) => (
+                  <div
+                    key={`${row.rowId}-ch-${cIdx}`}
+                    className="flex items-center justify-between gap-2 text-sky-900/90 dark:text-sky-200/90 pl-2"
+                  >
+                    <span className="truncate">
+                      {ch.excelRowNumber ? `Row ${ch.excelRowNumber}: ` : ''}
+                      {ch.cleanedName || ch.rawName}
+                    </span>
+                    <span className="font-mono tabular-nums shrink-0">
+                      {enabledTargets
+                        .map((t) => {
+                          const v = ch.amountsByTargetId[t.id];
+                          return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                        })
+                        .join(' · ')}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-sky-500/25 font-bold text-sky-950 dark:text-sky-100">
+                  <span>Resolved Total</span>
+                  <span className="font-mono tabular-nums shrink-0">
+                    {enabledTargets
+                      .map((t) => {
+                        const v = row.amountsByTargetId[t.id];
+                        return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
+                      })
+                      .join(' · ')}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {isDup && dupInfo && (
+          <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2.5 py-1.5 text-sm font-bold text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="inline-flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                Duplicate with{' '}
+                {dupInfo.peers.map((peer, idx) => (
+                  <React.Fragment key={peer.rowId}>
+                    {idx > 0 && ', '}
+                    <button
+                      type="button"
+                      onClick={() => onJumpToRow(peer.rowId)}
+                      className="underline decoration-amber-500/70 underline-offset-2 hover:text-amber-700 dark:hover:text-amber-100 cursor-pointer font-extrabold"
+                    >
+                      {peer.rowId.startsWith('manual-row-')
+                        ? 'Manual Line'
+                        : `Excel Row ${peer.excelRowNumber}${
+                            peer.sourceColLetter && peer.sourceColLetter !== '?'
+                              ? ` (${peer.sourceColLetter})`
+                              : ''
+                          }`}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </span>
+            </span>
+            <span className="text-xs font-mono font-semibold text-amber-950 dark:text-amber-100">
+              — If kept as-is, total saved:{' '}
+              {enabledTargets
+                .map((t) => {
+                  const combined =
+                    (row.amountsByTargetId[t.id] ?? 0) +
+                    dupInfo.peers.reduce(
+                      (s, p) => s + (p.amountsByTargetId[t.id] ?? 0),
+                      0
+                    );
+                  return `FY ${t.targetYear}: ₱${formatAccounting(combined)}`;
+                })
+                .join(' · ')}
+            </span>
+            {showCompareDupButton && (
+              <button
+                type="button"
+                onClick={onShowDuplicatesFilter}
+                className="text-xs px-2 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 text-amber-950 dark:text-amber-100 font-bold cursor-pointer transition-colors"
+              >
+                Compare Side-by-Side
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Official Line Item Selector + Alternative Recommendation Chips */}
+      <div className="min-w-0 space-y-2 pt-0.5">
+        <SearchableLineItemSelect
+          lineItems={encodableItems}
+          selectedItemId={row.selectedLineItemId}
+          rawText={selectedDef ? selectedDef.name : ''}
+          isInvalid={row.included && !row.isSummaryRow && !row.selectedLineItemId}
+          isDuplicate={isDup}
+          onSelectItem={(itemId) => onSelectLineItem(row.rowId, itemId)}
+          onOpenStateChange={(open) => onDropdownOpenChange(row.rowId, open)}
+          placement="auto"
+          usePortal
+          compact
+          placeholder="Click or type to choose official account..."
+        />
+
+        {/* Explicit placement option when multiple official line items share the same name (e.g. Miscellaneous Income) */}
+        {row.included && !row.isSummaryRow && sameNameVariants.length > 1 && (
+          <div className="rounded-xl bg-th-subtle/80 border border-th-border-strong p-2.5 space-y-1.5">
+            <div className="text-xs font-bold text-th-text flex items-center justify-between gap-2">
+              <span>
+                Choose which &quot;{selectedDef?.name || sameNameVariants[0].name}&quot; line item to add to:
+              </span>
+              <span className="text-[11px] font-semibold text-th-muted shrink-0">
+                {sameNameVariants.length} placements
+              </span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {sameNameVariants.map((variant, vIdx) => {
+                const isChosen = row.selectedLineItemId === variant.id;
+                const placementPath = formatItemPlacementPath(variant);
+                return (
+                  <button
+                    key={variant.id}
+                    type="button"
+                    onClick={() => onSelectLineItem(row.rowId, variant.id)}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                      isChosen
+                        ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
+                        : 'bg-th-surface border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">
+                      <span className="font-bold text-th-text mr-1.5">
+                        Option {vIdx + 1}
+                        {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
+                      </span>
+                      <span>{placementPath}</span>
+                      <span className="text-th-muted"> → {variant.name}</span>
+                    </span>
+                    {isChosen ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-th-accent-text shrink-0">
+                        <Check className="w-3.5 h-3.5" />
+                        Selected
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-bold text-th-muted shrink-0">
+                        Choose
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Quick recommendation buttons for unmatched rows */}
+        {row.included &&
+          !row.isSummaryRow &&
+          !row.selectedLineItemId &&
+          row.recommendation.alternatives.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-th-muted font-bold">Quick Suggestions:</span>
+              {row.recommendation.alternatives.map((alt) => (
+                <button
+                  key={alt.item.id}
+                  type="button"
+                  title={`${alt.item.name} (${alt.item.subsection} › ${alt.item.group}${
+                    alt.item.subgroup ? ` › ${alt.item.subgroup}` : ''
+                  })`}
+                  onClick={() => onSelectLineItem(row.rowId, alt.item.id)}
+                  className="px-3 py-1.5 min-h-[38px] rounded-xl bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong text-th-text font-bold cursor-pointer text-left"
+                >
+                  {alt.item.name} ({alt.confidence}%)
+                </button>
+              ))}
+            </div>
+          )}
+
+        {/* Option to remember spelling/alias for future uploads */}
+        {row.included &&
+          !row.isSummaryRow &&
+          row.selectedLineItemId &&
+          labelDiffersFromOfficial &&
+          matchType !== 'alias' && (
+            <label className="inline-flex items-center gap-2.5 py-1 text-sm font-semibold text-th-muted hover:text-th-text cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberAlias}
+                onChange={(e) => onToggleRememberAlias(row.rowId, e.target.checked)}
+                className="w-4 h-4 accent-th-accent cursor-pointer shrink-0"
+              />
+              <span>Remember &quot;{row.rawName}&quot; for future uploads</span>
+            </label>
+          )}
+      </div>
+
+      {/* Year Amounts */}
+      {enabledTargets.map((target) => {
+        const val = row.amountsByTargetId[target.id];
+        const dbEntry = dbComparisonByTargetId[target.id];
+        const rowDbDiff =
+          row.included && row.selectedLineItemId && dbEntry?.comparison.hasExistingData
+            ? dbEntry.comparison.diffByLineItemId[row.selectedLineItemId]
+            : undefined;
+        const isZeroVal = val !== null && val !== undefined && Math.abs(val) < 0.005;
+        const cellKey = `${row.rowId}::${target.id}`;
+        const manualRawText =
+          manualAmountTextByKey[cellKey] ??
+          (val !== null && val !== undefined && Math.abs(val) >= 0.005
+            ? formatAccounting(val)
+            : '');
+        return (
+          <div
+            key={target.id}
+            className="min-w-0 text-right pt-1 space-y-0.5"
+          >
+            {isManualRow ? (
+              <input
+                type="text"
+                value={manualRawText}
+                onChange={(e) =>
+                  onUpdateManualRowAmount(row.rowId, target.id, e.target.value)
+                }
+                onBlur={() => onBlurManualRowAmount(row.rowId, target.id)}
+                placeholder="0.00"
+                aria-label={`FY ${target.targetYear} amount`}
+                className="w-full px-2.5 py-1.5 text-right font-mono text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-none focus:border-th-accent tabular-nums"
+              />
+            ) : (
+              <div
+                className={`font-mono text-base font-bold tabular-nums whitespace-nowrap pt-1 ${
+                  val === null || val === undefined || isZeroVal
+                    ? 'text-th-muted'
+                    : 'text-th-text'
+                }`}
+              >
+                {val !== null && val !== undefined ? formatAccounting(val) : '—'}
+              </div>
+            )}
+            {rowDbDiff && (
+              <div className="text-xs font-mono font-semibold text-amber-800 dark:text-amber-300 tabular-nums whitespace-nowrap">
+                DB: ₱{formatAccounting(rowDbDiff.databaseAmount)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+ImportReviewRow.displayName = 'ImportReviewRow';
 
 interface ExcelPositionImportModalProps {
   isOpen: boolean;
@@ -121,6 +709,17 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const [verifyOnlyOverrides, setVerifyOnlyOverrides] = useState<Record<string, boolean>>({});
   const [collapsedDiffTargets, setCollapsedDiffTargets] = useState<Record<string, boolean>>({});
   const [expandedAggRowIds, setExpandedAggRowIds] = useState<Record<string, boolean>>({});
+  const [manualBegCash2024, setManualBegCash2024] = useState<number | null>(null);
+  const [isEditingModalBegCash2024, setIsEditingModalBegCash2024] = useState<boolean>(false);
+  const [modalBegCash2024Input, setModalBegCash2024Input] = useState<string>('');
+  const [manualBegNetAssets2024, setManualBegNetAssets2024] = useState<number | null>(null);
+  const [isEditingModalBegNa2024, setIsEditingModalBegNa2024] = useState<boolean>(false);
+  const [modalBegNa2024Input, setModalBegNa2024Input] = useState<string>('');
+  const [manualAmountTextByKey, setManualAmountTextByKey] = useState<Record<string, string>>({});
+  const [inspectedTarget, setInspectedTarget] = useState<{
+    workbook: XLSX.WorkBook;
+    sheetName: string;
+  } | null>(null);
 
   const comparativeYear = getComparativeYear(selectedYear);
 
@@ -130,6 +729,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     setSavedAliases(loadSavedPositionAliases(statementType));
     const bestSheet = pickBestPositionSheetName(workbook, statementType);
     setSelectedSheetName(bestSheet);
+    setRows([]);
+    setInspectedTarget(null);
+    setInspection(null);
     setFilterMode('all');
     setRowSearchQuery('');
     setIsColumnSettingsOpen(false);
@@ -141,7 +743,27 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     setStep3ViewMode('accounts');
     setVerifyOnlyOverrides({});
     setCollapsedDiffTargets({});
+    setManualBegCash2024(null);
+    setIsEditingModalBegCash2024(false);
+    setModalBegCash2024Input('');
+    setManualBegNetAssets2024(null);
+    setIsEditingModalBegNa2024(false);
+    setModalBegNa2024Input('');
+    setManualAmountTextByKey({});
   }, [isOpen, workbook, statementType]);
+
+  useEffect(() => {
+    setRows([]);
+    setInspectedTarget(null);
+    setInspection(null);
+    setManualBegCash2024(null);
+    setIsEditingModalBegCash2024(false);
+    setModalBegCash2024Input('');
+    setManualBegNetAssets2024(null);
+    setIsEditingModalBegNa2024(false);
+    setModalBegNa2024Input('');
+    setManualAmountTextByKey({});
+  }, [selectedSheetName]);
 
   // Inspect selected sheet whenever sheet or workbook changes
   useEffect(() => {
@@ -196,11 +818,22 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         setYearTargets([]);
       }
     }
+
+    setInspectedTarget({ workbook, sheetName: selectedSheetName });
   }, [isOpen, workbook, selectedSheetName, selectedYear, comparativeYear]);
 
   // Re-extract rows whenever sheet, year column targets, start row, or line item column override changes
   useEffect(() => {
-    if (!isOpen || !workbook || !selectedSheetName) return;
+    if (
+      !isOpen ||
+      !workbook ||
+      !selectedSheetName ||
+      !inspectedTarget ||
+      inspectedTarget.workbook !== workbook ||
+      inspectedTarget.sheetName !== selectedSheetName
+    ) {
+      return;
+    }
     const sheet = workbook.Sheets[selectedSheetName];
     if (!sheet) return;
 
@@ -213,27 +846,31 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       savedAliases,
       statementType
     );
-    setRows(extracted);
-
-    if (statementType === 'position') {
-      const detectedLumped = extracted.filter((r) => r.isLumpedDepreciation);
-      const lumpedKey = `${fileName}::${selectedSheetName}::${detectedLumped.map((r) => r.excelRowNumber).join(',')}`;
-      if (detectedLumped.length > 0 && dismissedLumpedKey !== lumpedKey) {
-        setIsLumpedDepPromptOpen(true);
-      }
-    }
+    setRows((prev) => {
+      const manualRows = prev.filter((r) => r.rowId.startsWith('manual-row-'));
+      if (manualRows.length === 0) return extracted;
+      return [
+        ...extracted,
+        ...manualRows.map((m) => {
+          const nextAmounts = { ...m.amountsByTargetId };
+          yearTargets.forEach((t) => {
+            if (!(t.id in nextAmounts)) nextAmounts[t.id] = null;
+          });
+          return { ...m, amountsByTargetId: nextAmounts };
+        }),
+      ];
+    });
   }, [
     isOpen,
     statementType,
     workbook,
-    fileName,
     selectedSheetName,
+    inspectedTarget,
     yearTargets,
     startRow1Based,
     lineItemColOverride,
     encodableItems,
     savedAliases,
-    dismissedLumpedKey,
   ]);
 
   const lumpedDepRows = useMemo(
@@ -241,7 +878,81 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     [rows, statementType]
   );
 
+  // Trigger lumped depreciation prompt separately so dismissing it never re-runs sheet extraction
+  useEffect(() => {
+    if (!isOpen || statementType !== 'position' || lumpedDepRows.length === 0) return;
+    const lumpedKey = `${fileName}::${selectedSheetName}::${lumpedDepRows
+      .map((r) => r.excelRowNumber)
+      .join(',')}`;
+    if (dismissedLumpedKey !== lumpedKey) {
+      setIsLumpedDepPromptOpen(true);
+    }
+  }, [isOpen, statementType, fileName, selectedSheetName, lumpedDepRows, dismissedLumpedKey]);
+
   const enabledTargets = useMemo(() => yearTargets.filter((t) => t.enabled), [yearTargets]);
+
+  const hasEnabled2024Target = useMemo(
+    () => enabledTargets.some((t) => t.targetYear === '2024'),
+    [enabledTargets]
+  );
+
+  const resolvedBegCash2024 = useMemo(() => {
+    if (statementType !== 'cash_flows') return 0;
+    if (manualBegCash2024 !== null) return manualBegCash2024;
+    const target2024Ids = new Set(
+      enabledTargets.filter((t) => t.targetYear === '2024').map((t) => t.id)
+    );
+    for (const r of rows) {
+      if (!r.included || r.selectedLineItemId !== 'cf-sum-beg-cash') continue;
+      for (const tid of target2024Ids) {
+        const val = r.amountsByTargetId[tid];
+        if (val !== null && val !== undefined && Math.abs(val) >= 0.005) {
+          return val;
+        }
+      }
+    }
+    return dataStore['2024']?.[divisionId]?.['cf-sum-beg-cash'] ?? 0;
+  }, [statementType, manualBegCash2024, enabledTargets, rows, dataStore, divisionId]);
+
+  const handleUpdateModalBegCash2024 = (amount: number) => {
+    setManualBegCash2024(amount);
+    setIsEditingModalBegCash2024(false);
+    const target2024Ids = new Set(
+      yearTargets.filter((t) => t.targetYear === '2024').map((t) => t.id)
+    );
+    if (target2024Ids.size > 0) {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.selectedLineItemId !== 'cf-sum-beg-cash') return r;
+          const nextAmounts = { ...r.amountsByTargetId };
+          target2024Ids.forEach((tid) => {
+            nextAmounts[tid] = amount;
+          });
+          return { ...r, included: true, amountsByTargetId: nextAmounts };
+        })
+      );
+    }
+  };
+
+  const handleUpdateModalBegNa2024 = (amount: number) => {
+    setManualBegNetAssets2024(amount);
+    setIsEditingModalBegNa2024(false);
+    const target2024Ids = new Set(
+      yearTargets.filter((t) => t.targetYear === '2024').map((t) => t.id)
+    );
+    if (target2024Ids.size > 0) {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.selectedLineItemId !== 'na-beg-balance') return r;
+          const nextAmounts = { ...r.amountsByTargetId };
+          target2024Ids.forEach((tid) => {
+            nextAmounts[tid] = amount;
+          });
+          return { ...r, included: true, amountsByTargetId: nextAmounts };
+        })
+      );
+    }
+  };
 
   const itemById = useMemo(() => {
     const map = new Map<string, LineItemDefinition>();
@@ -273,12 +984,8 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     return multi;
   }, [encodableItems]);
 
-  const formatItemPlacementPath = (item: LineItemDefinition): string => {
-    const parts = [item.subsection, item.group, item.subgroup]
-      .filter((part): part is string => Boolean(part))
-      .filter((part, idx, arr) => idx === 0 || part.toLowerCase() !== arr[idx - 1]?.toLowerCase());
-    return parts.join(' → ');
-  };
+  const deferredRows = useDeferredValue(rows);
+  const deferredSearchQuery = useDeferredValue(rowSearchQuery);
 
   // Detect duplicate target lineItemIds among included rows and group peer rows for clear highlighting
   const {
@@ -333,13 +1040,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     };
   }, [rows, itemById]);
 
-  const jumpToAccountRow = (targetRowId: string) => {
-    if (filterMode === 'matched' || filterMode === 'skipped') {
-      setFilterMode('all');
-    }
-    if (rowSearchQuery) {
-      setRowSearchQuery('');
-    }
+  const jumpToAccountRow = useCallback((targetRowId: string) => {
+    setFilterMode((prev) => (prev === 'matched' || prev === 'skipped' ? 'all' : prev));
+    setRowSearchQuery('');
     setHighlightedRowId(targetRowId);
     window.setTimeout(() => {
       const el = document.getElementById(`import-row-${targetRowId}`);
@@ -348,7 +1051,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     window.setTimeout(() => {
       setHighlightedRowId((prev) => (prev === targetRowId ? null : prev));
     }, 2400);
-  };
+  }, []);
 
   const stats = useMemo(() => {
     let exactOrAlias = 0;
@@ -391,12 +1094,12 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
   // Loose Accounting Equation Check (Assets = Liabilities + Equity) + Culprit Diagnostics per enabled year
   const accountingVerificationByTarget = useMemo(() => {
-    const excelTotalAssetsRow = rows.find((r) => r.summaryKind === 'total_assets');
-    const excelTotalLiabRow = rows.find((r) => r.summaryKind === 'total_liabilities');
-    const excelTotalEquityRow = rows.find((r) => r.summaryKind === 'total_equity');
-    const excelTotalLiabEquityRow = rows.find((r) => r.summaryKind === 'total_liabilities_equity');
+    const excelTotalAssetsRow = deferredRows.find((r) => r.summaryKind === 'total_assets');
+    const excelTotalLiabRow = deferredRows.find((r) => r.summaryKind === 'total_liabilities');
+    const excelTotalEquityRow = deferredRows.find((r) => r.summaryKind === 'total_equity');
+    const excelTotalLiabEquityRow = deferredRows.find((r) => r.summaryKind === 'total_liabilities_equity');
 
-    const excludedLumpedDepRows = rows.filter((r) => r.isLumpedDepreciation && !r.included);
+    const excludedLumpedDepRows = deferredRows.filter((r) => r.isLumpedDepreciation && !r.included);
 
     return enabledTargets.map((target) => {
       let computedAssetsSum = 0;
@@ -406,7 +1109,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       const unmatchedIncludedRows: { rowNumber: number; rawName: string; amount: number }[] = [];
       const uncheckedLeafRows: { rowNumber: number; rawName: string; amount: number }[] = [];
 
-      rows.forEach((r) => {
+      deferredRows.forEach((r) => {
         const rawAmt = r.amountsByTargetId[target.id];
         if (rawAmt === null || rawAmt === undefined || Math.abs(rawAmt) < 0.005) return;
 
@@ -583,12 +1286,6 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
           );
         }
 
-        // 5. Note duplicate target assignments if any
-        if (duplicateLineItemIds.size > 0) {
-          culprits.push(
-            `${duplicateLineItemIds.size} duplicate target line item mapping(s) detected — review duplicate rows so balances are not overwritten.`
-          );
-        }
       }
 
       return {
@@ -607,17 +1304,56 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         unmatchedCount: unmatchedIncludedRows.length,
       };
     });
-  }, [rows, enabledTargets, itemById, duplicateLineItemIds]);
+  }, [deferredRows, enabledTargets, itemById]);
 
   // Other statements (Performance, Cash Flows, Net Assets) verification summaries per enabled target
   const otherStatementVerificationByTarget = useMemo(() => {
     if (statementType === 'position') return [];
 
-    const excelTotalRevenueRow = rows.find((r) => r.summaryKind === 'total_revenue');
-    const excelTotalExpensesRow = rows.find((r) => r.summaryKind === 'total_expenses');
-    const excelSurplusRows = rows.filter((r) => r.summaryKind === 'surplus_deficit');
+    const excelTotalRevenueRow = deferredRows.find((r) => r.summaryKind === 'total_revenue');
+    const excelTotalExpensesRow = deferredRows.find((r) => r.summaryKind === 'total_expenses');
+    const excelSurplusRows = deferredRows.filter((r) => r.summaryKind === 'surplus_deficit');
     const excelPeriodSurplusRow = excelSurplusRows[excelSurplusRows.length - 1];
-    const excelCashIncDecRow = rows.find((r) => r.summaryKind === 'cash_increase_decrease');
+    const excelCashIncDecRow = deferredRows.find((r) => r.summaryKind === 'cash_increase_decrease');
+
+    // Build merged data store for Cash Flows and Net Assets so Jan 1 -> Dec 31 chains accurately across 2024 -> 2025+
+    const mergedCfStore: FinancialDataStore = {};
+    if (statementType === 'cash_flows' || statementType === 'net_assets') {
+      Object.entries(dataStore).forEach(([yr, divMap]) => {
+        if (divMap[divisionId]) {
+          mergedCfStore[yr] = { [divisionId]: { ...divMap[divisionId] } };
+        }
+      });
+      const orderedAsc = [...enabledTargets].sort(
+        (a, b) => Number(a.targetYear) - Number(b.targetYear)
+      );
+      orderedAsc.forEach((target) => {
+        const existingForYear = mergedCfStore[target.targetYear]?.[divisionId] || {};
+        const nextForYear: Record<string, number> = { ...existingForYear };
+        encodableItems.forEach((item) => {
+          if (item.id === 'cf-sum-beg-cash' || item.id === 'na-beg-balance') return;
+          delete nextForYear[item.id];
+        });
+        deferredRows.forEach((r) => {
+          if (!r.included || !r.selectedLineItemId) return;
+          if (r.selectedLineItemId === 'cf-sum-beg-cash' && target.targetYear !== '2024') return;
+          if (r.selectedLineItemId === 'na-beg-balance' && target.targetYear !== '2024') return;
+          const amt = r.amountsByTargetId[target.id];
+          if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
+          const def = itemById.get(r.selectedLineItemId);
+          const normalizedAmt = def?.isContra ? Math.abs(amt) : amt;
+          nextForYear[r.selectedLineItemId] =
+            Math.round(((nextForYear[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
+        });
+        if (statementType === 'cash_flows' && target.targetYear === '2024' && manualBegCash2024 !== null) {
+          nextForYear['cf-sum-beg-cash'] = manualBegCash2024;
+        }
+        if (statementType === 'net_assets' && target.targetYear === '2024' && manualBegNetAssets2024 !== null) {
+          nextForYear['na-beg-balance'] = manualBegNetAssets2024;
+        }
+        mergedCfStore[target.targetYear] = { [divisionId]: nextForYear };
+      });
+    }
 
     return enabledTargets.map((target) => {
       let revenueSum = 0;
@@ -643,7 +1379,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
       const unmatchedIncludedRows: { rowNumber: number; rawName: string; amount: number }[] = [];
 
-      rows.forEach((r) => {
+      deferredRows.forEach((r) => {
         const rawAmt = r.amountsByTargetId[target.id];
         if (rawAmt === null || rawAmt === undefined || Math.abs(rawAmt) < 0.005) return;
         if (!r.included) return;
@@ -760,6 +1496,73 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         }
       }
 
+      let jan1Cash = 0;
+      let dec31Cash = netCashChange;
+      let isJan1FromPriorDec31 = false;
+      let jan1NetAssets = 0;
+      let restatedNetAssets = 0;
+      let dec31NetAssets = netAssetsChange;
+      if (statementType === 'cash_flows') {
+        const colEntries: Record<string, number> = {
+          ...(mergedCfStore[target.targetYear]?.[divisionId] || {}),
+        };
+        encodableItems.forEach((item) => {
+          if (item.id === 'cf-sum-beg-cash') return;
+          delete colEntries[item.id];
+        });
+        deferredRows.forEach((r) => {
+          if (!r.included || !r.selectedLineItemId) return;
+          if (r.selectedLineItemId === 'cf-sum-beg-cash' && target.targetYear !== '2024') return;
+          const amt = r.amountsByTargetId[target.id];
+          if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
+          const def = itemById.get(r.selectedLineItemId);
+          const normalizedAmt = def?.isContra ? Math.abs(amt) : amt;
+          colEntries[r.selectedLineItemId] =
+            Math.round(((colEntries[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
+        });
+        if (target.targetYear === '2024' && manualBegCash2024 !== null) {
+          colEntries['cf-sum-beg-cash'] = manualBegCash2024;
+        }
+        const cfSummary = calculateCashFlowsSummary(
+          encodableItems,
+          { ...mergedCfStore, [target.targetYear]: { [divisionId]: colEntries } },
+          target.targetYear,
+          divisionId
+        );
+        jan1Cash = cfSummary.january1Cash;
+        dec31Cash = cfSummary.december31Cash;
+        isJan1FromPriorDec31 = cfSummary.isJan1FromPriorDec31;
+      } else if (statementType === 'net_assets') {
+        const colEntries: Record<string, number> = {
+          ...(mergedCfStore[target.targetYear]?.[divisionId] || {}),
+        };
+        encodableItems.forEach((item) => {
+          if (item.id === 'na-beg-balance') return;
+          delete colEntries[item.id];
+        });
+        deferredRows.forEach((r) => {
+          if (!r.included || !r.selectedLineItemId) return;
+          if (r.selectedLineItemId === 'na-beg-balance' && target.targetYear !== '2024') return;
+          const amt = r.amountsByTargetId[target.id];
+          if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
+          const def = itemById.get(r.selectedLineItemId);
+          const normalizedAmt = def?.isContra ? Math.abs(amt) : amt;
+          colEntries[r.selectedLineItemId] =
+            Math.round(((colEntries[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
+        });
+        if (target.targetYear === '2024' && manualBegNetAssets2024 !== null) {
+          colEntries['na-beg-balance'] = manualBegNetAssets2024;
+        }
+        const naSummary = calculateNetAssetsSummary(
+          { ...mergedCfStore, [target.targetYear]: { [divisionId]: colEntries } },
+          target.targetYear,
+          divisionId
+        );
+        jan1NetAssets = naSummary.january1Balance;
+        restatedNetAssets = naSummary.restatedBalance;
+        dec31NetAssets = naSummary.december31Balance;
+      }
+
       return {
         target,
         isHealthy: warnings.length === 0,
@@ -789,12 +1592,18 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         finOut,
         netFin,
         netCashChange,
+        jan1Cash,
+        dec31Cash,
+        isJan1FromPriorDec31,
         begAdjSum,
         cyChangesSum,
         netAssetsChange,
+        jan1NetAssets,
+        restatedNetAssets,
+        dec31NetAssets,
       };
     });
-  }, [statementType, rows, enabledTargets, itemById]);
+  }, [statementType, deferredRows, enabledTargets, itemById, dataStore, divisionId, encodableItems, manualBegCash2024, manualBegNetAssets2024]);
 
   // Previous / Existing Database Verification per enabled year column
   const dbComparisonEntries = useMemo(() => {
@@ -806,7 +1615,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     return enabledTargets.map((target) => {
       const comparison: DatabaseTargetComparison = compareTargetAgainstDatabase(
         target,
-        rows,
+        deferredRows,
         encodableItems,
         dataStore[target.targetYear]?.[divisionId],
         statementType
@@ -825,7 +1634,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         overrideKey,
       };
     });
-  }, [enabledTargets, rows, encodableItems, dataStore, divisionId, verifyOnlyOverrides, statementType]);
+  }, [enabledTargets, deferredRows, encodableItems, dataStore, divisionId, verifyOnlyOverrides, statementType]);
 
   const existingDbComparisons = useMemo(
     () => dbComparisonEntries.filter((entry) => entry.comparison.hasExistingData),
@@ -890,7 +1699,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   }, [filterMode, pendingDupPeersByRowId, rows, activeDropdownRowId]);
 
   const visibleRows = useMemo(() => {
-    const q = rowSearchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     return rows.filter((r) => {
       if (filterMode === 'skipped') {
         if (!(r.isSummaryRow && !r.included)) return false;
@@ -932,32 +1741,46 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
       return true;
     });
-  }, [rows, filterMode, rowSearchQuery, duplicateLineItemIds, activePendingDupRowIds, itemById]);
+  }, [rows, filterMode, deferredSearchQuery, duplicateLineItemIds, activePendingDupRowIds, itemById]);
 
-  const handleToggleRowInclude = (rowId: string) => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.rowId !== rowId) return r;
-        const nextIncluded = !r.included;
-        if (nextIncluded && r.isSummaryRow && !r.recommendation.bestItem) {
-          const rec = matchLineItemWithRecommendation(r.rawName, encodableItems, savedAliases);
-          const autoId = rec.bestItem && rec.confidence >= 66 ? rec.bestItem.id : '';
-          return {
-            ...r,
-            included: true,
-            recommendation: rec,
-            selectedLineItemId: r.selectedLineItemId || autoId,
-          };
-        }
-        return { ...r, included: nextIncluded };
-      })
-    );
-  };
+  const filterModeRef = useRef(filterMode);
+  filterModeRef.current = filterMode;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const duplicateInfoByRowIdRef = useRef(duplicateInfoByRowId);
+  duplicateInfoByRowIdRef.current = duplicateInfoByRowId;
+  const itemByIdRef = useRef(itemById);
+  itemByIdRef.current = itemById;
+  const manualAmountTextByKeyRef = useRef(manualAmountTextByKey);
+  manualAmountTextByKeyRef.current = manualAmountTextByKey;
 
-  const handleRowDropdownOpenChange = (rowId: string, open: boolean) => {
+  const handleToggleRowInclude = useCallback(
+    (rowId: string) => {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.rowId !== rowId) return r;
+          const nextIncluded = !r.included;
+          if (nextIncluded && r.isSummaryRow && !r.recommendation.bestItem) {
+            const rec = matchLineItemWithRecommendation(r.rawName, encodableItems, savedAliases);
+            const autoId = rec.bestItem && rec.confidence >= 66 ? rec.bestItem.id : '';
+            return {
+              ...r,
+              included: true,
+              recommendation: rec,
+              selectedLineItemId: r.selectedLineItemId || autoId,
+            };
+          }
+          return { ...r, included: nextIncluded };
+        })
+      );
+    },
+    [encodableItems, savedAliases]
+  );
+
+  const handleRowDropdownOpenChange = useCallback((rowId: string, open: boolean) => {
     setActiveDropdownRowId((prev) => (open ? rowId : prev === rowId ? null : prev));
-    if (open && filterMode === 'duplicates') {
-      const dupInfo = duplicateInfoByRowId[rowId];
+    if (open && filterModeRef.current === 'duplicates') {
+      const dupInfo = duplicateInfoByRowIdRef.current[rowId];
       if (dupInfo) {
         setPendingDupPeersByRowId((prev) => ({
           ...prev,
@@ -965,35 +1788,167 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
         }));
       }
     }
-  };
+  }, []);
 
-  const handleSelectRowLineItem = (rowId: string, lineItemId: string) => {
-    if (!lineItemId && filterMode === 'duplicates') {
-      const dupInfo = duplicateInfoByRowId[rowId];
+  const handleSelectRowLineItem = useCallback((rowId: string, lineItemId: string) => {
+    if (!lineItemId && filterModeRef.current === 'duplicates') {
+      const dupInfo = duplicateInfoByRowIdRef.current[rowId];
       if (dupInfo) {
         setPendingDupPeersByRowId((prev) => ({
           ...prev,
           [rowId]: dupInfo.peers.map((p) => p.rowId),
         }));
       }
+    }
+    const isManual = rowId.startsWith('manual-row-');
+    const nextItemName = lineItemId ? itemByIdRef.current.get(lineItemId)?.name || '' : '';
+    const currentRow = rowsRef.current.find((r) => r.rowId === rowId);
+    // Automatically default "Remember alias" to checked if user picked an item for a differently worded label
+    if (
+      currentRow &&
+      !isManual &&
+      lineItemId &&
+      normalizeAliasKey(currentRow.rawName) !== normalizeAliasKey(nextItemName)
+    ) {
+      setRememberAliasMap((m) => ({ ...m, [rowId]: m[rowId] ?? true }));
     }
     setRows((prev) =>
       prev.map((r) => {
         if (r.rowId !== rowId) return r;
-        const nextModified = true;
-        // Automatically default "Remember alias" to checked if user picked an item for a differently worded label
-        if (lineItemId && normalizeAliasKey(r.rawName) !== normalizeAliasKey(itemById.get(lineItemId)?.name || '')) {
-          setRememberAliasMap((m) => ({ ...m, [rowId]: m[rowId] ?? true }));
-        }
+        const prevItemName = r.selectedLineItemId
+          ? itemByIdRef.current.get(r.selectedLineItemId)?.name || ''
+          : '';
+        const shouldSyncManualLabel =
+          isManual && (r.rawName.trim() === '' || r.rawName === prevItemName);
         return {
           ...r,
+          rawName: shouldSyncManualLabel ? nextItemName : r.rawName,
+          cleanedName: shouldSyncManualLabel ? nextItemName : r.cleanedName,
           selectedLineItemId: lineItemId,
           included: lineItemId ? true : r.included,
-          userModified: nextModified,
+          userModified: true,
         };
       })
     );
+  }, []);
+
+  const handleToggleRememberAlias = useCallback((rowId: string, checked: boolean) => {
+    setRememberAliasMap((m) => ({
+      ...m,
+      [rowId]: checked,
+    }));
+  }, []);
+
+  const handleToggleExpandAgg = useCallback((rowId: string) => {
+    setExpandedAggRowIds((prev) => ({
+      ...prev,
+      [rowId]: !prev[rowId],
+    }));
+  }, []);
+
+  const handleShowDuplicatesFilter = useCallback(() => {
+    setFilterMode('duplicates');
+  }, []);
+
+  const handleAddManualRow = () => {
+    const newRowId = `manual-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const initialAmounts: Record<string, number | null> = {};
+    yearTargets.forEach((t) => {
+      initialAmounts[t.id] = null;
+    });
+
+    const newRow: ExtractedPositionRow = {
+      rowId: newRowId,
+      excelRowNumber: 0,
+      rawName: '',
+      cleanedName: '',
+      sourceColIndex: -1,
+      sourceColLetter: '',
+      amountsByTargetId: initialAmounts,
+      isSummaryRow: false,
+      included: true,
+      selectedLineItemId: '',
+      recommendation: { bestItem: null, confidence: 0, matchType: 'none', alternatives: [] },
+      userModified: true,
+    };
+
+    setRows((prev) => [...prev, newRow]);
+    setStep3ViewMode('accounts');
+    if (filterMode === 'matched' || filterMode === 'skipped' || filterMode === 'duplicates') {
+      setFilterMode('all');
+    }
+    if (rowSearchQuery) {
+      setRowSearchQuery('');
+    }
+    setHighlightedRowId(newRowId);
+    window.setTimeout(() => {
+      const el = document.getElementById(`import-row-${newRowId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    window.setTimeout(() => {
+      setHighlightedRowId((prev) => (prev === newRowId ? null : prev));
+    }, 2000);
   };
+
+  const handleRemoveManualRow = useCallback((rowId: string) => {
+    setRows((prev) => prev.filter((r) => r.rowId !== rowId));
+    setManualAmountTextByKey((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((k) => {
+        if (k.startsWith(`${rowId}::`)) delete next[k];
+      });
+      return next;
+    });
+  }, []);
+
+  const handleUpdateManualRowName = useCallback((rowId: string, value: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.rowId === rowId ? { ...r, rawName: value, cleanedName: value.trim() } : r
+      )
+    );
+  }, []);
+
+  const handleUpdateManualRowAmount = useCallback(
+    (rowId: string, targetId: string, rawInput: string) => {
+      const cellKey = `${rowId}::${targetId}`;
+      setManualAmountTextByKey((prev) => ({ ...prev, [cellKey]: rawInput }));
+      const parsedVal = rawInput.trim() === '' ? null : parseNumberInput(rawInput);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.rowId === rowId
+            ? {
+                ...r,
+                amountsByTargetId: {
+                  ...r.amountsByTargetId,
+                  [targetId]: parsedVal,
+                },
+              }
+            : r
+        )
+      );
+    },
+    []
+  );
+
+  const handleBlurManualRowAmount = useCallback((rowId: string, targetId: string) => {
+    const cellKey = `${rowId}::${targetId}`;
+    const raw = manualAmountTextByKeyRef.current[cellKey];
+    if (raw === undefined) return;
+    if (raw.trim() === '') {
+      setManualAmountTextByKey((prev) => {
+        const next = { ...prev };
+        delete next[cellKey];
+        return next;
+      });
+      return;
+    }
+    const parsed = parseNumberInput(raw);
+    setManualAmountTextByKey((prev) => ({
+      ...prev,
+      [cellKey]: Math.abs(parsed) >= 0.005 ? formatAccounting(parsed) : '',
+    }));
+  }, []);
 
   const handleToggleTargetEnabled = (targetId: string) => {
     setYearTargets((prev) =>
@@ -1069,23 +2024,153 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       aggregationRecord?: DivisionAggregationRecord;
     }[] = [];
 
+    const matchedBucketByItemId = new Map<
+      string,
+      {
+        itemDef: LineItemDefinition;
+        totalAmount: number;
+        rows: { row: ExtractedPositionRow; amount: number; aggRec?: DivisionAggregationRecord }[];
+      }
+    >();
+
+    let stagedBegCash2024 = false;
+    let stagedBegNa2024 = false;
+
     rows.forEach((r) => {
       if (!r.included) return;
+      if (
+        (statementType === 'cash_flows' &&
+          r.selectedLineItemId === 'cf-sum-beg-cash' &&
+          target.targetYear !== '2024') ||
+        (statementType === 'net_assets' &&
+          r.selectedLineItemId === 'na-beg-balance' &&
+          target.targetYear !== '2024')
+      ) {
+        return;
+      }
       const amt = r.amountsByTargetId[target.id];
-      if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
+      const isManualOverride2024BegCash =
+        statementType === 'cash_flows' &&
+        target.targetYear === '2024' &&
+        r.selectedLineItemId === 'cf-sum-beg-cash' &&
+        manualBegCash2024 !== null;
+      const isManualOverride2024BegNa =
+        statementType === 'net_assets' &&
+        target.targetYear === '2024' &&
+        r.selectedLineItemId === 'na-beg-balance' &&
+        manualBegNetAssets2024 !== null;
+      if (
+        !isManualOverride2024BegCash &&
+        !isManualOverride2024BegNa &&
+        (amt === null || amt === undefined || Math.abs(amt) < 0.005)
+      ) {
+        return;
+      }
       const itemDef = r.selectedLineItemId ? itemById.get(r.selectedLineItemId) : undefined;
-      const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
+      const effectiveAmt = isManualOverride2024BegCash
+        ? manualBegCash2024!
+        : isManualOverride2024BegNa
+        ? manualBegNetAssets2024!
+        : (amt ?? 0);
+      const normalizedAmt = itemDef?.isContra ? Math.abs(effectiveAmt) : effectiveAmt;
       const aggRec =
         itemDef && r.aggregationBreakdown
           ? buildDivisionAggregationRecordForTarget(r, target.id, itemDef, fileName) || undefined
           : undefined;
+      if (itemDef?.id === 'cf-sum-beg-cash') {
+        stagedBegCash2024 = true;
+      }
+      if (itemDef?.id === 'na-beg-balance') {
+        stagedBegNa2024 = true;
+      }
+
+      if (itemDef) {
+        const existingBucket = matchedBucketByItemId.get(itemDef.id);
+        if (existingBucket) {
+          existingBucket.totalAmount =
+            Math.round((existingBucket.totalAmount + normalizedAmt) * 10000) / 10000;
+          existingBucket.rows.push({ row: r, amount: normalizedAmt, aggRec });
+        } else {
+          matchedBucketByItemId.set(itemDef.id, {
+            itemDef,
+            totalAmount: normalizedAmt,
+            rows: [{ row: r, amount: normalizedAmt, aggRec }],
+          });
+        }
+      } else {
+        stagedPayload.push({
+          lineItemId: '',
+          rawText: r.rawName,
+          amount: formatAccounting(normalizedAmt),
+        });
+      }
+    });
+
+    matchedBucketByItemId.forEach(({ itemDef, totalAmount, rows: contributingRows }) => {
+      let combinedAggRecord: DivisionAggregationRecord | undefined;
+      if (contributingRows.length > 1) {
+        const components = contributingRows.flatMap(({ row, amount, aggRec }) => {
+          if (aggRec && aggRec.components.length > 0) {
+            return aggRec.components;
+          }
+          return [
+            {
+              label: row.cleanedName || row.rawName,
+              amount: Math.round(amount * 10000) / 10000,
+              isParentOriginal: false,
+              excelRowNumber: row.excelRowNumber,
+            },
+          ];
+        });
+        combinedAggRecord = {
+          lineItemId: itemDef.id,
+          lineItemName: itemDef.name,
+          wasAggregated: true,
+          totalAmount: Math.round(totalAmount * 10000) / 10000,
+          parentOriginalAmount: 0,
+          components,
+          sourceFileName: fileName,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        combinedAggRecord = contributingRows[0]?.aggRec;
+      }
+
       stagedPayload.push({
-        lineItemId: itemDef ? itemDef.id : '',
-        rawText: itemDef ? itemDef.name : r.rawName,
-        amount: formatAccounting(normalizedAmt),
-        aggregationRecord: aggRec,
+        lineItemId: itemDef.id,
+        rawText: itemDef.name,
+        amount: formatAccounting(totalAmount),
+        aggregationRecord: combinedAggRecord,
       });
     });
+
+    if (
+      statementType === 'cash_flows' &&
+      target.targetYear === '2024' &&
+      manualBegCash2024 !== null &&
+      !stagedBegCash2024
+    ) {
+      const begDef = itemById.get('cf-sum-beg-cash');
+      stagedPayload.push({
+        lineItemId: 'cf-sum-beg-cash',
+        rawText: begDef ? begDef.name : 'Cash and Cash Equivalents, January 1',
+        amount: formatAccounting(manualBegCash2024),
+      });
+    }
+
+    if (
+      statementType === 'net_assets' &&
+      target.targetYear === '2024' &&
+      manualBegNetAssets2024 !== null &&
+      !stagedBegNa2024
+    ) {
+      const begDef = itemById.get('na-beg-balance');
+      stagedPayload.push({
+        lineItemId: 'na-beg-balance',
+        rawText: begDef ? begDef.name : 'Balance at January 1',
+        amount: formatAccounting(manualBegNetAssets2024),
+      });
+    }
 
     onStageToBatch(target.targetYear, stagedPayload);
     onClose();
@@ -1108,25 +2193,48 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       }
       const yearMap = savesMap.get(target.targetYear)!;
       const yearAggMap = aggRecordsMap.get(target.targetYear)!;
+      const contributorsByItemId = new Map<
+        string,
+        {
+          itemDef: LineItemDefinition;
+          rows: { row: ExtractedPositionRow; amount: number; aggRec?: DivisionAggregationRecord }[];
+        }
+      >();
 
       rows.forEach((r) => {
         if (!r.included) return;
+        if (
+          (statementType === 'cash_flows' &&
+            r.selectedLineItemId === 'cf-sum-beg-cash' &&
+            target.targetYear !== '2024') ||
+          (statementType === 'net_assets' &&
+            r.selectedLineItemId === 'na-beg-balance' &&
+            target.targetYear !== '2024')
+        ) {
+          return;
+        }
         const amt = r.amountsByTargetId[target.id];
         if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
 
         if (r.selectedLineItemId) {
           const itemDef = itemById.get(r.selectedLineItemId);
           const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
-          yearMap.set(r.selectedLineItemId, normalizedAmt);
-          if (itemDef && r.aggregationBreakdown) {
-            const aggRec = buildDivisionAggregationRecordForTarget(
-              r,
-              target.id,
-              itemDef,
-              fileName
-            );
-            if (aggRec) {
-              yearAggMap.set(r.selectedLineItemId, aggRec);
+          const nextAmt =
+            Math.round(((yearMap.get(r.selectedLineItemId) || 0) + normalizedAmt) * 10000) / 10000;
+          yearMap.set(r.selectedLineItemId, nextAmt);
+
+          if (itemDef) {
+            const aggRec = r.aggregationBreakdown
+              ? buildDivisionAggregationRecordForTarget(r, target.id, itemDef, fileName) || undefined
+              : undefined;
+            const bucket = contributorsByItemId.get(itemDef.id);
+            if (bucket) {
+              bucket.rows.push({ row: r, amount: normalizedAmt, aggRec });
+            } else {
+              contributorsByItemId.set(itemDef.id, {
+                itemDef,
+                rows: [{ row: r, amount: normalizedAmt, aggRec }],
+              });
             }
           }
         } else if (target.targetYear === selectedYear) {
@@ -1137,6 +2245,52 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
           });
         }
       });
+
+      contributorsByItemId.forEach(({ itemDef, rows: contributingRows }, itemId) => {
+        if (contributingRows.length > 1) {
+          const combinedTotal = yearMap.get(itemId) || 0;
+          const components = contributingRows.flatMap(({ row, amount, aggRec }) => {
+            if (aggRec && aggRec.components.length > 0) {
+              return aggRec.components;
+            }
+            return [
+              {
+                label: row.cleanedName || row.rawName,
+                amount: Math.round(amount * 10000) / 10000,
+                isParentOriginal: false,
+                excelRowNumber: row.excelRowNumber,
+              },
+            ];
+          });
+          yearAggMap.set(itemId, {
+            lineItemId: itemDef.id,
+            lineItemName: itemDef.name,
+            wasAggregated: true,
+            totalAmount: Math.round(combinedTotal * 10000) / 10000,
+            parentOriginalAmount: 0,
+            components,
+            sourceFileName: fileName,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (contributingRows[0]?.aggRec) {
+          yearAggMap.set(itemId, contributingRows[0].aggRec);
+        }
+      });
+
+      if (
+        statementType === 'cash_flows' &&
+        target.targetYear === '2024' &&
+        manualBegCash2024 !== null
+      ) {
+        yearMap.set('cf-sum-beg-cash', manualBegCash2024);
+      }
+      if (
+        statementType === 'net_assets' &&
+        target.targetYear === '2024' &&
+        manualBegNetAssets2024 !== null
+      ) {
+        yearMap.set('na-beg-balance', manualBegNetAssets2024);
+      }
     });
 
     const savesByYear = Array.from(savesMap.entries())
@@ -1185,7 +2339,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
             </div>
             <div className="min-w-0">
               <h3 id="excel-import-modal-title" className="text-xl sm:text-2xl font-bold text-th-text leading-snug">
-                Review Uploaded Excel / CSV File
+                Review Uploaded Excel File
               </h3>
               <p className="text-sm sm:text-base text-th-muted mt-0.5 truncate">
                 <strong className="text-th-text">{fileName}</strong>
@@ -1660,52 +2814,195 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                     )}
 
                     {statementType === 'cash_flows' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-base">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-th-muted">Net Operating Cash:</span>
-                          <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.netOp)}
-                          </span>
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-base">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Net Operating Cash:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.netOp)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Net Investing Cash:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.netInv)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Net Financing Cash:</span>
+                            <span className="font-mono font-semibold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.netFin)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-th-text">Net Change in Cash:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.netCashChange)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-th-muted">Net Investing Cash:</span>
-                          <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.netInv)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-th-muted">Net Financing Cash:</span>
-                          <span className="font-mono font-semibold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.netFin)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-th-text">Net Change in Cash:</span>
-                          <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.netCashChange)}
-                          </span>
+
+                        <div className="pt-2 border-t border-black/10 dark:border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-base">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-semibold text-th-muted">
+                              Cash &amp; Eq., Jan 1{summary.target.targetYear === '2024' ? ' (2024 Beg.)' : ''}:
+                            </span>
+                            {summary.target.targetYear === '2024' && isEditingModalBegCash2024 ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={modalBegCash2024Input}
+                                  onChange={(e) => setModalBegCash2024Input(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleUpdateModalBegCash2024(parseNumberInput(modalBegCash2024Input));
+                                    } else if (e.key === 'Escape') {
+                                      setIsEditingModalBegCash2024(false);
+                                    }
+                                  }}
+                                  placeholder="0.00"
+                                  autoFocus
+                                  className="w-32 px-2 py-1 text-right font-mono text-sm font-bold bg-th-surface text-th-text border-2 border-th-accent rounded-lg focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateModalBegCash2024(parseNumberInput(modalBegCash2024Input))
+                                  }
+                                  className="px-2 py-1 text-xs font-bold bg-th-accent text-th-accent-fg hover:bg-th-accent-hover rounded-lg cursor-pointer"
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingModalBegCash2024(false)}
+                                  className="px-2 py-1 text-xs font-bold bg-th-surface text-th-text border border-th-border-strong rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-th-text tabular-nums">
+                                  ₱{formatAccounting(summary.jan1Cash)}
+                                </span>
+                                {summary.target.targetYear === '2024' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setModalBegCash2024Input(
+                                        summary.jan1Cash !== 0 ? String(summary.jan1Cash) : ''
+                                      );
+                                      setIsEditingModalBegCash2024(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-900 dark:text-sky-200 border border-sky-500/40 cursor-pointer transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    <span>{summary.jan1Cash === 0 ? 'Encode' : 'Edit'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-th-text">Cash &amp; Eq., Dec 31:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.dec31Cash)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     )}
 
                     {statementType === 'net_assets' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-base">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-th-muted">Beginning Adjustments:</span>
-                          <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.begAdjSum)}
-                          </span>
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm sm:text-base">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-semibold text-th-muted">
+                              Balance at Jan 1{summary.target.targetYear === '2024' ? ' (2024 Beg.)' : ''}:
+                            </span>
+                            {summary.target.targetYear === '2024' && isEditingModalBegNa2024 ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={modalBegNa2024Input}
+                                  onChange={(e) => setModalBegNa2024Input(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleUpdateModalBegNa2024(parseNumberInput(modalBegNa2024Input));
+                                    } else if (e.key === 'Escape') {
+                                      setIsEditingModalBegNa2024(false);
+                                    }
+                                  }}
+                                  placeholder="0.00"
+                                  autoFocus
+                                  className="w-32 px-2 py-1 text-right font-mono text-sm font-bold bg-th-surface text-th-text border-2 border-th-accent rounded-lg focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateModalBegNa2024(parseNumberInput(modalBegNa2024Input))
+                                  }
+                                  className="px-2 py-1 text-xs font-bold bg-th-accent text-th-accent-fg hover:bg-th-accent-hover rounded-lg cursor-pointer"
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingModalBegNa2024(false)}
+                                  className="px-2 py-1 text-xs font-bold bg-th-surface text-th-text border border-th-border-strong rounded-lg cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-th-text tabular-nums">
+                                  ₱{formatAccounting(summary.jan1NetAssets)}
+                                </span>
+                                {summary.target.targetYear === '2024' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setModalBegNa2024Input(
+                                        summary.jan1NetAssets !== 0 ? String(summary.jan1NetAssets) : ''
+                                      );
+                                      setIsEditingModalBegNa2024(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-900 dark:text-sky-200 border border-sky-500/40 cursor-pointer transition-colors"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    <span>{summary.jan1NetAssets === 0 ? 'Encode' : 'Edit'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Beginning Adjustments:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.begAdjSum)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Restated Balance:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.restatedNetAssets)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-th-muted">Calendar Year Changes:</span>
+                            <span className="font-mono font-bold text-th-text tabular-nums">
+                              ₱{formatAccounting(summary.cyChangesSum)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-th-muted">Calendar Year Changes:</span>
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-black/10 dark:border-white/10 text-sm sm:text-base">
+                          <span className="font-bold text-th-text">Balance at December 31:</span>
                           <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.cyChangesSum)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 sm:col-span-2 pt-1 border-t border-black/10 dark:border-white/10">
-                          <span className="font-bold text-th-text">Net Change in Net Assets/Equity:</span>
-                          <span className="font-mono font-bold text-th-text tabular-nums">
-                            ₱{formatAccounting(summary.netAssetsChange)}
+                            ₱{formatAccounting(summary.dec31NetAssets)}
                           </span>
                         </div>
                       </div>
@@ -2051,6 +3348,18 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5">
+                {enabledTargets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAddManualRow}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-xl text-sm font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover border-2 border-th-border-strong transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    title="Add a line item manually to this upload review"
+                  >
+                    <Plus className="w-4 h-4 text-th-accent-text shrink-0" />
+                    <span>Add Line</span>
+                  </button>
+                )}
+
                 {/* Primary Workspace View Mode Switcher: Extracted Accounts vs Draft Statement of Financial Position */}
                 <div className="inline-flex items-center gap-1.5 p-1 bg-th-subtle border-2 border-th-border-strong rounded-xl">
                   <button
@@ -2185,32 +3494,53 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                             : `${duplicateGroups.length} duplicate official accounts detected:`}
                         </span>{' '}
                         <span className="text-th-text font-medium">
-                          Only one balance per official account is saved. Skip the group/duplicate row or assign one to another account:
+                          If left unchanged, duplicate rows for the same official account will be summed and saved as their combined total (e.g. divided FS sub-items). You can still skip a row or reassign it below:
                         </span>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1.5">
-                          {duplicateGroups.map((grp) => (
-                            <div key={grp.lineItemId} className="inline-flex flex-wrap items-center gap-1.5 text-sm">
-                              {duplicateGroups.length > 1 && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-extrabold">
-                                  #{grp.groupNumber}
-                                </span>
-                              )}
-                              <span className="font-bold text-th-text">{grp.officialName}:</span>
-                              {grp.rows.map((r, idx) => (
-                                <React.Fragment key={r.rowId}>
-                                  {idx > 0 && <span className="text-th-muted">&amp;</span>}
-                                  <button
-                                    type="button"
-                                    onClick={() => jumpToAccountRow(r.rowId)}
-                                    className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold text-xs cursor-pointer transition-colors"
-                                  >
-                                    Row {r.excelRowNumber}
-                                    {r.sourceColLetter && r.sourceColLetter !== '?' ? ` (${r.sourceColLetter})` : ''}
-                                  </button>
-                                </React.Fragment>
-                              ))}
-                            </div>
-                          ))}
+                          {duplicateGroups.map((grp) => {
+                            const combinedSummary = enabledTargets
+                              .map((t) => {
+                                const sum = grp.rows.reduce(
+                                  (acc, r) => acc + (r.amountsByTargetId[t.id] ?? 0),
+                                  0
+                                );
+                                return `FY ${t.targetYear}: ₱${formatAccounting(sum)}`;
+                              })
+                              .join(' · ');
+                            return (
+                              <div key={grp.lineItemId} className="inline-flex flex-wrap items-center gap-1.5 text-sm">
+                                {duplicateGroups.length > 1 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-extrabold">
+                                    #{grp.groupNumber}
+                                  </span>
+                                )}
+                                <span className="font-bold text-th-text">{grp.officialName}:</span>
+                                {grp.rows.map((r, idx) => (
+                                  <React.Fragment key={r.rowId}>
+                                    {idx > 0 && <span className="text-th-muted">&amp;</span>}
+                                    <button
+                                      type="button"
+                                      onClick={() => jumpToAccountRow(r.rowId)}
+                                      className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/35 border border-amber-500/40 text-amber-900 dark:text-amber-200 font-bold text-xs cursor-pointer transition-colors"
+                                    >
+                                      {r.rowId.startsWith('manual-row-')
+                                        ? 'Manual Line'
+                                        : `Row ${r.excelRowNumber}${
+                                            r.sourceColLetter && r.sourceColLetter !== '?'
+                                              ? ` (${r.sourceColLetter})`
+                                              : ''
+                                          }`}
+                                    </button>
+                                  </React.Fragment>
+                                ))}
+                                {combinedSummary && (
+                                  <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-200">
+                                    (Combined Total: {combinedSummary})
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </>
                     ) : (
@@ -2245,6 +3575,78 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
               </div>
             )}
 
+            {step3ViewMode === 'accounts' &&
+              statementType === 'cash_flows' &&
+              hasEnabled2024Target && (
+                <div className="rounded-xl bg-sky-500/10 border-2 border-sky-500/35 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm sm:text-base font-bold text-th-text">
+                      FY 2024 Beginning Cash &amp; Cash Equivalents (January 1)
+                    </div>
+                    <div className="text-xs sm:text-sm text-th-muted font-medium">
+                      No 2023 prior data exists, so 2024 January 1 Cash can be encoded directly here (2025+ auto-computes from 2024 Dec 31).
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {isEditingModalBegCash2024 ? (
+                      <>
+                        <input
+                          type="text"
+                          value={modalBegCash2024Input}
+                          onChange={(e) => setModalBegCash2024Input(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleUpdateModalBegCash2024(parseNumberInput(modalBegCash2024Input));
+                            } else if (e.key === 'Escape') {
+                              setIsEditingModalBegCash2024(false);
+                            }
+                          }}
+                          placeholder="0.00"
+                          autoFocus
+                          className="w-36 px-2.5 py-1.5 text-right font-mono text-sm font-bold bg-th-surface text-th-text border-2 border-th-accent rounded-xl focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateModalBegCash2024(parseNumberInput(modalBegCash2024Input))
+                          }
+                          className="px-3 py-1.5 text-sm font-bold bg-th-accent text-th-accent-fg hover:bg-th-accent-hover rounded-xl cursor-pointer"
+                        >
+                          Apply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingModalBegCash2024(false)}
+                          className="px-3 py-1.5 text-sm font-bold bg-th-surface text-th-text border border-th-border-strong rounded-xl cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-base font-bold text-th-text tabular-nums">
+                          ₱{formatAccounting(resolvedBegCash2024)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalBegCash2024Input(
+                              resolvedBegCash2024 !== 0 ? String(resolvedBegCash2024) : ''
+                            );
+                            setIsEditingModalBegCash2024(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-xl bg-th-surface hover:bg-th-subtle-hover text-th-text border-2 border-th-border-strong cursor-pointer transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>{resolvedBegCash2024 === 0 ? 'Encode Jan 1 (2024)' : 'Edit Jan 1 (2024)'}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
             {step3ViewMode === 'draft' ? (
               <DraftStatementPreview
                 statementType={statementType}
@@ -2257,6 +3659,10 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                 enabledTargets={enabledTargets}
                 unmatchedCount={stats.unmatched}
                 duplicateCount={duplicateLineItemIds.size}
+                manualBegCash2024={manualBegCash2024}
+                onUpdateBegCash2024={handleUpdateModalBegCash2024}
+                manualBegNetAssets2024={manualBegNetAssets2024}
+                onUpdateBegNetAssets2024={handleUpdateModalBegNa2024}
                 onBackToAccounts={(filterNeedsReview) => {
                   setStep3ViewMode('accounts');
                   if (filterNeedsReview) {
@@ -2277,18 +3683,28 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                     ? 'All duplicate account conflicts are now resolved!'
                     : 'No rows match your current filter or search.'}
                 </div>
-                {(filterMode !== 'all' || rowSearchQuery) && stats.total > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  {(filterMode !== 'all' || rowSearchQuery) && stats.total > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterMode('all');
+                        setRowSearchQuery('');
+                      }}
+                      className="px-4 py-2.5 min-h-[44px] rounded-xl bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong text-base font-bold text-th-text cursor-pointer"
+                    >
+                      Show All {stats.total} Rows
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      setFilterMode('all');
-                      setRowSearchQuery('');
-                    }}
-                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong text-base font-bold text-th-text cursor-pointer"
+                    onClick={handleAddManualRow}
+                    className="px-4 py-2.5 min-h-[44px] rounded-xl bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong text-base font-bold text-th-text cursor-pointer inline-flex items-center gap-2"
                   >
-                    Show All {stats.total} Rows
+                    <Plus className="w-4 h-4 text-th-accent-text" />
+                    <span>Add Another Line</span>
                   </button>
-                )}
+                </div>
               </div>
             ) : (
               (() => {
@@ -2327,432 +3743,73 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
                         <div className="divide-y divide-th-border">
                           {visibleRows.map((row) => {
+                            const isManualRow = row.rowId.startsWith('manual-row-');
                             const isDup = Boolean(
                               row.included && row.selectedLineItemId && duplicateLineItemIds.has(row.selectedLineItemId)
                             );
                             const dupInfo = isDup ? duplicateInfoByRowId[row.rowId] : undefined;
-                            const isPulsed = highlightedRowId === row.rowId;
-                            const isDropdownOpen = activeDropdownRowId === row.rowId;
-                            const matchType = row.userModified ? 'exact' : row.recommendation.matchType;
                             const selectedDef = row.selectedLineItemId
                               ? itemById.get(row.selectedLineItemId)
                               : undefined;
-                            const labelDiffersFromOfficial =
-                              Boolean(selectedDef) &&
-                              normalizeAliasKey(row.rawName) !== normalizeAliasKey(selectedDef!.name);
                             const variantLookupKey = normalizeAliasKey(
                               selectedDef?.name || row.recommendation.bestItem?.name || row.rawName
                             );
                             const sameNameVariants =
-                              sameNameVariantsByNormName.get(variantLookupKey) || [];
+                              sameNameVariantsByNormName.get(variantLookupKey) || EMPTY_LINE_ITEMS;
 
                             return (
-                              <div
+                              <ImportReviewRow
                                 key={row.rowId}
-                                id={`import-row-${row.rowId}`}
-                                className={`px-4 py-3.5 grid gap-4 items-start transition-colors scroll-mt-24 ${
-                                  !row.included
-                                    ? 'opacity-60 bg-th-subtle/50'
-                                    : isDup
-                                    ? 'bg-amber-500/12 dark:bg-amber-500/15 border-l-4 border-l-amber-500 hover:bg-amber-500/18 dark:hover:bg-amber-500/20'
-                                    : 'hover:bg-th-subtle/40'
-                                } ${isPulsed ? 'ring-2 ring-inset ring-amber-400 bg-amber-500/25' : ''} ${
-                                  isDropdownOpen ? 'relative z-40' : 'relative z-auto'
-                                }`}
-                                style={{ gridTemplateColumns: gridCols }}
-                              >
-                                {/* Large Senior-Friendly Include / Skip Toggle Button */}
-                                <div className="flex justify-center pt-0.5">
-                                  <label
-                                    className={`inline-flex items-center justify-center gap-2 px-3 py-2 min-h-[42px] w-full rounded-xl border-2 text-sm font-bold cursor-pointer select-none transition-colors ${
-                                      !row.included
-                                        ? 'bg-th-surface border-th-border text-th-muted hover:border-th-border-strong'
-                                        : isDup
-                                        ? 'bg-amber-500/15 border-amber-500/60 text-amber-900 dark:text-amber-100 hover:bg-amber-500/25'
-                                        : 'bg-th-subtle border-th-border-strong text-th-text hover:bg-th-subtle-hover'
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={row.included}
-                                      onChange={() => handleToggleRowInclude(row.rowId)}
-                                      className="w-4 h-4 cursor-pointer accent-th-accent shrink-0"
-                                      aria-label={`Include row ${row.excelRowNumber}`}
-                                    />
-                                    <span>{row.included ? 'Include' : 'Skip'}</span>
-                                  </label>
-                                </div>
-
-                                {/* Raw Excel text & clean metadata */}
-                                <div className="min-w-0 pt-0.5 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`text-base sm:text-lg font-bold break-words leading-snug ${
-                                row.included &&
-                                (row.isLumpedDepreciation ||
-                                  row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID)
-                                  ? 'text-red-700 dark:text-red-400'
-                                  : isDup
-                                  ? 'text-amber-950 dark:text-amber-100'
-                                  : 'text-th-text'
-                              }`}
-                            >
-                              {row.rawName}
-                            </span>
-                            {isDup && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[11px] font-extrabold uppercase tracking-wider shrink-0">
-                                <AlertTriangle className="w-3 h-3 shrink-0" />
-                                <span>
-                                  Duplicate{duplicateGroups.length > 1 && dupInfo ? ` #${dupInfo.groupNumber}` : ''}
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm text-th-muted font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <span>Excel Row {row.excelRowNumber}</span>
-                            {row.sourceColLetter && row.sourceColLetter !== '?' && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span>Col {row.sourceColLetter}</span>
-                              </>
-                            )}
-                            {row.accountCode && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="font-mono font-semibold text-th-text">
-                                  Code {row.accountCode}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          {!row.included && row.isSummaryRow && row.summaryReason && (
-                            <div className="text-sm font-semibold text-th-muted">
-                              Skipped automatically: {row.summaryReason}
-                            </div>
-                          )}
-
-                          {/* Clear plain-language match status (no pill sandwiches) */}
-                          {row.included && !row.selectedLineItemId && (
-                            <div className="inline-flex items-center gap-1.5 text-sm font-bold text-rose-700 dark:text-rose-300">
-                              <AlertCircle className="w-4 h-4 shrink-0" />
-                              <span>Needs an official account — choose on the right</span>
-                            </div>
-                          )}
-                          {row.included &&
-                            (row.isLumpedDepreciation ||
-                              row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) && (
-                              <div className="inline-flex items-center gap-1.5 text-sm font-bold text-red-700 dark:text-red-400">
-                                <AlertTriangle className="w-4 h-4 shrink-0" />
-                                <span>
-                                  Temporary Aggregated Notice (red/bold in FS after PPE) — excludes division from Consolidated FS
-                                </span>
-                              </div>
-                            )}
-                          {row.included &&
-                            !(
-                              row.isLumpedDepreciation ||
-                              row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
-                            ) &&
-                            row.selectedLineItemId &&
-                            matchType === 'suggested' && (
-                            <div className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-800 dark:text-amber-300">
-                              <Sparkles className="w-4 h-4 shrink-0" />
-                              <span>Best guess ({row.recommendation.confidence}%) — please verify</span>
-                            </div>
-                          )}
-                          {row.included &&
-                            !(
-                              row.isLumpedDepreciation ||
-                              row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
-                            ) &&
-                            row.selectedLineItemId &&
-                            matchType === 'alias' && (
-                            <div className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                              <BookmarkCheck className="w-4 h-4 shrink-0" />
-                              <span>Matched using your saved wording</span>
-                            </div>
-                          )}
-                          {row.included &&
-                            !(
-                              row.isLumpedDepreciation ||
-                              row.selectedLineItemId === AGGREGATED_ACCUMULATED_DEPRECIATION_ID
-                            ) &&
-                            row.selectedLineItemId &&
-                            (matchType === 'exact' || matchType === 'normalized') && (
-                              <div className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                                <Check className="w-4 h-4 shrink-0" />
-                                <span>Matched automatically</span>
-                              </div>
-                            )}
-                          {row.included && row.aggregationNote && (
-                            <div className="rounded-lg bg-sky-500/10 border border-sky-500/30 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-sky-900 dark:text-sky-200 space-y-1.5">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span>{row.aggregationNote}</span>
-                                {row.aggregationBreakdown && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedAggRowIds((prev) => ({
-                                        ...prev,
-                                        [row.rowId]: !prev[row.rowId],
-                                      }))
-                                    }
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-950 dark:text-sky-100 text-xs font-bold cursor-pointer shrink-0 transition-colors"
-                                  >
-                                    {expandedAggRowIds[row.rowId] ? (
-                                      <>
-                                        <ChevronUp className="w-3.5 h-3.5" />
-                                        <span>Hide Breakdown</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <ChevronDown className="w-3.5 h-3.5" />
-                                        <span>
-                                          View Breakdown ({row.aggregationBreakdown.children.length} sub-items)
-                                        </span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                              {expandedAggRowIds[row.rowId] && row.aggregationBreakdown && (
-                                <div className="mt-1.5 pt-1.5 border-t border-sky-500/25 space-y-1 text-xs font-medium">
-                                  {!row.aggregationBreakdown.isParentless && (
-                                    <div className="flex items-center justify-between gap-2 text-sky-950 dark:text-sky-100">
-                                      <span className="truncate">
-                                        {row.aggregationBreakdown.parentRawName} (Original parent)
-                                      </span>
-                                      <span className="font-mono font-bold tabular-nums shrink-0">
-                                        {enabledTargets
-                                          .map((t) => {
-                                            const v =
-                                              row.aggregationBreakdown!.parentOwnAmountsByTargetId[
-                                                t.id
-                                              ];
-                                            return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
-                                          })
-                                          .join(' · ')}
-                                      </span>
-                                    </div>
-                                  )}
-                                  {row.aggregationBreakdown.children.map((ch, cIdx) => (
-                                    <div
-                                      key={`${row.rowId}-ch-${cIdx}`}
-                                      className="flex items-center justify-between gap-2 text-sky-900/90 dark:text-sky-200/90 pl-2"
-                                    >
-                                      <span className="truncate">
-                                        {ch.excelRowNumber ? `Row ${ch.excelRowNumber}: ` : ''}
-                                        {ch.cleanedName || ch.rawName}
-                                      </span>
-                                      <span className="font-mono tabular-nums shrink-0">
-                                        {enabledTargets
-                                          .map((t) => {
-                                            const v = ch.amountsByTargetId[t.id];
-                                            return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
-                                          })
-                                          .join(' · ')}
-                                      </span>
-                                    </div>
-                                  ))}
-                                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-sky-500/25 font-bold text-sky-950 dark:text-sky-100">
-                                    <span>Resolved Total</span>
-                                    <span className="font-mono tabular-nums shrink-0">
-                                      {enabledTargets
-                                        .map((t) => {
-                                          const v = row.amountsByTargetId[t.id];
-                                          return `FY ${t.targetYear}: ₱${formatAccounting(v ?? 0)}`;
-                                        })
-                                        .join(' · ')}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {isDup && dupInfo && (
-                            <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2.5 py-1.5 text-sm font-bold text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className="inline-flex items-center gap-1.5">
-                                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                                <span>
-                                  Duplicate with{' '}
-                                  {dupInfo.peers.map((peer, idx) => (
-                                    <React.Fragment key={peer.rowId}>
-                                      {idx > 0 && ', '}
-                                      <button
-                                        type="button"
-                                        onClick={() => jumpToAccountRow(peer.rowId)}
-                                        className="underline decoration-amber-500/70 underline-offset-2 hover:text-amber-700 dark:hover:text-amber-100 cursor-pointer font-extrabold"
-                                      >
-                                        Excel Row {peer.excelRowNumber}
-                                        {peer.sourceColLetter && peer.sourceColLetter !== '?'
-                                          ? ` (${peer.sourceColLetter})`
-                                          : ''}
-                                      </button>
-                                    </React.Fragment>
-                                  ))}
-                                </span>
-                              </span>
-                              {filterMode !== 'duplicates' && (
-                                <button
-                                  type="button"
-                                  onClick={() => setFilterMode('duplicates')}
-                                  className="text-xs px-2 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 text-amber-950 dark:text-amber-100 font-bold cursor-pointer transition-colors"
-                                >
-                                  Compare Side-by-Side
-                                </button>
-                              )}
-                            </div>
-                          )}
+                                row={row}
+                                gridCols={gridCols}
+                                statementType={statementType}
+                                encodableItems={encodableItems}
+                                enabledTargets={enabledTargets}
+                                selectedDef={selectedDef}
+                                isDup={isDup}
+                                dupInfo={dupInfo}
+                                hasMultipleDupGroups={duplicateGroups.length > 1}
+                                isPulsed={highlightedRowId === row.rowId}
+                                isDropdownOpen={activeDropdownRowId === row.rowId}
+                                rememberAlias={Boolean(rememberAliasMap[row.rowId])}
+                                isExpandedAgg={Boolean(expandedAggRowIds[row.rowId])}
+                                showCompareDupButton={filterMode !== 'duplicates'}
+                                sameNameVariants={sameNameVariants}
+                                dbComparisonByTargetId={
+                                  existingDbComparisons.length > 0
+                                    ? dbComparisonByTargetId
+                                    : EMPTY_DB_COMPARISON_MAP
+                                }
+                                manualAmountTextByKey={
+                                  isManualRow ? manualAmountTextByKey : EMPTY_MANUAL_TEXT_MAP
+                                }
+                                onToggleInclude={handleToggleRowInclude}
+                                onRemoveManualRow={handleRemoveManualRow}
+                                onUpdateManualRowName={handleUpdateManualRowName}
+                                onUpdateManualRowAmount={handleUpdateManualRowAmount}
+                                onBlurManualRowAmount={handleBlurManualRowAmount}
+                                onSelectLineItem={handleSelectRowLineItem}
+                                onDropdownOpenChange={handleRowDropdownOpenChange}
+                                onToggleRememberAlias={handleToggleRememberAlias}
+                                onToggleExpandAgg={handleToggleExpandAgg}
+                                onJumpToRow={jumpToAccountRow}
+                                onShowDuplicatesFilter={handleShowDuplicatesFilter}
+                              />
+                            );
+                          })}
                         </div>
-
-                        {/* Official Line Item Selector + Alternative Recommendation Chips */}
-                        <div className="min-w-0 space-y-2 pt-0.5">
-                          <SearchableLineItemSelect
-                            lineItems={encodableItems}
-                            selectedItemId={row.selectedLineItemId}
-                            rawText={selectedDef ? selectedDef.name : ''}
-                            isInvalid={row.included && !row.isSummaryRow && !row.selectedLineItemId}
-                            isDuplicate={isDup}
-                            onSelectItem={(itemId) => handleSelectRowLineItem(row.rowId, itemId)}
-                            onOpenStateChange={(open) => handleRowDropdownOpenChange(row.rowId, open)}
-                            placement="auto"
-                            usePortal
-                            compact
-                            placeholder="Click or type to choose official account..."
-                          />
-
-                          {/* Explicit placement option when multiple official line items share the same name (e.g. Miscellaneous Income) */}
-                          {row.included && !row.isSummaryRow && sameNameVariants.length > 1 && (
-                            <div className="rounded-xl bg-th-subtle/80 border border-th-border-strong p-2.5 space-y-1.5">
-                              <div className="text-xs font-bold text-th-text flex items-center justify-between gap-2">
-                                <span>
-                                  Choose which &quot;{selectedDef?.name || sameNameVariants[0].name}&quot; line item to add to:
-                                </span>
-                                <span className="text-[11px] font-semibold text-th-muted shrink-0">
-                                  {sameNameVariants.length} placements
-                                </span>
-                              </div>
-                              <div className="flex flex-col gap-1.5">
-                                {sameNameVariants.map((variant, vIdx) => {
-                                  const isChosen = row.selectedLineItemId === variant.id;
-                                  const placementPath = formatItemPlacementPath(variant);
-                                  return (
-                                    <button
-                                      key={variant.id}
-                                      type="button"
-                                      onClick={() => handleSelectRowLineItem(row.rowId, variant.id)}
-                                      className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                                        isChosen
-                                          ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
-                                          : 'bg-th-surface border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
-                                      }`}
-                                    >
-                                      <span className="min-w-0 truncate">
-                                        <span className="font-bold text-th-text mr-1.5">
-                                          Option {vIdx + 1}
-                                          {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
-                                        </span>
-                                        <span>{placementPath}</span>
-                                        <span className="text-th-muted"> → {variant.name}</span>
-                                      </span>
-                                      {isChosen ? (
-                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-th-accent-text shrink-0">
-                                          <Check className="w-3.5 h-3.5" />
-                                          Selected
-                                        </span>
-                                      ) : (
-                                        <span className="text-[11px] font-bold text-th-muted shrink-0">
-                                          Choose
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Quick recommendation buttons for unmatched rows */}
-                          {row.included &&
-                            !row.isSummaryRow &&
-                            !row.selectedLineItemId &&
-                            row.recommendation.alternatives.length > 0 && (
-                              <div className="flex flex-wrap items-center gap-2 text-sm">
-                                <span className="text-th-muted font-bold">Quick Suggestions:</span>
-                                {row.recommendation.alternatives.map((alt) => (
-                                  <button
-                                    key={alt.item.id}
-                                    type="button"
-                                    title={`${alt.item.name} (${alt.item.subsection} › ${alt.item.group}${
-                                      alt.item.subgroup ? ` › ${alt.item.subgroup}` : ''
-                                    })`}
-                                    onClick={() => handleSelectRowLineItem(row.rowId, alt.item.id)}
-                                    className="px-3 py-1.5 min-h-[38px] rounded-xl bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong text-th-text font-bold cursor-pointer text-left"
-                                  >
-                                    {alt.item.name} ({alt.confidence}%)
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-
-                          {/* Option to remember spelling/alias for future uploads */}
-                          {row.included &&
-                            !row.isSummaryRow &&
-                            row.selectedLineItemId &&
-                            labelDiffersFromOfficial &&
-                            matchType !== 'alias' && (
-                              <label className="inline-flex items-center gap-2.5 py-1 text-sm font-semibold text-th-muted hover:text-th-text cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(rememberAliasMap[row.rowId])}
-                                  onChange={(e) =>
-                                    setRememberAliasMap((m) => ({
-                                      ...m,
-                                      [row.rowId]: e.target.checked,
-                                    }))
-                                  }
-                                  className="w-4 h-4 accent-th-accent cursor-pointer shrink-0"
-                                />
-                                <span>Remember &quot;{row.rawName}&quot; for future uploads</span>
-                              </label>
-                            )}
-                        </div>
-
-                        {/* Year Amounts */}
-                        {enabledTargets.map((target) => {
-                          const val = row.amountsByTargetId[target.id];
-                          const dbEntry = dbComparisonByTargetId[target.id];
-                          const rowDbDiff =
-                            row.included && row.selectedLineItemId && dbEntry?.comparison.hasExistingData
-                              ? dbEntry.comparison.diffByLineItemId[row.selectedLineItemId]
-                              : undefined;
-                          const isZeroVal = val !== null && val !== undefined && Math.abs(val) < 0.005;
-                          return (
-                            <div
-                              key={target.id}
-                              className="min-w-0 text-right pt-2 space-y-0.5"
-                            >
-                              <div
-                                className={`font-mono text-base font-bold tabular-nums whitespace-nowrap ${
-                                  val === null || val === undefined || isZeroVal
-                                    ? 'text-th-muted'
-                                    : 'text-th-text'
-                                }`}
-                              >
-                                {val !== null && val !== undefined ? formatAccounting(val) : '—'}
-                              </div>
-                              {rowDbDiff && (
-                                <div className="text-xs font-mono font-semibold text-amber-800 dark:text-amber-300 tabular-nums whitespace-nowrap">
-                                  DB: ₱{formatAccounting(rowDbDiff.databaseAmount)}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                        <div className="px-4 py-3 bg-th-subtle/60 border-t border-th-border flex flex-wrap items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={handleAddManualRow}
+                            className="inline-flex items-center gap-2 px-4 py-2 min-h-[42px] rounded-xl text-sm font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover border-2 border-th-border-strong transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4 text-th-accent-text shrink-0" />
+                            <span>Add Another Line</span>
+                          </button>
+                          <span className="text-xs sm:text-sm text-th-muted font-medium">
+                            Missing an account from the Excel sheet? Add a line here to include it in the totals and save.
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2794,7 +3851,11 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
               <>
                 <button
                   type="button"
-                  disabled={stats.exactOrAlias + stats.suggested === 0}
+                  disabled={
+                    stats.exactOrAlias + stats.suggested === 0 &&
+                    !(statementType === 'cash_flows' && hasEnabled2024Target && manualBegCash2024 !== null) &&
+                    !(statementType === 'net_assets' && hasEnabled2024Target && manualBegNetAssets2024 !== null)
+                  }
                   onClick={handleSaveAllEnabledYears}
                   className="px-5 py-3 min-h-[48px] text-base font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover disabled:opacity-50 border-2 border-th-border-strong rounded-xl cursor-pointer transition-colors"
                 >
@@ -2802,7 +3863,11 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                 </button>
                 <button
                   type="button"
-                  disabled={stats.includedCount === 0}
+                  disabled={
+                    stats.includedCount === 0 &&
+                    !(statementType === 'cash_flows' && hasEnabled2024Target && manualBegCash2024 !== null) &&
+                    !(statementType === 'net_assets' && hasEnabled2024Target && manualBegNetAssets2024 !== null)
+                  }
                   onClick={() => handleStageTargetToBatch(activeYearTarget)}
                   className="px-6 py-3 min-h-[48px] text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer transition-colors"
                 >
@@ -2814,7 +3879,11 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                 {activeYearTarget && targetsToSave.length > 0 && (
                   <button
                     type="button"
-                    disabled={stats.includedCount === 0}
+                    disabled={
+                      stats.includedCount === 0 &&
+                      !(statementType === 'cash_flows' && hasEnabled2024Target && manualBegCash2024 !== null) &&
+                      !(statementType === 'net_assets' && hasEnabled2024Target && manualBegNetAssets2024 !== null)
+                    }
                     onClick={() => handleStageTargetToBatch(activeYearTarget)}
                     className="px-5 py-3 min-h-[48px] text-base font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover disabled:opacity-50 border-2 border-th-border-strong rounded-xl cursor-pointer transition-colors"
                   >
@@ -2823,7 +3892,12 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                 )}
                 <button
                   type="button"
-                  disabled={targetsToSave.length === 0 || stats.exactOrAlias + stats.suggested === 0}
+                  disabled={
+                    targetsToSave.length === 0 ||
+                    (stats.exactOrAlias + stats.suggested === 0 &&
+                      !(statementType === 'cash_flows' && hasEnabled2024Target && manualBegCash2024 !== null) &&
+                      !(statementType === 'net_assets' && hasEnabled2024Target && manualBegNetAssets2024 !== null))
+                  }
                   onClick={handleSaveAllEnabledYears}
                   className="px-6 py-3 min-h-[48px] text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 rounded-xl shadow-sm cursor-pointer transition-colors"
                 >

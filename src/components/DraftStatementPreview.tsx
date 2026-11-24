@@ -5,7 +5,7 @@ import { YearImportColumnTarget, ExtractedPositionRow } from '../utils/excelImpo
 import { calculateReport, CalculatedReport } from '../utils/calculations';
 import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary, NetAssetsSummary } from '../utils/netAssetsCalculations';
-import { formatAccounting } from '../utils/formatters';
+import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import {
   Eye,
   EyeOff,
@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Check,
+  Pencil,
 } from 'lucide-react';
 
 interface DraftStatementPreviewProps {
@@ -30,6 +32,10 @@ interface DraftStatementPreviewProps {
   enabledTargets: YearImportColumnTarget[];
   unmatchedCount: number;
   duplicateCount: number;
+  manualBegCash2024?: number | null;
+  onUpdateBegCash2024?: (amount: number) => void;
+  manualBegNetAssets2024?: number | null;
+  onUpdateBegNetAssets2024?: (amount: number) => void;
   onBackToAccounts: (filterNeedsReview?: boolean) => void;
 }
 
@@ -59,8 +65,8 @@ const DRAFT_STATEMENT_TITLES: Record<StatementType, { condensed: string; detaile
     detailed: 'Detailed Statement of Financial Performance (Draft Preview)',
   },
   cash_flows: {
-    condensed: 'Statement of Cash Flows (Draft Preview)',
-    detailed: 'Statement of Cash Flows (Draft Preview)',
+    condensed: 'Condensed Statement of Cash Flows (Draft Preview)',
+    detailed: 'Detailed Statement of Cash Flows (Draft Preview)',
   },
   net_assets: {
     condensed: 'Statement of Changes in Net Assets/Equity (Draft Preview)',
@@ -79,21 +85,75 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
   enabledTargets,
   unmatchedCount,
   duplicateCount,
+  manualBegCash2024 = null,
+  onUpdateBegCash2024,
+  manualBegNetAssets2024 = null,
+  onUpdateBegNetAssets2024,
   onBackToAccounts,
 }) => {
   const [isCondensed, setIsCondensed] = useState(false);
   const [hideZeroRows, setHideZeroRows] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDraftAggIds, setExpandedDraftAggIds] = useState<Record<string, boolean>>({});
+  const [isEditingJan1_2024, setIsEditingJan1_2024] = useState(false);
+  const [jan1_2024Input, setJan1_2024Input] = useState('');
+  const [isEditingNaJan1_2024, setIsEditingNaJan1_2024] = useState(false);
+  const [naJan1_2024Input, setNaJan1_2024Input] = useState('');
 
   const aggBreakdownRowByItemId = useMemo(() => {
     const map: Record<string, ExtractedPositionRow> = {};
+    const rowsByItemId = new Map<string, ExtractedPositionRow[]>();
     rows.forEach((r) => {
-      if (!r.included || !r.selectedLineItemId || !r.aggregationBreakdown) return;
-      map[r.selectedLineItemId] = r;
+      if (!r.included || !r.selectedLineItemId) return;
+      if (r.aggregationBreakdown) {
+        map[r.selectedLineItemId] = r;
+      }
+      const list = rowsByItemId.get(r.selectedLineItemId) || [];
+      list.push(r);
+      rowsByItemId.set(r.selectedLineItemId, list);
     });
+
+    rowsByItemId.forEach((groupRows, itemId) => {
+      if (map[itemId] || groupRows.length < 2) return;
+      const itemDef = encodableItems.find((i) => i.id === itemId);
+      const resolvedAmountsByTargetId: Record<string, number | null> = {};
+      const wasAggregatedByTargetId: Record<string, boolean> = {};
+      enabledTargets.forEach((t) => {
+        let sum = 0;
+        let hasAny = false;
+        groupRows.forEach((r) => {
+          const val = r.amountsByTargetId[t.id];
+          if (val !== null && val !== undefined) {
+            sum += itemDef?.isContra ? Math.abs(val) : val;
+            hasAny = true;
+          }
+        });
+        resolvedAmountsByTargetId[t.id] = hasAny ? Math.round(sum * 10000) / 10000 : null;
+        wasAggregatedByTargetId[t.id] = hasAny && Math.abs(sum) >= 0.005;
+      });
+      map[itemId] = {
+        ...groupRows[0],
+        amountsByTargetId: resolvedAmountsByTargetId,
+        aggregationBreakdown: {
+          parentItemId: itemId,
+          parentLabel: itemDef?.name || groupRows[0].rawName,
+          parentRawName: itemDef?.name || groupRows[0].rawName,
+          isParentless: true,
+          parentOwnAmountsByTargetId: {},
+          resolvedAmountsByTargetId,
+          wasAggregatedByTargetId,
+          children: groupRows.map((r) => ({
+            rawName: r.rawName,
+            cleanedName: r.cleanedName,
+            excelRowNumber: r.excelRowNumber,
+            amountsByTargetId: { ...r.amountsByTargetId },
+          })),
+        },
+      };
+    });
+
     return map;
-  }, [rows]);
+  }, [rows, encodableItems, enabledTargets]);
 
   const itemById = useMemo(() => {
     const map = new Map<string, LineItemDefinition>();
@@ -134,7 +194,8 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
 
         const itemDef = itemById.get(r.selectedLineItemId);
         const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
-        divEntries[r.selectedLineItemId] = normalizedAmt;
+        divEntries[r.selectedLineItemId] =
+          Math.round(((divEntries[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
       });
 
       draftStore[colKey] = { draft: divEntries };
@@ -164,16 +225,46 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
 
       // Preserve existing Jan 1 beginning balance if stored, but replace encodable statement items with uploaded amounts
       encodableItems.forEach((item) => {
+        if (item.id === 'cf-sum-beg-cash' || item.id === 'na-beg-balance') return;
         delete nextForYear[item.id];
       });
 
       rows.forEach((r) => {
         if (!r.included || !r.selectedLineItemId) return;
+        if (
+          (statementType === 'cash_flows' &&
+            r.selectedLineItemId === 'cf-sum-beg-cash' &&
+            target.targetYear !== '2024') ||
+          (statementType === 'net_assets' &&
+            r.selectedLineItemId === 'na-beg-balance' &&
+            target.targetYear !== '2024')
+        ) {
+          return;
+        }
         const amt = r.amountsByTargetId[target.id];
         if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
         const itemDef = itemById.get(r.selectedLineItemId);
-        nextForYear[r.selectedLineItemId] = itemDef?.isContra ? Math.abs(amt) : amt;
+        const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
+        nextForYear[r.selectedLineItemId] =
+          Math.round(((nextForYear[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
       });
+
+      if (
+        statementType === 'cash_flows' &&
+        target.targetYear === '2024' &&
+        manualBegCash2024 !== null &&
+        manualBegCash2024 !== undefined
+      ) {
+        nextForYear['cf-sum-beg-cash'] = manualBegCash2024;
+      }
+      if (
+        statementType === 'net_assets' &&
+        target.targetYear === '2024' &&
+        manualBegNetAssets2024 !== null &&
+        manualBegNetAssets2024 !== undefined
+      ) {
+        nextForYear['na-beg-balance'] = manualBegNetAssets2024;
+      }
 
       mergedStore[target.targetYear] = { [divisionId]: nextForYear };
     });
@@ -186,15 +277,44 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
       // Ensure exact target column entries apply even if two columns map to same year
       const colEntries: Record<string, number> = { ...(mergedStore[target.targetYear]?.[divisionId] || {}) };
       encodableItems.forEach((item) => {
+        if (item.id === 'cf-sum-beg-cash' || item.id === 'na-beg-balance') return;
         delete colEntries[item.id];
       });
       rows.forEach((r) => {
         if (!r.included || !r.selectedLineItemId) return;
+        if (
+          (statementType === 'cash_flows' &&
+            r.selectedLineItemId === 'cf-sum-beg-cash' &&
+            target.targetYear !== '2024') ||
+          (statementType === 'net_assets' &&
+            r.selectedLineItemId === 'na-beg-balance' &&
+            target.targetYear !== '2024')
+        ) {
+          return;
+        }
         const amt = r.amountsByTargetId[target.id];
         if (amt === null || amt === undefined || Math.abs(amt) < 0.005) return;
         const itemDef = itemById.get(r.selectedLineItemId);
-        colEntries[r.selectedLineItemId] = itemDef?.isContra ? Math.abs(amt) : amt;
+        const normalizedAmt = itemDef?.isContra ? Math.abs(amt) : amt;
+        colEntries[r.selectedLineItemId] =
+          Math.round(((colEntries[r.selectedLineItemId] || 0) + normalizedAmt) * 10000) / 10000;
       });
+      if (
+        statementType === 'cash_flows' &&
+        target.targetYear === '2024' &&
+        manualBegCash2024 !== null &&
+        manualBegCash2024 !== undefined
+      ) {
+        colEntries['cf-sum-beg-cash'] = manualBegCash2024;
+      }
+      if (
+        statementType === 'net_assets' &&
+        target.targetYear === '2024' &&
+        manualBegNetAssets2024 !== null &&
+        manualBegNetAssets2024 !== undefined
+      ) {
+        colEntries['na-beg-balance'] = manualBegNetAssets2024;
+      }
       colStore[target.targetYear] = { [divisionId]: colEntries };
 
       if (statementType === 'cash_flows') {
@@ -205,7 +325,7 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
     });
 
     return { cashFlowsSummaryByColKey: cfMap, netAssetsSummaryByColKey: naMap };
-  }, [dataStore, divisionId, orderedColumns, encodableItems, rows, itemById, statementType]);
+  }, [dataStore, divisionId, orderedColumns, encodableItems, rows, itemById, statementType, manualBegCash2024, manualBegNetAssets2024]);
 
   // Group encodable Statement of Financial Position items hierarchically
   const sectionsHierarchy = useMemo(() => {
@@ -491,7 +611,8 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
   const primaryDisplayYear = orderedColumns[0]?.target.targetYear || selectedYear;
   const detailedColSpan = 1 + orderedColumns.length;
   const condensedColSpan = 2 + orderedColumns.length;
-  const supportsCondensedToggle = statementType === 'position' || statementType === 'performance';
+  const supportsCondensedToggle =
+    statementType === 'position' || statementType === 'performance' || statementType === 'cash_flows';
   const statementTitles = DRAFT_STATEMENT_TITLES[statementType];
   const statementDisplayName = isCondensed && supportsCondensedToggle
     ? statementTitles.condensed
@@ -644,10 +765,10 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
             <div className="flex flex-wrap items-center gap-2.5 text-amber-900 dark:text-amber-200 font-bold">
               <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 shrink-0" />
               <span>
-                {unmatchedCount > 0 && `${unmatchedCount} unmatched`}
+                {unmatchedCount > 0 && `${unmatchedCount} unmatched (excluded)`}
                 {unmatchedCount > 0 && duplicateCount > 0 && ' · '}
-                {duplicateCount > 0 && `${duplicateCount} duplicate mapping(s)`}
-                {' '}— excluded or overwritten until resolved.
+                {duplicateCount > 0 &&
+                  `${duplicateCount} combined duplicate${duplicateCount === 1 ? '' : 's'} (totaled automatically)`}
               </span>
               <button
                 type="button"
@@ -655,7 +776,7 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-th-surface hover:bg-th-subtle-hover border border-amber-400 dark:border-amber-700 text-th-text text-xs sm:text-sm font-bold cursor-pointer whitespace-nowrap"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Fix in Accounts List</span>
+                <span>{unmatchedCount > 0 ? 'Fix in Accounts List' : 'Review in Accounts List'}</span>
               </button>
             </div>
           )}
@@ -1206,6 +1327,34 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                   {groupItems(inflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Inflows') {
+                      return (
+                        <React.Fragment key={`${sectionKey}-in-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              {orderedColumns.map(({ colKey }) => (
+                                <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`${sectionKey}-in-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          {orderedColumns.map(({ colKey }) => (
+                            <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportsByColKey[colKey]))}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`${sectionKey}-in-${grp}`}>
@@ -1269,6 +1418,34 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                   {groupItems(outflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Outflows') {
+                      return (
+                        <React.Fragment key={`${sectionKey}-out-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              {orderedColumns.map(({ colKey }) => (
+                                <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportsByColKey[colKey]?.values[item.id] || 0)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`${sectionKey}-out-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          {orderedColumns.map(({ colKey }) => (
+                            <td key={colKey} className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportsByColKey[colKey]))}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`${sectionKey}-out-${grp}`}>
@@ -1418,11 +1595,78 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                     )}
                     <tr>
                       <td className="py-1 font-bold">Cash and Cash Equivalents, January 1</td>
-                      {orderedColumns.map(({ colKey }) => (
-                        <td key={colKey} className="py-1 px-4 text-right font-bold tabular-nums">
-                          {formatFSNumber(cashFlowsSummaryByColKey[colKey].january1Cash)}
-                        </td>
-                      ))}
+                      {orderedColumns.map(({ target, colKey }) => {
+                        const jan1Val = cashFlowsSummaryByColKey[colKey].january1Cash;
+                        const canEncode2024 =
+                          target.targetYear === '2024' && Boolean(onUpdateBegCash2024);
+
+                        return (
+                          <td key={colKey} className="py-1 px-4 text-right font-bold tabular-nums">
+                            {canEncode2024 && isEditingJan1_2024 ? (
+                              <div className="inline-flex items-center justify-end gap-1 no-print font-sans">
+                                <input
+                                  type="text"
+                                  value={jan1_2024Input}
+                                  onChange={(e) => setJan1_2024Input(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      onUpdateBegCash2024?.(parseNumberInput(jan1_2024Input));
+                                      setIsEditingJan1_2024(false);
+                                    } else if (e.key === 'Escape') {
+                                      setIsEditingJan1_2024(false);
+                                    }
+                                  }}
+                                  placeholder="0.00"
+                                  autoFocus
+                                  className="w-32 px-2 py-0.5 text-right text-sm font-mono font-bold bg-white text-black border border-sky-500 rounded focus:outline-none focus:ring-2 focus:ring-sky-400"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateBegCash2024?.(parseNumberInput(jan1_2024Input));
+                                    setIsEditingJan1_2024(false);
+                                  }}
+                                  title="Apply Jan 1, 2024 Beginning Cash"
+                                  className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingJan1_2024(false)}
+                                  title="Cancel"
+                                  className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <span>{formatFSNumber(jan1Val)}</span>
+                                {canEncode2024 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setJan1_2024Input(jan1Val !== 0 ? String(jan1Val) : '');
+                                      setIsEditingJan1_2024(true);
+                                    }}
+                                    title={
+                                      jan1Val === 0
+                                        ? 'Encode FY 2024 Beginning Cash (Jan 1)'
+                                        : 'Edit FY 2024 Beginning Cash (Jan 1)'
+                                    }
+                                    className="no-print font-sans inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-bold rounded border border-sky-400/70 bg-sky-50 hover:bg-sky-100 text-sky-800 cursor-pointer transition-colors"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                    <span>{jan1Val === 0 ? 'Encode' : 'Edit'}</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                     <tr>
                       <td className="pt-1.5 pb-3 font-bold uppercase">
@@ -1463,11 +1707,78 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
               <tbody>
                 <tr id="draft-na-beginning">
                   <td className="pt-4 pb-1 font-bold">Balance at January 1</td>
-                  {orderedColumns.map(({ colKey }) => (
-                    <td key={colKey} className="pt-4 pb-1 px-4 text-right font-bold tabular-nums">
-                      {formatFSNumber(netAssetsSummaryByColKey[colKey].january1Balance)}
-                    </td>
-                  ))}
+                  {orderedColumns.map(({ target, colKey }) => {
+                    const jan1Val = netAssetsSummaryByColKey[colKey].january1Balance;
+                    const canEncode2024 =
+                      target.targetYear === '2024' && Boolean(onUpdateBegNetAssets2024);
+
+                    return (
+                      <td key={colKey} className="pt-4 pb-1 px-4 text-right font-bold tabular-nums">
+                        {canEncode2024 && isEditingNaJan1_2024 ? (
+                          <div className="inline-flex items-center justify-end gap-1 no-print font-sans">
+                            <input
+                              type="text"
+                              value={naJan1_2024Input}
+                              onChange={(e) => setNaJan1_2024Input(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  onUpdateBegNetAssets2024?.(parseNumberInput(naJan1_2024Input));
+                                  setIsEditingNaJan1_2024(false);
+                                } else if (e.key === 'Escape') {
+                                  setIsEditingNaJan1_2024(false);
+                                }
+                              }}
+                              placeholder="0.00"
+                              autoFocus
+                              className="w-32 px-2 py-0.5 text-right text-sm font-mono font-bold bg-white text-black border border-sky-500 rounded focus:outline-none focus:ring-2 focus:ring-sky-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateBegNetAssets2024?.(parseNumberInput(naJan1_2024Input));
+                                setIsEditingNaJan1_2024(false);
+                              }}
+                              title="Apply Jan 1, 2024 Beginning Balance"
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingNaJan1_2024(false)}
+                              title="Cancel"
+                              className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <span>{formatFSNumber(jan1Val)}</span>
+                            {canEncode2024 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNaJan1_2024Input(jan1Val !== 0 ? String(jan1Val) : '');
+                                  setIsEditingNaJan1_2024(true);
+                                }}
+                                title={
+                                  jan1Val === 0
+                                    ? 'Encode FY 2024 Beginning Balance (Jan 1)'
+                                    : 'Edit FY 2024 Beginning Balance (Jan 1)'
+                                }
+                                className="no-print font-sans inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-bold rounded border border-sky-400/70 bg-sky-50 hover:bg-sky-100 text-sky-800 cursor-pointer transition-colors"
+                              >
+                                <Pencil className="w-2.5 h-2.5" />
+                                <span>{jan1Val === 0 ? 'Encode' : 'Edit'}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
                 <tr>
                   <td colSpan={detailedColSpan} className="pt-2 pb-1 pl-6 font-bold">
@@ -1511,7 +1822,12 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
                 </tr>
 
                 <tr id="draft-na-changes">
-                  <td colSpan={detailedColSpan} className="pt-2 pb-1 font-bold">
+                  <td colSpan={detailedColSpan} className="pt-2 pb-0.5 font-bold">
+                    Add/(Deduct):
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={detailedColSpan} className="pt-0.5 pb-1 font-bold">
                     Changes in Net Assets/Equity for the Calendar Year
                   </td>
                 </tr>

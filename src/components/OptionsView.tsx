@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
+import { FinancialStatementType } from './FinancialStatementSidebar';
 import { DataBankView } from './DataBankView';
 import { DivisionManager } from './DivisionManager';
 import { LineItemManager } from './LineItemManager';
@@ -39,6 +40,8 @@ interface OptionsViewProps {
     toDivId: string,
     mode: 'move' | 'copy'
   ) => void;
+  selectedStatement?: FinancialStatementType;
+  onSelectStatement?: (stmt: FinancialStatementType) => void;
 }
 
 export const OptionsView: React.FC<OptionsViewProps> = ({
@@ -58,6 +61,8 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
   onSaveAmount,
   onResetBenchmark,
   onTransferDivisionData,
+  selectedStatement,
+  onSelectStatement,
 }) => {
   const [subTab, setSubTab] = useState<OptionsSubTab>(initialSubTab);
 
@@ -215,6 +220,8 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             onUpdateLineItem={onUpdateLineItem}
             onDeleteLineItem={onDeleteLineItem}
             onResetDefaultItems={onResetLineItems}
+            selectedStatement={selectedStatement}
+            onSelectStatement={onSelectStatement}
           />
         )}
 

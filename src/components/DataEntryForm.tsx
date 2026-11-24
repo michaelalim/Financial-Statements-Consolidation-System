@@ -183,6 +183,8 @@ interface DataEntryFormProps {
   onNavigateToViewFS: () => void;
   onAddLineItemPrompt: (name: string, group: string) => void;
   onDeleteLineItemPrompt: (item: LineItemDefinition) => void;
+  selectedStatement?: FinancialStatementType;
+  onSelectStatement?: (stmt: FinancialStatementType) => void;
 }
 
 export const DataEntryForm: React.FC<DataEntryFormProps> = ({
@@ -198,9 +200,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   onNavigateToViewFS,
   onAddLineItemPrompt,
   onDeleteLineItemPrompt,
+  selectedStatement: controlledStatement,
+  onSelectStatement,
 }) => {
-  // Financial Statement selection (Financial Position active, others locked)
-  const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>('position');
+  // Financial Statement selection (synced across views when controlled)
+  const [internalStatement, setInternalStatement] = useState<FinancialStatementType>('position');
+  const selectedStatement = controlledStatement ?? internalStatement;
+  const setSelectedStatement = onSelectStatement ?? setInternalStatement;
   const [lockedStatementModal, setLockedStatementModal] = useState<{ title: string; message: string } | null>(null);
   
   // Default: Remove balances that are zero balance as requested!
@@ -291,13 +297,19 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   }, [lineItems, selectedStatement]);
 
   const NON_ENCODABLE_CASH_FLOW_IDS = useMemo(
-    () => new Set(['cf-sum-beg-cash', 'cf-sum-end-cash', 'cf-sum-net-inc-dec']),
-    []
+    () =>
+      selectedYear === '2024'
+        ? new Set(['cf-sum-end-cash', 'cf-sum-net-inc-dec'])
+        : new Set(['cf-sum-beg-cash', 'cf-sum-end-cash', 'cf-sum-net-inc-dec']),
+    [selectedYear]
   );
 
   const NON_ENCODABLE_NET_ASSETS_IDS = useMemo(
-    () => new Set(['na-beg-balance', 'na-restated-balance', 'na-end-balance']),
-    []
+    () =>
+      selectedYear === '2024'
+        ? new Set(['na-restated-balance', 'na-end-balance'])
+        : new Set(['na-beg-balance', 'na-restated-balance', 'na-end-balance']),
+    [selectedYear]
   );
 
   const NON_ENCODABLE_SUMMARY_IDS = useMemo(
@@ -308,6 +320,22 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   const encodableStatementLineItems = useMemo(() => {
     return activeStatementLineItems.filter((item) => !NON_ENCODABLE_SUMMARY_IDS.has(item.id));
   }, [activeStatementLineItems, NON_ENCODABLE_SUMMARY_IDS]);
+
+  // Excel upload may inspect comparative FY 2024 columns even while active workspace year is FY 2025+,
+  // so keep cf-sum-beg-cash and na-beg-balance available for Excel mapping & matching.
+  const excelImportEncodableItems = useMemo(() => {
+    if (selectedStatement === 'cash_flows') {
+      return activeStatementLineItems.filter(
+        (item) => item.id !== 'cf-sum-end-cash' && item.id !== 'cf-sum-net-inc-dec'
+      );
+    }
+    if (selectedStatement === 'net_assets') {
+      return activeStatementLineItems.filter(
+        (item) => item.id !== 'na-restated-balance' && item.id !== 'na-end-balance'
+      );
+    }
+    return encodableStatementLineItems;
+  }, [selectedStatement, activeStatementLineItems, encodableStatementLineItems]);
 
   const sameNameVariantsByNormName = useMemo(() => {
     const byName = new Map<string, LineItemDefinition[]>();
@@ -915,11 +943,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="min-h-[42px] text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 px-4 py-2 rounded-xl border-2 border-th-primary dark:border-th-border-strong transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
-              title="Upload any financial statement Excel (.xlsx, .xls) or CSV file with Year headers (e.g. 2025, 2024) and line items before amounts"
+              className="min-h-[42px] text-sm font-bold text-th-excel-fg bg-th-excel hover:bg-th-excel-hover px-4 py-2 rounded-xl border-2 border-th-excel-border transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+              title="Upload any financial statement Excel (.xlsx, .xls) file with Year headers (e.g. 2025, 2024) and line items before amounts"
             >
               <Upload className="w-4 h-4 shrink-0" />
-              <span>Upload Excel / CSV</span>
+              <span>Upload Excel</span>
             </button>
             <button
               type="button"
@@ -1134,7 +1162,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <span className="text-sm font-bold text-th-text mr-1 whitespace-nowrap">
               Frequent Accounts:
             </span>
-            {activeEncodingMeta.frequentAccounts.map((preset) => (
+            {(selectedStatement === 'cash_flows' && selectedYear === '2024'
+              ? [
+                  { id: 'cf-sum-beg-cash', label: 'Cash & Eq., Jan 1 (2024)' },
+                  ...activeEncodingMeta.frequentAccounts,
+                ]
+              : activeEncodingMeta.frequentAccounts
+            ).map((preset) => (
               <button
                 key={preset.id}
                 type="button"
@@ -1972,7 +2006,13 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 <tr>
                   {isSelectMultipleMode && (() => {
                     const selectableLedgerIds = ledgerAccountsList
-                      .filter((i) => !NON_ENCODABLE_SUMMARY_IDS.has(i.id))
+                      .filter((i) => {
+                        const isEditable2024 =
+                          selectedYear === '2024' &&
+                          ((selectedStatement === 'cash_flows' && i.id === 'cf-sum-beg-cash') ||
+                            (selectedStatement === 'net_assets' && i.id === 'na-beg-balance'));
+                        return !NON_ENCODABLE_SUMMARY_IDS.has(i.id) || isEditable2024;
+                      })
                       .map((i) => i.id);
                     const allSelectableSelected =
                       selectableLedgerIds.length > 0 &&
@@ -2514,7 +2554,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         divisionName={currentDivision?.name || 'Selected Division'}
         selectedYear={selectedYear}
         dataStore={dataStore}
-        encodableItems={encodableStatementLineItems}
+        encodableItems={excelImportEncodableItems}
         onClose={() =>
           setPositionImportModal({ isOpen: false, workbook: null, fileName: '' })
         }

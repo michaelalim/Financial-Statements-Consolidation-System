@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { LineItemDefinition, SubsectionType } from '../types/fs';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { Plus, Trash2, Search, SlidersHorizontal, RotateCcw, Pencil, X, Check } from 'lucide-react';
@@ -11,6 +11,8 @@ interface LineItemManagerProps {
   onUpdateLineItem: (id: string, updates: Omit<LineItemDefinition, 'id' | 'order'>) => void;
   onDeleteLineItem: (id: string) => void;
   onResetDefaultItems: () => void;
+  selectedStatement?: FinancialStatementType;
+  onSelectStatement?: (stmt: FinancialStatementType) => void;
 }
 
 export const LineItemManager: React.FC<LineItemManagerProps> = ({
@@ -19,13 +21,19 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   onUpdateLineItem,
   onDeleteLineItem,
   onResetDefaultItems,
+  selectedStatement: controlledStatement,
+  onSelectStatement,
 }) => {
-  const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>('position');
+  const [internalStatement, setInternalStatement] = useState<FinancialStatementType>('position');
+  const selectedStatement = controlledStatement ?? internalStatement;
+  const setSelectedStatement = onSelectStatement ?? setInternalStatement;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubsectionFilter, setSelectedSubsectionFilter] = useState<string>('all');
+  const [uacsFilter, setUacsFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
 
   // Form states for adding new line item
   const [name, setName] = useState('');
+  const [uacs, setUacs] = useState('');
   const [subsection, setSubsection] = useState<SubsectionType>('Current Assets');
   const [isCustomSubsection, setIsCustomSubsection] = useState(false);
   const [customSubsection, setCustomSubsection] = useState('');
@@ -40,9 +48,14 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   const [itemToDelete, setItemToDelete] = useState<LineItemDefinition | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
+  // Inline quick UACS editing state
+  const [inlineUacsItemId, setInlineUacsItemId] = useState<string | null>(null);
+  const [inlineUacsValue, setInlineUacsValue] = useState('');
+
   // Edit Line Item modal state
   const [editingItem, setEditingItem] = useState<LineItemDefinition | null>(null);
   const [editName, setEditName] = useState('');
+  const [editUacs, setEditUacs] = useState('');
   const [editSubsection, setEditSubsection] = useState<SubsectionType>('Current Assets');
   const [editIsCustomSubsection, setEditIsCustomSubsection] = useState(false);
   const [editCustomSubsection, setEditCustomSubsection] = useState('');
@@ -237,27 +250,42 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     return Array.from(set);
   }, [editActiveSubsection, editActiveGroup, statementLineItems]);
 
+  const uacsAssignedCount = useMemo(
+    () => statementLineItems.filter((item) => Boolean(item.uacs && item.uacs.trim())).length,
+    [statementLineItems]
+  );
+
   const filteredItems = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    const qAlpha = q.replace(/[^a-z0-9]/g, '');
     return statementLineItems.filter((item) => {
+      const uacsLower = (item.uacs || '').toLowerCase();
+      const uacsAlpha = uacsLower.replace(/[^a-z0-9]/g, '');
       const matchesSearch =
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.group.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.subgroup && item.subgroup.toLowerCase().includes(searchQuery.toLowerCase()));
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        item.group.toLowerCase().includes(q) ||
+        (item.subgroup && item.subgroup.toLowerCase().includes(q)) ||
+        (uacsLower && (uacsLower.includes(q) || (qAlpha !== '' && uacsAlpha.includes(qAlpha))));
       const matchesFilter =
         selectedSubsectionFilter === 'all' || item.subsection === selectedSubsectionFilter;
-      return matchesSearch && matchesFilter;
+      const hasUacs = Boolean(item.uacs && item.uacs.trim());
+      const matchesUacsFilter =
+        uacsFilter === 'all' ||
+        (uacsFilter === 'assigned' && hasUacs) ||
+        (uacsFilter === 'unassigned' && !hasUacs);
+      return matchesSearch && matchesFilter && matchesUacsFilter;
     });
-  }, [statementLineItems, searchQuery, selectedSubsectionFilter]);
+  }, [statementLineItems, searchQuery, selectedSubsectionFilter, uacsFilter]);
 
-  const handleSelectStatement = (stmt: FinancialStatementType) => {
-    setSelectedStatement(stmt);
+  useEffect(() => {
     setSelectedSubsectionFilter('all');
     const defaultSub: SubsectionType =
-      stmt === 'cash_flows'
+      selectedStatement === 'cash_flows'
         ? 'Cash Flows from Operating Activities'
-        : stmt === 'performance'
+        : selectedStatement === 'performance'
         ? 'Revenue'
-        : stmt === 'net_assets'
+        : selectedStatement === 'net_assets'
         ? 'Changes in Net Assets/Equity'
         : 'Current Assets';
     setSubsection(defaultSub);
@@ -266,6 +294,10 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     setGroup(groupSuggestionsBySubsection[defaultSub]?.[0] || 'General');
     setIsCustomGroup(false);
     setCustomGroup('');
+  }, [selectedStatement]);
+
+  const handleSelectStatement = (stmt: FinancialStatementType) => {
+    setSelectedStatement(stmt);
   };
 
   const handleInitiateAdd = (e: React.FormEvent) => {
@@ -303,6 +335,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
 
     onAddLineItem({
       name: name.trim(),
+      uacs: uacs.trim() || undefined,
       statementType: selectedStatement,
       section,
       subsection: finalSubsection,
@@ -313,6 +346,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     });
 
     setName('');
+    setUacs('');
     setSubgroup('');
     setIsContra(false);
     setIsCustomSubsection(false);
@@ -327,6 +361,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
   const openEditModal = (item: LineItemDefinition) => {
     setEditingItem(item);
     setEditName(item.name);
+    setEditUacs(item.uacs || '');
     const inSubOptions = subsectionOptions.includes(item.subsection);
     if (inSubOptions) {
       setEditSubsection(item.subsection);
@@ -356,6 +391,24 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     setEditIsContra(Boolean(item.isContra));
   };
 
+  const handleSaveInlineUacs = (item: LineItemDefinition) => {
+    const trimmedUacs = inlineUacsValue.trim() || undefined;
+    onUpdateLineItem(item.id, {
+      name: item.name,
+      uacs: trimmedUacs,
+      statementType: item.statementType,
+      section: item.section,
+      subsection: item.subsection,
+      group: item.group,
+      subgroup: item.subgroup,
+      isContra: item.isContra,
+      parentItemId: item.parentItemId,
+      isCustom: item.isCustom,
+    });
+    setInlineUacsItemId(null);
+    setInlineUacsValue('');
+  };
+
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -374,12 +427,14 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
 
     onUpdateLineItem(editingItem.id, {
       name: trimmedName,
+      uacs: editUacs.trim() || undefined,
       statementType: editingItem.statementType,
       section,
       subsection: finalSubsection,
       group: finalGroup,
       subgroup: editSubgroup.trim() || undefined,
       isContra: editIsContra,
+      parentItemId: editingItem.parentItemId,
       isCustom: editingItem.isCustom,
     });
 
@@ -417,7 +472,17 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         </button>
       </div>
 
-      {/* Add Line Item Form Card */}
+      {/* Add Line Item Form Card (or fixed-structure notice for Statement of Changes in Net Assets/Equity) */}
+      {selectedStatement === 'net_assets' ? (
+        <div className="bg-th-surface border border-th-border rounded-xl p-5 shadow-xs transition-colors">
+          <h3 className="text-base font-bold text-th-text mb-1">
+            Fixed Canonical Structure — Statement of Changes in Net Assets/Equity
+          </h3>
+          <p className="text-sm text-th-muted leading-relaxed">
+            This statement uses only the standard Government Equity line items (Balance at January 1, Changes in Accounting Policy, Prior period errors, Other Adjustments, Restated Balance, Surplus/(Deficit) for the Period, Adjustment of net revenue recognized directly in net assets/equity, Others, and Balance at December 31). Itemized breakdowns in uploaded Excel files are automatically summed into their parent line item. You may still assign or edit UACS codes below.
+          </p>
+        </div>
+      ) : (
       <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
         <h3 className="text-lg font-bold text-th-text mb-4 flex items-center gap-2">
           <Plus className="w-5 h-5 text-th-muted" />
@@ -436,6 +501,19 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter line item name"
                 className="w-full px-3.5 py-2.5 text-sm bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-th-text mb-1.5">
+                UACS Code (Optional)
+              </label>
+              <input
+                type="text"
+                value={uacs}
+                onChange={(e) => setUacs(e.target.value)}
+                placeholder="Unified Account Code Structure (e.g. 10101010)"
+                className="w-full px-3.5 py-2.5 text-sm font-mono bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
               />
             </div>
 
@@ -585,26 +663,27 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
           </div>
         </form>
       </div>
+      )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-th-surface border border-th-border rounded-xl p-4 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+      <div className="bg-th-surface border border-th-border rounded-xl p-4 shadow-xs flex flex-col lg:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search line items by name or group..."
+            placeholder="Search line items by name, UACS code, or group..."
             className="w-full pl-10 pr-4 py-2.5 text-sm bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
           <SlidersHorizontal className="w-4 h-4 text-th-muted shrink-0" />
           <select
             value={selectedSubsectionFilter}
             onChange={(e) => setSelectedSubsectionFilter(e.target.value)}
-            className="w-full sm:w-auto px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+            className="flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
           >
             <option value="all">All Classifications ({statementLineItems.length})</option>
             {subsectionOptions.map((sub) => (
@@ -613,14 +692,27 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
               </option>
             ))}
           </select>
+
+          <select
+            value={uacsFilter}
+            onChange={(e) => setUacsFilter(e.target.value as 'all' | 'assigned' | 'unassigned')}
+            aria-label="Filter by UACS assignment"
+            className="flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+          >
+            <option value="all">All UACS ({uacsAssignedCount}/{statementLineItems.length})</option>
+            <option value="assigned">With UACS ({uacsAssignedCount})</option>
+            <option value="unassigned">
+              No UACS Yet ({statementLineItems.length - uacsAssignedCount})
+            </option>
+          </select>
         </div>
       </div>
 
       {/* Items List Table */}
       <div className="bg-th-surface border border-th-border rounded-xl overflow-hidden shadow-xs">
         <div className="px-6 py-3.5 border-b border-th-border bg-th-table-head flex items-center justify-between text-xs font-bold text-th-table-head-fg uppercase tracking-wider">
-          <span>Account Title / Line Item</span>
-          <span>Classification &amp; Group</span>
+          <span>Account Title / Line Item &amp; UACS</span>
+          <span>Classification &amp; Actions</span>
         </div>
 
         <div className="divide-y divide-th-border max-h-[600px] overflow-y-auto">
@@ -629,56 +721,129 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
               No line items match your search.
             </div>
           ) : (
-            filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className="group px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-th-subtle transition-colors text-sm"
-              >
-                <div className="pr-4 min-w-0">
-                  <div className="font-medium text-th-text flex items-center gap-2 flex-wrap">
-                    <span className="text-base font-semibold">{item.name}</span>
-                    {item.isContra && (
-                      <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
-                        Contra Account
+            filteredItems.map((item) => {
+              const isEditingInlineUacs = inlineUacsItemId === item.id;
+              return (
+                <div
+                  key={item.id}
+                  className="group px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-th-subtle transition-colors text-sm"
+                >
+                  <div className="pr-4 min-w-0 flex-1">
+                    <div className="font-medium text-th-text flex items-center gap-2 flex-wrap">
+                      <span className="text-base font-semibold">{item.name}</span>
+                      {item.uacs && !isEditingInlineUacs && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInlineUacsItemId(item.id);
+                            setInlineUacsValue(item.uacs || '');
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-mono font-bold text-th-accent-text bg-th-subtle hover:bg-th-subtle-hover border border-th-border-strong px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                          title="Click to edit UACS code"
+                        >
+                          <span>UACS {item.uacs}</span>
+                        </button>
+                      )}
+                      {item.isContra && (
+                        <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded font-semibold">
+                          Contra Account
+                        </span>
+                      )}
+                      {item.isCustom && (
+                        <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2 py-0.5 rounded font-semibold">
+                          Custom
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-th-muted mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span>
+                        {item.group} {item.subgroup ? `· ${item.subgroup}` : ''}
                       </span>
-                    )}
-                    {item.isCustom && (
-                      <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2 py-0.5 rounded font-semibold">
-                        Custom
-                      </span>
+                      {!item.uacs && !isEditingInlineUacs && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInlineUacsItemId(item.id);
+                            setInlineUacsValue('');
+                          }}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-th-muted hover:text-th-accent-text underline decoration-dotted underline-offset-2 cursor-pointer opacity-85 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add UACS</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditingInlineUacs && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={inlineUacsValue}
+                          onChange={(e) => setInlineUacsValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveInlineUacs(item);
+                            } else if (e.key === 'Escape') {
+                              setInlineUacsItemId(null);
+                              setInlineUacsValue('');
+                            }
+                          }}
+                          placeholder="Enter UACS (e.g. 10101010)"
+                          autoFocus
+                          className="w-56 px-2.5 py-1.5 text-xs sm:text-sm font-mono font-semibold bg-th-input border-2 border-th-accent text-th-text rounded-lg focus:outline-hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveInlineUacs(item)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-th-accent text-th-accent-fg hover:bg-th-accent-hover rounded-lg cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save UACS</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInlineUacsItemId(null);
+                            setInlineUacsValue('');
+                          }}
+                          className="px-2.5 py-1.5 text-xs font-semibold bg-th-surface text-th-text border border-th-border-strong hover:bg-th-subtle rounded-lg cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <div className="text-xs text-th-muted mt-0.5">
-                    {item.group} {item.subgroup ? `· ${item.subgroup}` : ''}
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(item)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] text-sm font-bold text-th-text bg-th-surface hover:bg-th-primary hover:text-th-primary-fg border-2 border-th-border-strong rounded-xl shadow-2xs transition-all cursor-pointer opacity-80 sm:opacity-35 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                      title={`Modify line item: ${item.name}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                      <span>Modify</span>
+                    </button>
+
+                    <span className="text-sm font-medium text-th-muted hidden sm:inline">
+                      {item.subsection}
+                    </span>
+                    {!(selectedStatement === 'net_assets' && !item.isCustom) && (
+                      <button
+                        type="button"
+                        onClick={() => setItemToDelete(item)}
+                        className="min-w-[40px] min-h-[40px] flex items-center justify-center text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors cursor-pointer"
+                        title={`Delete line item: ${item.name}`}
+                        aria-label={`Delete line item: ${item.name}`}
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-3 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => openEditModal(item)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] text-sm font-bold text-th-text bg-th-surface hover:bg-th-primary hover:text-th-primary-fg border-2 border-th-border-strong rounded-xl shadow-2xs transition-all cursor-pointer opacity-80 sm:opacity-35 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                    title={`Modify line item: ${item.name}`}
-                  >
-                    <Pencil className="w-4 h-4" />
-                    <span>Modify</span>
-                  </button>
-
-                  <span className="text-sm font-medium text-th-muted hidden sm:inline">
-                    {item.subsection}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setItemToDelete(item)}
-                    className="min-w-[40px] min-h-[40px] flex items-center justify-center text-th-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors cursor-pointer"
-                    title={`Delete line item: ${item.name}`}
-                    aria-label={`Delete line item: ${item.name}`}
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -749,18 +914,32 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             </div>
 
             <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-th-text mb-1.5">
-                  Line Item Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="Enter line item name"
-                  className="w-full px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-th-text mb-1.5">
+                    Line Item Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Enter line item name"
+                    className="w-full px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-th-text mb-1.5">
+                    UACS Code (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editUacs}
+                    onChange={(e) => setEditUacs(e.target.value)}
+                    placeholder="e.g. 10101010"
+                    className="w-full px-3.5 py-2.5 text-sm font-mono font-semibold bg-th-input border border-th-border-strong rounded-lg text-th-text focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

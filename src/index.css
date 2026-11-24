@@ -24,6 +24,10 @@
   --color-th-hero-from: var(--t-hero-from);
   --color-th-hero-via: var(--t-hero-via);
   --color-th-hero-to: var(--t-hero-to);
+  --color-th-excel: var(--t-excel);
+  --color-th-excel-hover: var(--t-excel-hover);
+  --color-th-excel-fg: var(--t-excel-fg);
+  --color-th-excel-border: var(--t-excel-border);
 }
 
 :root,
@@ -53,6 +57,10 @@
   --t-hero-from: #f4f6fc;
   --t-hero-via: #ffffff;
   --t-hero-to: #f6f8fd;
+  --t-excel: #166549;
+  --t-excel-hover: #11523b;
+  --t-excel-fg: #ffffff;
+  --t-excel-border: #11523b;
 }
 
 .dark,
@@ -82,6 +90,10 @@
   --t-hero-from: #0f1b3d;
   --t-hero-via: #162552;
   --t-hero-to: #0f1b3d;
+  --t-excel: #1d7a57;
+  --t-excel-hover: #249168;
+  --t-excel-fg: #ffffff;
+  --t-excel-border: #35a87d;
 }
 
 /* Oxford Coral (#14213D, #F4EDE0, #FF6B5B) */
@@ -108,6 +120,10 @@
   --t-hero-from: #F5F0E6;
   --t-hero-via: #FBF8F2;
   --t-hero-to: #F4EDE0;
+  --t-excel: #1f5e42;
+  --t-excel-hover: #184b34;
+  --t-excel-fg: #F4EDE0;
+  --t-excel-border: #184b34;
 }
 
 .dark[data-theme="oxford-coral"] {
@@ -133,6 +149,10 @@
   --t-hero-from: #14213D;
   --t-hero-via: #1C2D52;
   --t-hero-to: #14213D;
+  --t-excel: #226b4b;
+  --t-excel-hover: #2a805b;
+  --t-excel-fg: #F4EDE0;
+  --t-excel-border: #3c946e;
 }
 
 /* Forest Violet (#1F3D2B, #E8DCC4, #8B5CF6) */
@@ -159,6 +179,10 @@
   --t-hero-from: #EFE8D8;
   --t-hero-via: #F5EFE2;
   --t-hero-to: #E8DCC4;
+  --t-excel: #2d6a45;
+  --t-excel-hover: #245738;
+  --t-excel-fg: #F5EFE2;
+  --t-excel-border: #1f4a30;
 }
 
 .dark[data-theme="forest-violet"] {
@@ -184,6 +208,10 @@
   --t-hero-from: #1F3D2B;
   --t-hero-via: #294E38;
   --t-hero-to: #1F3D2B;
+  --t-excel: #387d54;
+  --t-excel-hover: #449464;
+  --t-excel-fg: #FAF6ED;
+  --t-excel-border: #5eb07f;
 }
 
 /* Espresso Sky (#3B2418, #F2E8DA, #8EC5FF) */
@@ -210,6 +238,10 @@
   --t-hero-from: #F3EBDF;
   --t-hero-via: #FAF6EF;
   --t-hero-to: #F2E8DA;
+  --t-excel: #355e3b;
+  --t-excel-hover: #2a4c2f;
+  --t-excel-fg: #FAF6EF;
+  --t-excel-border: #27472c;
 }
 
 .dark[data-theme="espresso-sky"] {
@@ -235,6 +267,10 @@
   --t-hero-from: #3B2418;
   --t-hero-via: #4D3122;
   --t-hero-to: #3B2418;
+  --t-excel: #43754a;
+  --t-excel-hover: #508a58;
+  --t-excel-fg: #FAF6EF;
+  --t-excel-border: #66a36e;
 }
 
 /* Charcoal Gold (#2B2D31, #D9DADC, #FFC93C) */
@@ -261,6 +297,10 @@
   --t-hero-from: #EAECEF;
   --t-hero-via: #F2F3F5;
   --t-hero-to: #D9DADC;
+  --t-excel: #235c44;
+  --t-excel-hover: #1b4a36;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #1b4a36;
 }
 
 .dark[data-theme="charcoal-gold"] {
@@ -286,6 +326,10 @@
   --t-hero-from: #2B2D31;
   --t-hero-via: #383A40;
   --t-hero-to: #2B2D31;
+  --t-excel: #2a7052;
+  --t-excel-hover: #338562;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #479c77;
 }
 
 /* Sage Linen (#3F5E52, #F6F4EE, #C97A63) */
@@ -312,6 +356,10 @@
   --t-hero-from: #F2EFE6;
   --t-hero-via: #FCFBF8;
   --t-hero-to: #F6F4EE;
+  --t-excel: #2c6648;
+  --t-excel-hover: #23523a;
+  --t-excel-fg: #FCFBF8;
+  --t-excel-border: #1f4a34;
 }
 
 .dark[data-theme="sage-linen"] {
@@ -337,6 +385,10 @@
   --t-hero-from: #22322B;
   --t-hero-via: #2B3F36;
   --t-hero-to: #22322B;
+  --t-excel: #377a58;
+  --t-excel-hover: #439169;
+  --t-excel-fg: #F4F1E8;
+  --t-excel-border: #58a87f;
 }
 
 /* Slate Breeze (#334E68, #F4F7F9, #D99B43) */
@@ -363,6 +415,10 @@
   --t-hero-from: #EFF3F7;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F4F7F9;
+  --t-excel: #1e6452;
+  --t-excel-hover: #175041;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #175041;
 }
 
 .dark[data-theme="slate-breeze"] {
@@ -388,6 +444,10 @@
   --t-hero-from: #1F3040;
   --t-hero-via: #283D52;
   --t-hero-to: #1F3040;
+  --t-excel: #267863;
+  --t-excel-hover: #2f8f76;
+  --t-excel-fg: #F4F7FA;
+  --t-excel-border: #43a88e;
 }
 
 /* Plum Parchment (#4A3548, #F7F3F5, #4F7D79) */
@@ -414,6 +474,10 @@
   --t-hero-from: #F2ECF0;
   --t-hero-via: #FDFBFC;
   --t-hero-to: #F7F3F5;
+  --t-excel: #2f6653;
+  --t-excel-hover: #255242;
+  --t-excel-fg: #FDFBFC;
+  --t-excel-border: #234d3e;
 }
 
 .dark[data-theme="plum-parchment"] {
@@ -439,6 +503,10 @@
   --t-hero-from: #312230;
   --t-hero-via: #3E2C3D;
   --t-hero-to: #312230;
+  --t-excel: #3a7a64;
+  --t-excel-hover: #469177;
+  --t-excel-fg: #FAF7F9;
+  --t-excel-border: #5ca88e;
 }
 
 /* Soft Stone Monochromatic (#4A4742, #F5F4F0, #736E66) */
@@ -465,6 +533,10 @@
   --t-hero-from: #EFEDE8;
   --t-hero-via: #FAF9F6;
   --t-hero-to: #F5F4F0;
+  --t-excel: #3c5e47;
+  --t-excel-hover: #304c39;
+  --t-excel-fg: #FAF9F6;
+  --t-excel-border: #2d4735;
 }
 
 .dark[data-theme="soft-stone"] {
@@ -490,6 +562,10 @@
   --t-hero-from: #2B2926;
   --t-hero-via: #373430;
   --t-hero-to: #2B2926;
+  --t-excel: #497356;
+  --t-excel-hover: #578766;
+  --t-excel-fg: #F5F3EF;
+  --t-excel-border: #6d9c7c;
 }
 
 /* Muted Social — Muted Facebook (#344E7A, #F0F2F5, #446FA8) */
@@ -516,6 +592,10 @@
   --t-hero-from: #E8EDF4;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F0F2F5;
+  --t-excel: #1f6b4b;
+  --t-excel-hover: #18573c;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #18573c;
 }
 
 .dark[data-theme="muted-social"] {
@@ -541,6 +621,10 @@
   --t-hero-from: #22252C;
   --t-hero-via: #2D313B;
   --t-hero-to: #22252C;
+  --t-excel: #277d59;
+  --t-excel-hover: #30946a;
+  --t-excel-fg: #F0F2F5;
+  --t-excel-border: #45ab80;
 }
 
 /* X / Twitter (#0F1419, #F7F9F9, #1D9BF0) */
@@ -567,6 +651,10 @@
   --t-hero-from: #EFF3F4;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F7F9F9;
+  --t-excel: #0d6e46;
+  --t-excel-hover: #095737;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #095737;
 }
 
 .dark[data-theme="x-twitter"] {
@@ -592,6 +680,10 @@
   --t-hero-from: #15181C;
   --t-hero-via: #1E2329;
   --t-hero-to: #15181C;
+  --t-excel: #158053;
+  --t-excel-hover: #1a9662;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #2cb079;
 }
 
 /* Instagram (#5D2E7A, #FAFAFA, #C7246D) */
@@ -618,6 +710,10 @@
   --t-hero-from: #F5EFF9;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #FAFAFA;
+  --t-excel: #176b50;
+  --t-excel-hover: #115740;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #115740;
 }
 
 .dark[data-theme="instagram"] {
@@ -643,6 +739,10 @@
   --t-hero-from: #1F1A24;
   --t-hero-via: #2A2332;
   --t-hero-to: #1F1A24;
+  --t-excel: #1f7d5e;
+  --t-excel-hover: #269470;
+  --t-excel-fg: #F7F4FA;
+  --t-excel-border: #3aad87;
 }
 
 /* Reddit (#1F2C33, #F2F4F5, #D93A00) */
@@ -669,6 +769,10 @@
   --t-hero-from: #ECEFF1;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F2F4F5;
+  --t-excel: #1a6946;
+  --t-excel-hover: #145438;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #145438;
 }
 
 .dark[data-theme="reddit"] {
@@ -694,6 +798,10 @@
   --t-hero-from: #161F24;
   --t-hero-via: #1E2A30;
   --t-hero-to: #161F24;
+  --t-excel: #227d55;
+  --t-excel-hover: #299465;
+  --t-excel-fg: #EEF2F5;
+  --t-excel-border: #3dad7c;
 }
 
 /* YouTube (#212121, #F9F9F9, #CC0000) */
@@ -720,6 +828,10 @@
   --t-hero-from: #F2F2F2;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F9F9F9;
+  --t-excel: #1b663e;
+  --t-excel-hover: #145231;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #145231;
 }
 
 .dark[data-theme="youtube"] {
@@ -745,6 +857,10 @@
   --t-hero-from: #1A1A1A;
   --t-hero-via: #272727;
   --t-hero-to: #1A1A1A;
+  --t-excel: #237a4c;
+  --t-excel-hover: #2b915b;
+  --t-excel-fg: #F1F1F1;
+  --t-excel-border: #3ea870;
 }
 
 /* Telegram (#1F4568, #EFF5F9, #229ED9) */
@@ -771,6 +887,10 @@
   --t-hero-from: #E8F1F8;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #EFF5F9;
+  --t-excel: #156958;
+  --t-excel-hover: #105446;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #105446;
 }
 
 .dark[data-theme="telegram"] {
@@ -796,6 +916,10 @@
   --t-hero-from: #17212B;
   --t-hero-via: #202B38;
   --t-hero-to: #17212B;
+  --t-excel: #1d7d69;
+  --t-excel-hover: #24947d;
+  --t-excel-fg: #F2F6FA;
+  --t-excel-border: #37ad95;
 }
 
 /* Zoom (#1C2B45, #F4F7FC, #0B5CFF) */
@@ -822,6 +946,10 @@
   --t-hero-from: #EAF0FA;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F4F7FC;
+  --t-excel: #126b4b;
+  --t-excel-hover: #0d573c;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #0d573c;
 }
 
 .dark[data-theme="zoom"] {
@@ -847,6 +975,10 @@
   --t-hero-from: #171E29;
   --t-hero-via: #202938;
   --t-hero-to: #171E29;
+  --t-excel: #197f5b;
+  --t-excel-hover: #20966c;
+  --t-excel-fg: #F0F4FA;
+  --t-excel-border: #34b084;
 }
 
 /* Gmail (#202124, #F6F8FC, #D93025) */
@@ -873,6 +1005,10 @@
   --t-hero-from: #EDF2FA;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F6F8FC;
+  --t-excel: #167033;
+  --t-excel-hover: #115928;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #115928;
 }
 
 .dark[data-theme="gmail"] {
@@ -898,6 +1034,10 @@
   --t-hero-from: #1B1C20;
   --t-hero-via: #25272C;
   --t-hero-to: #1B1C20;
+  --t-excel: #1e8242;
+  --t-excel-hover: #25994f;
+  --t-excel-fg: #F1F3F4;
+  --t-excel-border: #38ad63;
 }
 
 /* Outlook (#0F3B6E, #F3F6FA, #0078D4) */
@@ -924,6 +1064,10 @@
   --t-hero-from: #E8F0F8;
   --t-hero-via: #FFFFFF;
   --t-hero-to: #F3F6FA;
+  --t-excel: #107c41;
+  --t-excel-hover: #0c6132;
+  --t-excel-fg: #FFFFFF;
+  --t-excel-border: #0c6132;
 }
 
 .dark[data-theme="outlook"] {
@@ -949,6 +1093,10 @@
   --t-hero-from: #151F2E;
   --t-hero-via: #1D2A3D;
   --t-hero-to: #151F2E;
+  --t-excel: #18864b;
+  --t-excel-hover: #1f9c58;
+  --t-excel-fg: #F0F4FA;
+  --t-excel-border: #34b36f;
 }
 
 /* ============================================================================

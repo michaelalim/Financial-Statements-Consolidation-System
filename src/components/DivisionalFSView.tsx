@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Division,
   LineItemDefinition,
@@ -9,7 +9,7 @@ import {
 import { calculateReport } from '../utils/calculations';
 import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
-import { formatAccounting } from '../utils/formatters';
+import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { AccountingBalanceCheck } from './AccountingBalanceCheck';
@@ -27,6 +27,8 @@ import {
   ChevronUp,
   Info,
   AlertTriangle,
+  Check,
+  Pencil,
 } from 'lucide-react';
 
 interface DivisionalFSViewProps {
@@ -38,6 +40,9 @@ interface DivisionalFSViewProps {
   onSelectYear: (year: string) => void;
   dataStore: FinancialDataStore;
   aggregationStore?: AggregationMetadataStore;
+  onSaveAmount?: (year: string, divisionId: string, lineItemId: string, amount: number) => void;
+  selectedStatement?: FinancialStatementType;
+  onSelectStatement?: (stmt: FinancialStatementType) => void;
 }
 
 export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
@@ -49,12 +54,23 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
   onSelectYear,
   dataStore,
   aggregationStore,
+  onSaveAmount,
+  selectedStatement: controlledStatement,
+  onSelectStatement,
 }) => {
   // Default: Remove zero balance items as requested
   const [hideZeroRows, setHideZeroRows] = useState(true);
   const [showComparative, setShowComparative] = useState(true);
   const [isCondensed, setIsCondensed] = useState(false);
-  const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>('position');
+  const [internalStatement, setInternalStatement] = useState<FinancialStatementType>('position');
+  const selectedStatement = controlledStatement ?? internalStatement;
+  const setSelectedStatement = onSelectStatement ?? setInternalStatement;
+  const [isEditingJan1_2024, setIsEditingJan1_2024] = useState(false);
+  const [jan1_2024Input, setJan1_2024Input] = useState('');
+
+  useEffect(() => {
+    setIsEditingJan1_2024(false);
+  }, [selectedDivisionId, selectedYear, selectedStatement]);
   const [expandedAggRowIds, setExpandedAggRowIds] = useState<Record<string, boolean>>({});
   const [isAggNoticeExpanded, setIsAggNoticeExpanded] = useState(false);
   const [condensedNotes, setCondensedNotes] = useState<Record<string, string>>(() => {
@@ -450,9 +466,13 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
   const handleExportCSV = () => {
     const stmtTitle =
       selectedStatement === 'cash_flows'
-        ? 'Statement of Cash Flows'
+        ? isCondensed
+          ? 'Condensed Statement of Cash Flows'
+          : 'Detailed Statement of Cash Flows'
         : selectedStatement === 'performance'
-        ? 'Statement of Financial Performance'
+        ? isCondensed
+          ? 'Condensed Statement of Financial Performance'
+          : 'Statement of Financial Performance'
         : selectedStatement === 'net_assets'
         ? 'Statement of Changes in Net Assets/Equity'
         : isCondensed
@@ -475,20 +495,147 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
       ['Account Title', `Amount (${selectedYear})`, ...(showComparative ? [`Amount (${priorYear})`] : [])],
     ];
 
-    statementLineItems.forEach((item) => {
-      const curr = reportCurrent.values[item.id] || 0;
-      const prior = reportPrior.values[item.id] || 0;
-      if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID && curr === 0 && prior === 0) {
-        return;
-      }
-      if (!hideZeroRows || curr !== 0 || prior !== 0) {
+    if (selectedStatement === 'cash_flows' && isCondensed) {
+      const cfActivities: Array<{
+        title: string;
+        sectionKey: 'CASH_OPERATING' | 'CASH_INVESTING' | 'CASH_FINANCING';
+        netLabel: string;
+        getInflow: (s: CashFlowsSummary) => number;
+        getOutflow: (s: CashFlowsSummary) => number;
+        getNet: (s: CashFlowsSummary) => number;
+      }> = [
+        {
+          title: 'Cash Flows from Operating Activities',
+          sectionKey: 'CASH_OPERATING',
+          netLabel: 'Net Cash Provided by (Used in) Operating Activities',
+          getInflow: (s) => s.operatingInflows,
+          getOutflow: (s) => s.operatingOutflows,
+          getNet: (s) => s.netOperating,
+        },
+        {
+          title: 'Cash Flows from Investing Activities',
+          sectionKey: 'CASH_INVESTING',
+          netLabel: 'Net Cash Provided by (Used in) Investing Activities',
+          getInflow: (s) => s.investingInflows,
+          getOutflow: (s) => s.investingOutflows,
+          getNet: (s) => s.netInvesting,
+        },
+        {
+          title: 'Cash Flows from Financing Activities',
+          sectionKey: 'CASH_FINANCING',
+          netLabel: 'Net Cash Provided by (Used in) Financing Activities',
+          getInflow: (s) => s.financingInflows,
+          getOutflow: (s) => s.financingOutflows,
+          getNet: (s) => s.netFinancing,
+        },
+      ];
+
+      const groupByGrp = (items: LineItemDefinition[]) => {
+        const map = new Map<string, LineItemDefinition[]>();
+        items.forEach((it) => {
+          const list = map.get(it.group) || [];
+          list.push(it);
+          map.set(it.group, list);
+        });
+        return Array.from(map.entries());
+      };
+
+      const pushCfRow = (label: string, currVal: number, priorVal: number) => {
         rows.push([
-          `"${item.name}"`,
-          curr.toString(),
-          ...(showComparative ? [prior.toString()] : []),
+          `"${label}"`,
+          currVal.toString(),
+          ...(showComparative ? [priorVal.toString()] : []),
         ]);
+      };
+
+      cfActivities.forEach((act) => {
+        rows.push([`"${act.title}"`]);
+        const sectionItems = statementLineItems.filter((i) => i.section === act.sectionKey);
+        const inflowItems = sectionItems.filter((i) => i.subgroup !== 'Cash Outflows');
+        const outflowItems = sectionItems.filter((i) => i.subgroup === 'Cash Outflows');
+
+        rows.push(['"Cash Inflows"']);
+        groupByGrp(inflowItems).forEach(([grp, grpItems]) => {
+          if (grp === 'Financing Cash Inflows') {
+            grpItems.forEach((item) => {
+              const curr = reportCurrent.values[item.id] || 0;
+              const prior = reportPrior.values[item.id] || 0;
+              if (!hideZeroRows || curr !== 0 || (showComparative && prior !== 0)) {
+                pushCfRow(item.name, curr, prior);
+              }
+            });
+            return;
+          }
+          const hasNonZero = grpItems.some((item) => {
+            const c = reportCurrent.values[item.id] || 0;
+            const p = reportPrior.values[item.id] || 0;
+            return c !== 0 || (showComparative && p !== 0);
+          });
+          if (!hideZeroRows || hasNonZero) {
+            pushCfRow(grp, sumItemsNet(grpItems, reportCurrent), sumItemsNet(grpItems, reportPrior));
+          }
+        });
+        pushCfRow('Total Cash Inflows', act.getInflow(cashFlowsSummaryCurrent), act.getInflow(cashFlowsSummaryPrior));
+
+        rows.push(['"Cash Outflows"']);
+        groupByGrp(outflowItems).forEach(([grp, grpItems]) => {
+          if (grp === 'Financing Cash Outflows') {
+            grpItems.forEach((item) => {
+              const curr = reportCurrent.values[item.id] || 0;
+              const prior = reportPrior.values[item.id] || 0;
+              if (!hideZeroRows || curr !== 0 || (showComparative && prior !== 0)) {
+                pushCfRow(item.name, curr, prior);
+              }
+            });
+            return;
+          }
+          const hasNonZero = grpItems.some((item) => {
+            const c = reportCurrent.values[item.id] || 0;
+            const p = reportPrior.values[item.id] || 0;
+            return c !== 0 || (showComparative && p !== 0);
+          });
+          if (!hideZeroRows || hasNonZero) {
+            pushCfRow(grp, sumItemsNet(grpItems, reportCurrent), sumItemsNet(grpItems, reportPrior));
+          }
+        });
+        pushCfRow('Total Cash Outflows', act.getOutflow(cashFlowsSummaryCurrent), act.getOutflow(cashFlowsSummaryPrior));
+        pushCfRow(act.netLabel, act.getNet(cashFlowsSummaryCurrent), act.getNet(cashFlowsSummaryPrior));
+      });
+
+      pushCfRow(
+        'Increase/(Decrease) in Cash and Cash Equivalents',
+        cashFlowsSummaryCurrent.netIncreaseDecrease,
+        cashFlowsSummaryPrior.netIncreaseDecrease
+      );
+      if (
+        !hideZeroRows ||
+        Math.abs(cashFlowsSummaryCurrent.fxEffects) >= 0.005 ||
+        (showComparative && Math.abs(cashFlowsSummaryPrior.fxEffects) >= 0.005)
+      ) {
+        pushCfRow(
+          'Effects of Exchange Rate Changes on Cash and Cash Equivalents',
+          cashFlowsSummaryCurrent.fxEffects,
+          cashFlowsSummaryPrior.fxEffects
+        );
       }
-    });
+      pushCfRow('Cash and Cash Equivalents, January 1', cashFlowsSummaryCurrent.january1Cash, cashFlowsSummaryPrior.january1Cash);
+      pushCfRow('Cash and Cash Equivalents, December 31', cashFlowsSummaryCurrent.december31Cash, cashFlowsSummaryPrior.december31Cash);
+    } else {
+      statementLineItems.forEach((item) => {
+        const curr = reportCurrent.values[item.id] || 0;
+        const prior = reportPrior.values[item.id] || 0;
+        if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID && curr === 0 && prior === 0) {
+          return;
+        }
+        if (!hideZeroRows || curr !== 0 || prior !== 0) {
+          rows.push([
+            `"${item.name}"`,
+            curr.toString(),
+            ...(showComparative ? [prior.toString()] : []),
+          ]);
+        }
+      });
+    }
 
     const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -648,7 +795,9 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
               )}
             </div>
 
-            {(selectedStatement === 'position' || selectedStatement === 'performance') && (
+            {(selectedStatement === 'position' ||
+              selectedStatement === 'performance' ||
+              selectedStatement === 'cash_flows') && (
               <button
                 type="button"
                 onClick={() => setIsCondensed(!isCondensed)}
@@ -824,7 +973,9 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
           <div className="text-base font-bold">{currentDivision?.name}</div>
           <div className="text-base font-bold">
             {selectedStatement === 'cash_flows'
-              ? 'Statement of Cash Flows'
+              ? isCondensed
+                ? 'Condensed Statement of Cash Flows'
+                : 'Detailed Statement of Cash Flows'
               : selectedStatement === 'performance'
               ? isCondensed
                 ? 'Condensed Statement of Financial Performance'
@@ -1395,6 +1546,40 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
                   {groupItems(inflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Inflows') {
+                      return (
+                        <React.Fragment key={`div-${sectionKey}-in-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`div-${sectionKey}-in-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          <td className="py-0.5 px-4 text-right tabular-nums">
+                            {formatFSNumber(sumItemsNet(grpItems, reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`div-${sectionKey}-in-${grp}`}>
@@ -1457,6 +1642,40 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
                   {groupItems(outflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Outflows') {
+                      return (
+                        <React.Fragment key={`div-${sectionKey}-out-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`div-${sectionKey}-out-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          <td className="py-0.5 px-4 text-right tabular-nums">
+                            {formatFSNumber(sumItemsNet(grpItems, reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`div-${sectionKey}-out-${grp}`}>
@@ -1607,14 +1826,102 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
                     )}
                     <tr>
                       <td className="py-1 font-bold">Cash and Cash Equivalents, January 1</td>
-                      <td className="py-1 px-4 text-right font-bold tabular-nums">
-                        {formatFSNumber(cashFlowsSummaryCurrent.january1Cash)}
-                      </td>
-                      {showComparative && (
-                        <td className="py-1 px-4 text-right font-bold tabular-nums">
-                          {formatFSNumber(cashFlowsSummaryPrior.january1Cash)}
+                      {[
+                        {
+                          key: 'current',
+                          value: cashFlowsSummaryCurrent.january1Cash,
+                          isEditable2024: selectedYear === '2024' && Boolean(onSaveAmount),
+                        },
+                        ...(showComparative
+                          ? [
+                              {
+                                key: 'prior',
+                                value: cashFlowsSummaryPrior.january1Cash,
+                                isEditable2024: priorYear === '2024' && Boolean(onSaveAmount),
+                              },
+                            ]
+                          : []),
+                      ].map((col) => (
+                        <td key={col.key} className="py-1 px-4 text-right font-bold tabular-nums">
+                          {col.isEditable2024 && isEditingJan1_2024 ? (
+                            <>
+                              <span className="hidden print:inline">
+                                {formatFSNumber(col.value)}
+                              </span>
+                              <div className="inline-flex items-center justify-end gap-1 no-print font-sans">
+                                <input
+                                  type="text"
+                                  value={jan1_2024Input}
+                                  onChange={(e) => setJan1_2024Input(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      onSaveAmount?.(
+                                        '2024',
+                                        selectedDivisionId,
+                                        'cf-sum-beg-cash',
+                                        parseNumberInput(jan1_2024Input)
+                                      );
+                                      setIsEditingJan1_2024(false);
+                                    } else if (e.key === 'Escape') {
+                                      setIsEditingJan1_2024(false);
+                                    }
+                                  }}
+                                  placeholder="0.00"
+                                  autoFocus
+                                  className="w-32 px-2 py-0.5 text-right text-sm font-mono font-bold bg-white text-black border border-sky-500 rounded focus:outline-none focus:ring-2 focus:ring-sky-400"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onSaveAmount?.(
+                                      '2024',
+                                      selectedDivisionId,
+                                      'cf-sum-beg-cash',
+                                      parseNumberInput(jan1_2024Input)
+                                    );
+                                    setIsEditingJan1_2024(false);
+                                  }}
+                                  title="Save FY 2024 Beginning Cash"
+                                  className="p-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingJan1_2024(false)}
+                                  title="Cancel"
+                                  className="p-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              <span>{formatFSNumber(col.value)}</span>
+                              {col.isEditable2024 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setJan1_2024Input(col.value !== 0 ? String(col.value) : '');
+                                    setIsEditingJan1_2024(true);
+                                  }}
+                                  title={
+                                    col.value === 0
+                                      ? 'Encode FY 2024 Beginning Cash (Jan 1)'
+                                      : 'Edit FY 2024 Beginning Cash (Jan 1)'
+                                  }
+                                  className="no-print font-sans inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-bold rounded border border-sky-400/70 bg-sky-50 hover:bg-sky-100 text-sky-800 cursor-pointer transition-colors"
+                                >
+                                  <Pencil className="w-2.5 h-2.5" />
+                                  <span>{col.value === 0 ? 'Encode' : 'Edit'}</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
-                      )}
+                      ))}
                     </tr>
                     <tr>
                       <td className="pt-1.5 pb-3 font-bold uppercase">
@@ -1715,7 +2022,12 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
                 </tr>
 
                 <tr id="div-na-changes">
-                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-1 font-bold">
+                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-0.5 font-bold">
+                    Add/(Deduct):
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={showComparative ? 3 : 2} className="pt-0.5 pb-1 font-bold">
                     Changes in Net Assets/Equity for the Calendar Year
                   </td>
                 </tr>

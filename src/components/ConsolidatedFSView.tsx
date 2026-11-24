@@ -16,6 +16,8 @@ interface ConsolidatedFSViewProps {
   selectedYear: string;
   onSelectYear: (year: string) => void;
   dataStore: FinancialDataStore;
+  selectedStatement?: FinancialStatementType;
+  onSelectStatement?: (stmt: FinancialStatementType) => void;
 }
 
 export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
@@ -24,12 +26,16 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
   selectedYear,
   onSelectYear,
   dataStore,
+  selectedStatement: controlledStatement,
+  onSelectStatement,
 }) => {
   // Default: Remove zero balance items as requested
   const [hideZeroRows, setHideZeroRows] = useState(true);
   const [showComparative, setShowComparative] = useState(true);
   const [isCondensed, setIsCondensed] = useState(false);
-  const [selectedStatement, setSelectedStatement] = useState<FinancialStatementType>('position');
+  const [internalStatement, setInternalStatement] = useState<FinancialStatementType>('position');
+  const selectedStatement = controlledStatement ?? internalStatement;
+  const setSelectedStatement = onSelectStatement ?? setInternalStatement;
   const [condensedNotes, setCondensedNotes] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem("deped_ro6_condensed_notes_v1");
@@ -301,7 +307,9 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
   const handleExportCSV = () => {
     const stmtTitle =
       selectedStatement === 'cash_flows'
-        ? 'Consolidated Detailed Statement of Cash Flows'
+        ? isCondensed
+          ? 'Consolidated Condensed Statement of Cash Flows'
+          : 'Consolidated Detailed Statement of Cash Flows'
         : selectedStatement === 'performance'
         ? isCondensed
           ? 'Consolidated Condensed Statement of Financial Performance'
@@ -328,18 +336,145 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
       ['Account Title', `Consolidated (${selectedYear})`, ...(showComparative ? [`Consolidated (${priorYear})`] : [])],
     ];
 
-    statementLineItems.forEach((item) => {
-      if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return;
-      const curr = reportCurrent.values[item.id] || 0;
-      const prior = reportPrior.values[item.id] || 0;
-      if (!hideZeroRows || curr !== 0 || prior !== 0) {
+    if (selectedStatement === 'cash_flows' && isCondensed) {
+      const cfActivities: Array<{
+        title: string;
+        sectionKey: 'CASH_OPERATING' | 'CASH_INVESTING' | 'CASH_FINANCING';
+        netLabel: string;
+        getInflow: (s: CashFlowsSummary) => number;
+        getOutflow: (s: CashFlowsSummary) => number;
+        getNet: (s: CashFlowsSummary) => number;
+      }> = [
+        {
+          title: 'Cash Flows from Operating Activities',
+          sectionKey: 'CASH_OPERATING',
+          netLabel: 'Net Cash Provided by (Used in) Operating Activities',
+          getInflow: (s) => s.operatingInflows,
+          getOutflow: (s) => s.operatingOutflows,
+          getNet: (s) => s.netOperating,
+        },
+        {
+          title: 'Cash Flows from Investing Activities',
+          sectionKey: 'CASH_INVESTING',
+          netLabel: 'Net Cash Provided by (Used in) Investing Activities',
+          getInflow: (s) => s.investingInflows,
+          getOutflow: (s) => s.investingOutflows,
+          getNet: (s) => s.netInvesting,
+        },
+        {
+          title: 'Cash Flows from Financing Activities',
+          sectionKey: 'CASH_FINANCING',
+          netLabel: 'Net Cash Provided by (Used in) Financing Activities',
+          getInflow: (s) => s.financingInflows,
+          getOutflow: (s) => s.financingOutflows,
+          getNet: (s) => s.netFinancing,
+        },
+      ];
+
+      const groupByGrp = (items: LineItemDefinition[]) => {
+        const map = new Map<string, LineItemDefinition[]>();
+        items.forEach((it) => {
+          const list = map.get(it.group) || [];
+          list.push(it);
+          map.set(it.group, list);
+        });
+        return Array.from(map.entries());
+      };
+
+      const pushCfRow = (label: string, currVal: number, priorVal: number) => {
         rows.push([
-          `"${item.name}"`,
-          curr.toString(),
-          ...(showComparative ? [prior.toString()] : []),
+          `"${label}"`,
+          currVal.toString(),
+          ...(showComparative ? [priorVal.toString()] : []),
         ]);
+      };
+
+      cfActivities.forEach((act) => {
+        rows.push([`"${act.title}"`]);
+        const sectionItems = statementLineItems.filter((i) => i.section === act.sectionKey);
+        const inflowItems = sectionItems.filter((i) => i.subgroup !== 'Cash Outflows');
+        const outflowItems = sectionItems.filter((i) => i.subgroup === 'Cash Outflows');
+
+        rows.push(['"Cash Inflows"']);
+        groupByGrp(inflowItems).forEach(([grp, grpItems]) => {
+          if (grp === 'Financing Cash Inflows') {
+            grpItems.forEach((item) => {
+              const curr = reportCurrent.values[item.id] || 0;
+              const prior = reportPrior.values[item.id] || 0;
+              if (!hideZeroRows || curr !== 0 || (showComparative && prior !== 0)) {
+                pushCfRow(item.name, curr, prior);
+              }
+            });
+            return;
+          }
+          const hasNonZero = grpItems.some((item) => {
+            const c = reportCurrent.values[item.id] || 0;
+            const p = reportPrior.values[item.id] || 0;
+            return c !== 0 || (showComparative && p !== 0);
+          });
+          if (!hideZeroRows || hasNonZero) {
+            pushCfRow(grp, sumItemsNet(grpItems, reportCurrent), sumItemsNet(grpItems, reportPrior));
+          }
+        });
+        pushCfRow('Total Cash Inflows', act.getInflow(cashFlowsSummaryCurrent), act.getInflow(cashFlowsSummaryPrior));
+
+        rows.push(['"Cash Outflows"']);
+        groupByGrp(outflowItems).forEach(([grp, grpItems]) => {
+          if (grp === 'Financing Cash Outflows') {
+            grpItems.forEach((item) => {
+              const curr = reportCurrent.values[item.id] || 0;
+              const prior = reportPrior.values[item.id] || 0;
+              if (!hideZeroRows || curr !== 0 || (showComparative && prior !== 0)) {
+                pushCfRow(item.name, curr, prior);
+              }
+            });
+            return;
+          }
+          const hasNonZero = grpItems.some((item) => {
+            const c = reportCurrent.values[item.id] || 0;
+            const p = reportPrior.values[item.id] || 0;
+            return c !== 0 || (showComparative && p !== 0);
+          });
+          if (!hideZeroRows || hasNonZero) {
+            pushCfRow(grp, sumItemsNet(grpItems, reportCurrent), sumItemsNet(grpItems, reportPrior));
+          }
+        });
+        pushCfRow('Total Cash Outflows', act.getOutflow(cashFlowsSummaryCurrent), act.getOutflow(cashFlowsSummaryPrior));
+        pushCfRow(act.netLabel, act.getNet(cashFlowsSummaryCurrent), act.getNet(cashFlowsSummaryPrior));
+      });
+
+      pushCfRow(
+        'Increase/(Decrease) in Cash and Cash Equivalents',
+        cashFlowsSummaryCurrent.netIncreaseDecrease,
+        cashFlowsSummaryPrior.netIncreaseDecrease
+      );
+      if (
+        !hideZeroRows ||
+        Math.abs(cashFlowsSummaryCurrent.fxEffects) >= 0.005 ||
+        (showComparative && Math.abs(cashFlowsSummaryPrior.fxEffects) >= 0.005)
+      ) {
+        pushCfRow(
+          'Effects of Exchange Rate Changes on Cash and Cash Equivalents',
+          cashFlowsSummaryCurrent.fxEffects,
+          cashFlowsSummaryPrior.fxEffects
+        );
       }
-    });
+      pushCfRow('Cash and Cash Equivalents, January 1', cashFlowsSummaryCurrent.january1Cash, cashFlowsSummaryPrior.january1Cash);
+      pushCfRow('Cash and Cash Equivalents, December 31', cashFlowsSummaryCurrent.december31Cash, cashFlowsSummaryPrior.december31Cash);
+    } else {
+      statementLineItems.forEach((item) => {
+        if (item.id === AGGREGATED_ACCUMULATED_DEPRECIATION_ID) return;
+        const curr = reportCurrent.values[item.id] || 0;
+        const prior = reportPrior.values[item.id] || 0;
+        if (!hideZeroRows || curr !== 0 || prior !== 0) {
+          rows.push([
+            `"${item.name}"`,
+            curr.toString(),
+            ...(showComparative ? [prior.toString()] : []),
+          ]);
+        }
+      });
+    }
 
     const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -461,7 +596,9 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               )}
             </div>
 
-            {(selectedStatement === 'position' || selectedStatement === 'performance') && (
+            {(selectedStatement === 'position' ||
+              selectedStatement === 'performance' ||
+              selectedStatement === 'cash_flows') && (
               <button
                 type="button"
                 onClick={() => setIsCondensed(!isCondensed)}
@@ -580,7 +717,9 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
           <div className="text-base font-bold">Regional Office No. VI</div>
           <div className="text-base font-bold">
             {selectedStatement === 'cash_flows'
-              ? 'Consolidated Detailed Statement of Cash Flows'
+              ? isCondensed
+                ? 'Consolidated Condensed Statement of Cash Flows'
+                : 'Consolidated Detailed Statement of Cash Flows'
               : selectedStatement === 'performance'
               ? isCondensed
                 ? 'Consolidated Condensed Statement of Financial Performance'
@@ -1138,6 +1277,40 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                   {groupItems(inflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Inflows') {
+                      return (
+                        <React.Fragment key={`con-${sectionKey}-in-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`con-${sectionKey}-in-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          <td className="py-0.5 px-4 text-right tabular-nums">
+                            {formatFSNumber(sumItemsNet(grpItems, reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`con-${sectionKey}-in-${grp}`}>
@@ -1200,6 +1373,40 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                   {groupItems(outflowItems).map(([grp, grpItems]) => {
                     const vis = grpItems.filter(isItemVisible);
                     if (hideZeroRows && vis.length === 0) return null;
+                    if (grp === 'Financing Cash Outflows') {
+                      return (
+                        <React.Fragment key={`con-${sectionKey}-out-${grp}`}>
+                          {vis.map((item) => (
+                            <tr key={item.id}>
+                              <td className="py-0.5 pl-12">{item.name}</td>
+                              <td className="py-0.5 px-4 text-right tabular-nums">
+                                {formatFSNumber(reportCurrent.values[item.id] || 0)}
+                              </td>
+                              {showComparative && (
+                                <td className="py-0.5 px-4 text-right tabular-nums">
+                                  {formatFSNumber(reportPrior.values[item.id] || 0)}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      );
+                    }
+                    if (isCondensed) {
+                      return (
+                        <tr key={`con-${sectionKey}-out-${grp}`}>
+                          <td className="py-0.5 pl-12">{grp}</td>
+                          <td className="py-0.5 px-4 text-right tabular-nums">
+                            {formatFSNumber(sumItemsNet(grpItems, reportCurrent))}
+                          </td>
+                          {showComparative && (
+                            <td className="py-0.5 px-4 text-right tabular-nums">
+                              {formatFSNumber(sumItemsNet(grpItems, reportPrior))}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    }
                     if (isDirectLeafGroup(grp, grpItems)) {
                       return (
                         <React.Fragment key={`con-${sectionKey}-out-${grp}`}>
@@ -1458,7 +1665,12 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 </tr>
 
                 <tr id="con-na-changes">
-                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-1 font-bold">
+                  <td colSpan={showComparative ? 3 : 2} className="pt-2 pb-0.5 font-bold">
+                    Add/(Deduct):
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={showComparative ? 3 : 2} className="pt-0.5 pb-1 font-bold">
                     Changes in Net Assets/Equity for the Calendar Year
                   </td>
                 </tr>
