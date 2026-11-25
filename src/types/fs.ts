@@ -1,4 +1,10 @@
-export type StatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets' | (string & {});
+export type StatementType =
+  | 'position'
+  | 'performance'
+  | 'cash_flows'
+  | 'net_assets'
+  | 'budget_comparison'
+  | (string & {});
 
 export type SectionType = 
   | 'ASSETS' 
@@ -7,13 +13,16 @@ export type SectionType =
   | 'REVENUE' 
   | 'EXPENSES' 
   | 'TRANSFERS' 
-  | 'NON_OPERATING'
-  | 'LOSSES'
+  | 'NON_OPERATING' 
+  | 'LOSSES' 
   | 'CASH_OPERATING' 
   | 'CASH_INVESTING' 
   | 'CASH_FINANCING' 
   | 'CASH_FLOWS' 
   | 'CHANGES_IN_NET_ASSETS'
+  | 'BUDGET_RECEIPTS'
+  | 'BUDGET_PAYMENTS'
+  | 'BUDGET_COMPARISON'
   | (string & {});
 
 export type SubsectionType = 
@@ -31,6 +40,8 @@ export type SubsectionType =
   | 'Cash Flows from Investing Activities'
   | 'Cash Flows from Financing Activities'
   | 'Changes in Net Assets/Equity'
+  | 'Receipts'
+  | 'Payments'
   | (string & {});
 
 export interface LineItemDefinition {
@@ -80,6 +91,8 @@ export interface DivisionAggregationRecord {
   lineItemId: string;
   lineItemName: string;
   wasAggregated: boolean; // true when parent + sub-items were summed; false if parent already matched children total
+  aggregationReason?: 'hierarchy_rollup' | 'duplicate_entries';
+  aggregationNote?: string;
   totalAmount: number;
   parentOriginalAmount: number;
   components: AggregatedComponentItem[];

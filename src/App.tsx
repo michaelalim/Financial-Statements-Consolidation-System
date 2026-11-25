@@ -17,6 +17,7 @@ import {
   DEFAULT_PERFORMANCE_LINE_ITEMS,
   DEFAULT_CASH_FLOWS_LINE_ITEMS,
   DEFAULT_NET_ASSETS_LINE_ITEMS,
+  DEFAULT_BUDGET_COMPARISON_LINE_ITEMS,
   AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM,
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
@@ -62,7 +63,8 @@ export default function App() {
         saved === 'position' ||
         saved === 'performance' ||
         saved === 'cash_flows' ||
-        saved === 'net_assets'
+        saved === 'net_assets' ||
+        saved === 'budget_comparison'
       ) {
         return saved;
       }
@@ -232,6 +234,9 @@ export default function App() {
         const missingPerf = DEFAULT_PERFORMANCE_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingCashFlows = DEFAULT_CASH_FLOWS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
         const missingNetAssets = DEFAULT_NET_ASSETS_LINE_ITEMS.filter((i) => !existingIds.has(i.id));
+        const missingBudgetComparison = DEFAULT_BUDGET_COMPARISON_LINE_ITEMS.filter(
+          (i) => !existingIds.has(i.id)
+        );
 
         if (missingCashFlows.length > 0) {
           const next = [...parsed];
@@ -248,7 +253,7 @@ export default function App() {
           parsed = next;
         }
 
-        const missing = [...missingPerf, ...missingNetAssets];
+        const missing = [...missingPerf, ...missingNetAssets, ...missingBudgetComparison];
         return missing.length > 0 ? [...parsed, ...missing] : parsed;
       }
     } catch {
@@ -259,6 +264,7 @@ export default function App() {
       ...DEFAULT_PERFORMANCE_LINE_ITEMS,
       ...DEFAULT_CASH_FLOWS_LINE_ITEMS,
       ...DEFAULT_NET_ASSETS_LINE_ITEMS,
+      ...DEFAULT_BUDGET_COMPARISON_LINE_ITEMS,
     ];
   });
 
@@ -567,6 +573,7 @@ export default function App() {
       ...DEFAULT_PERFORMANCE_LINE_ITEMS,
       ...DEFAULT_CASH_FLOWS_LINE_ITEMS,
       ...DEFAULT_NET_ASSETS_LINE_ITEMS,
+      ...DEFAULT_BUDGET_COMPARISON_LINE_ITEMS,
     ]);
   };
 

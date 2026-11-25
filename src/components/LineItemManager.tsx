@@ -82,6 +82,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         ]
       : selectedStatement === 'net_assets'
       ? ['Changes in Net Assets/Equity']
+      : selectedStatement === 'budget_comparison'
+      ? ['Receipts', 'Payments']
       : [
           'Current Assets',
           'Non-Current Assets',
@@ -190,6 +192,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     ],
     'Non-Current Liabilities': ['Non-Current Payables'],
     'Net Assets/Equity': ['Government Equity'],
+    'Receipts': ['RECEIPTS'],
+    'Payments': ['PAYMENTS'],
   };
 
   const statementLineItems = useMemo(() => {
@@ -287,6 +291,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         ? 'Revenue'
         : selectedStatement === 'net_assets'
         ? 'Changes in Net Assets/Equity'
+        : selectedStatement === 'budget_comparison'
+        ? 'Receipts'
         : 'Current Assets';
     setSubsection(defaultSub);
     setIsCustomSubsection(false);
@@ -323,6 +329,9 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
     if (stmt === 'cash_flows') return 'CASH_FLOWS';
     if (stmt === 'performance') return 'REVENUE';
     if (stmt === 'net_assets') return 'CHANGES_IN_NET_ASSETS';
+    if (stmt === 'budget_comparison') {
+      return finalSubsection === 'Payments' ? 'BUDGET_PAYMENTS' : 'BUDGET_RECEIPTS';
+    }
     if (finalSubsection.includes('Assets')) return 'ASSETS';
     if (finalSubsection.includes('Liabilities')) return 'LIABILITIES';
     return 'EQUITY';
@@ -472,7 +481,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
         </button>
       </div>
 
-      {/* Add Line Item Form Card (or fixed-structure notice for Statement of Changes in Net Assets/Equity) */}
+      {/* Add Line Item Form Card (or fixed-structure notice for fixed statements) */}
       {selectedStatement === 'net_assets' ? (
         <div className="bg-th-surface border border-th-border rounded-xl p-5 shadow-xs transition-colors">
           <h3 className="text-base font-bold text-th-text mb-1">
@@ -480,6 +489,15 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
           </h3>
           <p className="text-sm text-th-muted leading-relaxed">
             This statement uses only the standard Government Equity line items (Balance at January 1, Changes in Accounting Policy, Prior period errors, Other Adjustments, Restated Balance, Surplus/(Deficit) for the Period, Adjustment of net revenue recognized directly in net assets/equity, Others, and Balance at December 31). Itemized breakdowns in uploaded Excel files are automatically summed into their parent line item. You may still assign or edit UACS codes below.
+          </p>
+        </div>
+      ) : selectedStatement === 'budget_comparison' ? (
+        <div className="bg-th-surface border border-th-border rounded-xl p-5 shadow-xs transition-colors">
+          <h3 className="text-base font-bold text-th-text mb-1">
+            Fixed Canonical Structure — Statement of Comparison of Budget and Actual Amounts
+          </h3>
+          <p className="text-sm text-th-muted leading-relaxed">
+            This statement uses the standard Receipts (Tax Revenue, Service and Business Income, Assistance and Subsidy, Shares, Grants and Donations, Gains, Others) and Payments (Personnel Services, Maintenance and Other Operating Expenses, Capital Outlays, Financial Expenses, Others) line items. Totals, Differences (Final Budget less Actual), and Net Receipts/Payment are computed automatically. You may assign or edit UACS codes below.
           </p>
         </div>
       ) : (
@@ -829,7 +847,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                     <span className="text-sm font-medium text-th-muted hidden sm:inline">
                       {item.subsection}
                     </span>
-                    {!(selectedStatement === 'net_assets' && !item.isCustom) && (
+                    {!((selectedStatement === 'net_assets' || selectedStatement === 'budget_comparison') && !item.isCustom) && (
                       <button
                         type="button"
                         onClick={() => setItemToDelete(item)}

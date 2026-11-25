@@ -1,7 +1,12 @@
 import React from 'react';
 import { FileSpreadsheet, Lock } from 'lucide-react';
 
-export type FinancialStatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets';
+export type FinancialStatementType =
+  | 'position'
+  | 'performance'
+  | 'cash_flows'
+  | 'net_assets'
+  | 'budget_comparison';
 
 interface FinancialStatementSidebarProps {
   selectedStatement: FinancialStatementType;
@@ -36,6 +41,12 @@ const STATEMENTS: {
   {
     id: 'net_assets',
     title: 'Statement of Changes in Net Assets/Equity',
+    isLocked: false,
+    lockNotice: '',
+  },
+  {
+    id: 'budget_comparison',
+    title: 'Statement of Comparison of Budget and Actual Amounts',
     isLocked: false,
     lockNotice: '',
   },

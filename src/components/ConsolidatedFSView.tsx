@@ -3,6 +3,11 @@ import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { calculateReport, getExcludedAggregatedDepDivisionIds } from '../utils/calculations';
 import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
+import {
+  calculateBudgetComparisonSummary,
+  formatBudgetComparisonNumber,
+  loadConsolidatedBudgetComparisonNotes,
+} from '../utils/budgetComparisonCalculations';
 import { formatAccounting } from '../utils/formatters';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
@@ -101,6 +106,14 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
   const netAssetsSummaryPrior = useMemo(() => {
     return calculateNetAssetsSummary(dataStore, priorYear);
   }, [dataStore, priorYear]);
+
+  const budgetComparisonSummary = useMemo(() => {
+    return calculateBudgetComparisonSummary(dataStore, selectedYear);
+  }, [dataStore, selectedYear]);
+
+  const budgetComparisonNotes = useMemo(() => {
+    return loadConsolidatedBudgetComparisonNotes(selectedYear);
+  }, [selectedYear, dataStore]);
 
   const excludedDivisionIdsCurr = useMemo(
     () => new Set(getExcludedAggregatedDepDivisionIds(dataStore, selectedYear)),
@@ -305,6 +318,87 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
   };
 
   const handleExportCSV = () => {
+    if (selectedStatement === 'budget_comparison') {
+      const bcRows: string[][] = [
+        ['Department of Education'],
+        ['Regional Office No. VI'],
+        ['Consolidated Statement of Comparison of Budget and Actual Amounts'],
+        ['All Funds'],
+        [`For the Year Ended December 31, ${selectedYear}`],
+        [`Consolidating ${divisionsReportingCount} Divisions`],
+        [],
+        [
+          'Particulars',
+          'Notes',
+          'Budgeted Amount - Original',
+          'Budgeted Amount - Final',
+          'Actual Amounts on Comparable Basis',
+          'Difference Final Budget and Actual',
+        ],
+        ['"RECEIPTS"'],
+      ];
+      budgetComparisonSummary.receipts.forEach((row) => {
+        bcRows.push([
+          `"${row.name}"`,
+          `"${budgetComparisonNotes[row.id] || ''}"`,
+          row.original.toString(),
+          row.final.toString(),
+          row.actual.toString(),
+          row.difference.toString(),
+        ]);
+      });
+      bcRows.push([
+        '"Total Receipts"',
+        '""',
+        budgetComparisonSummary.totalReceipts.original.toString(),
+        budgetComparisonSummary.totalReceipts.final.toString(),
+        budgetComparisonSummary.totalReceipts.actual.toString(),
+        budgetComparisonSummary.totalReceipts.difference.toString(),
+      ]);
+      bcRows.push([]);
+      bcRows.push(['"PAYMENTS"']);
+      budgetComparisonSummary.payments.forEach((row) => {
+        bcRows.push([
+          `"${row.name}"`,
+          `"${budgetComparisonNotes[row.id] || ''}"`,
+          row.original.toString(),
+          row.final.toString(),
+          row.actual.toString(),
+          row.difference.toString(),
+        ]);
+      });
+      bcRows.push([
+        '"Total Payments"',
+        '""',
+        budgetComparisonSummary.totalPayments.original.toString(),
+        budgetComparisonSummary.totalPayments.final.toString(),
+        budgetComparisonSummary.totalPayments.actual.toString(),
+        budgetComparisonSummary.totalPayments.difference.toString(),
+      ]);
+      bcRows.push([]);
+      bcRows.push([
+        '"NET RECEIPTS/PAYMENT"',
+        '""',
+        budgetComparisonSummary.netReceiptsPayments.original.toString(),
+        budgetComparisonSummary.netReceiptsPayments.final.toString(),
+        budgetComparisonSummary.netReceiptsPayments.actual.toString(),
+        budgetComparisonSummary.netReceiptsPayments.difference.toString(),
+      ]);
+
+      const csvContent = 'data:text/csv;charset=utf-8,' + bcRows.map((e) => e.join(',')).join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute(
+        'download',
+        `DepEd_Region_VI_Consolidated_BUDGET_COMPARISON_${selectedYear}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
     const stmtTitle =
       selectedStatement === 'cash_flows'
         ? isCondensed
@@ -613,6 +707,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               </button>
             )}
 
+            {selectedStatement !== 'budget_comparison' && (
             <button
               type="button"
               onClick={() => setHideZeroRows(!hideZeroRows)}
@@ -625,6 +720,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               {hideZeroRows ? <EyeOff className="w-4 h-4 text-th-muted shrink-0" /> : <Eye className="w-4 h-4 shrink-0" />}
               <span>{hideZeroRows ? 'Zero Balances Hidden' : 'Showing All Accounts'}</span>
             </button>
+            )}
           </div>
 
           <div className="hidden sm:flex items-center gap-2 text-sm text-th-text font-bold shrink-0">
@@ -665,6 +761,15 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 <a href="#con-na-changes" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Calendar Year Changes</a>
                 <span className="text-th-muted" aria-hidden="true">·</span>
                 <a href="#con-na-ending" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Ending Balance</a>
+              </>
+            )}
+            {selectedStatement === 'budget_comparison' && (
+              <>
+                <a href="#con-bc-receipts" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Receipts</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-bc-payments" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Payments</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <a href="#con-bc-net" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Net Receipts/Payment</a>
               </>
             )}
           </div>
@@ -726,6 +831,8 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 : 'Consolidated Statement of Financial Performance'
               : selectedStatement === 'net_assets'
               ? 'Consolidated Statement of Changes in Net Assets/Equity'
+              : selectedStatement === 'budget_comparison'
+              ? 'Consolidated Statement of Comparison of Budget and Actual Amounts'
               : isCondensed
               ? 'Consolidated Statement of Financial Position'
               : 'Consolidated Detailed Statement of Financial Position'}
@@ -734,7 +841,8 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
           <div className="text-base font-bold">
             {selectedStatement === 'cash_flows' ||
             selectedStatement === 'performance' ||
-            selectedStatement === 'net_assets'
+            selectedStatement === 'net_assets' ||
+            selectedStatement === 'budget_comparison'
               ? `For the Year Ended December 31, ${selectedYear}`
               : `As at December 31, ${selectedYear}`}
           </div>
@@ -1724,6 +1832,171 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
               </tbody>
             </table>
           </div>
+        ) : selectedStatement === 'budget_comparison' ? (
+          (() => {
+            const q = searchQuery.toLowerCase().trim();
+            const receiptRows = q
+              ? budgetComparisonSummary.receipts.filter((r) => r.name.toLowerCase().includes(q))
+              : budgetComparisonSummary.receipts;
+            const paymentRows = q
+              ? budgetComparisonSummary.payments.filter((r) => r.name.toLowerCase().includes(q))
+              : budgetComparisonSummary.payments;
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11pt] border-collapse">
+                  <thead>
+                    <tr>
+                      <th
+                        rowSpan={2}
+                        colSpan={2}
+                        className="py-2 px-3 text-center font-bold border border-black w-[36%]"
+                      >
+                        Particulars
+                      </th>
+                      <th
+                        colSpan={2}
+                        className="py-1.5 px-3 text-center font-bold border-t border-r border-b border-black w-[30%]"
+                      >
+                        Budgeted Amount
+                      </th>
+                      <th
+                        rowSpan={2}
+                        className="py-2 px-3 text-center font-bold border-t border-r border-b border-black w-[17%]"
+                      >
+                        Actual Amounts on Comparable Basis
+                      </th>
+                      <th
+                        rowSpan={2}
+                        className="py-2 px-3 text-center font-bold border-t border-r border-b border-black w-[17%]"
+                      >
+                        Difference Final Budget and Actual
+                      </th>
+                    </tr>
+                    <tr>
+                      <th className="py-2 px-3 text-center font-bold border-b border-r border-black w-[15%]">
+                        Original
+                      </th>
+                      <th className="py-2 px-3 text-center font-bold border-b border-r border-black w-[15%]">
+                        Final
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr id="con-bc-receipts">
+                      <td className="pt-2 pb-0.5 pr-2 font-bold uppercase">RECEIPTS</td>
+                      <td className="pt-2 pb-0.5 px-2 text-center font-bold w-14">Notes</td>
+                      <td colSpan={4} />
+                    </tr>
+                    {receiptRows.map((row) => (
+                      <tr key={row.id}>
+                        <td className="py-0.5 pl-6 pr-2">{row.name}</td>
+                        <td className="py-0.5 px-2 text-center">
+                          {budgetComparisonNotes[row.id] || ''}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.original)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.final)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.actual)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.difference)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="py-1 pl-6 pr-2 font-bold">Total Receipts</td>
+                      <td className="py-1 px-2" />
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalReceipts.original)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalReceipts.final)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalReceipts.actual)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalReceipts.difference)}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td colSpan={6} className="h-4" />
+                    </tr>
+
+                    <tr id="con-bc-payments">
+                      <td className="pt-2 pb-0.5 pr-2 font-bold uppercase">PAYMENTS</td>
+                      <td colSpan={5} />
+                    </tr>
+                    {paymentRows.map((row) => (
+                      <tr key={row.id}>
+                        <td className="py-0.5 pl-6 pr-2">{row.name}</td>
+                        <td className="py-0.5 px-2 text-center">
+                          {budgetComparisonNotes[row.id] || ''}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.original)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.final)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.actual)}
+                        </td>
+                        <td className="py-0.5 px-3 text-right tabular-nums">
+                          {formatBudgetComparisonNumber(row.difference)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="py-1 pl-6 pr-2 font-bold">Total Payments</td>
+                      <td className="py-1 px-2" />
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalPayments.original)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalPayments.final)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalPayments.actual)}
+                      </td>
+                      <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.totalPayments.difference)}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td colSpan={6} className="h-4" />
+                    </tr>
+
+                    <tr id="con-bc-net">
+                      <td className="py-1.5 pr-2 font-bold uppercase border-t border-black border-b-4 border-double">
+                        NET RECEIPTS/PAYMENT
+                      </td>
+                      <td className="py-1.5 px-2 border-t border-black border-b-4 border-double" />
+                      <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.netReceiptsPayments.original)}
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.netReceiptsPayments.final)}
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.netReceiptsPayments.actual)}
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                        {formatBudgetComparisonNumber(budgetComparisonSummary.netReceiptsPayments.difference)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()
         ) : isCondensed ? (
           <div className="overflow-x-auto">
             {(() => {

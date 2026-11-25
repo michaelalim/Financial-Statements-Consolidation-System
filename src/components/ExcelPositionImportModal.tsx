@@ -57,6 +57,7 @@ const STATEMENT_TITLE_MAP: Record<StatementType, string> = {
   performance: 'Statement of Financial Performance',
   cash_flows: 'Statement of Cash Flows',
   net_assets: 'Statement of Changes in Net Assets/Equity',
+  budget_comparison: 'Statement of Comparison of Budget and Actual Amounts',
 };
 
 const EMPTY_LINE_ITEMS: LineItemDefinition[] = [];
@@ -88,6 +89,8 @@ interface ImportReviewRowProps {
   selectedDef: LineItemDefinition | undefined;
   isDup: boolean;
   dupInfo: { groupNumber: number; peers: ExtractedPositionRow[] } | undefined;
+  isAcceptedDup: boolean;
+  acceptedDupInfo: { groupNumber: number; peers: ExtractedPositionRow[] } | undefined;
   hasMultipleDupGroups: boolean;
   isPulsed: boolean;
   isDropdownOpen: boolean;
@@ -108,6 +111,8 @@ interface ImportReviewRowProps {
   onToggleExpandAgg: (rowId: string) => void;
   onJumpToRow: (targetRowId: string) => void;
   onShowDuplicatesFilter: () => void;
+  onAcceptDuplicateGroup: (lineItemId: string) => void;
+  onUnacceptDuplicateGroup: (lineItemId: string) => void;
 }
 
 const ImportReviewRow = React.memo<ImportReviewRowProps>(({
@@ -119,6 +124,8 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
   selectedDef,
   isDup,
   dupInfo,
+  isAcceptedDup,
+  acceptedDupInfo,
   hasMultipleDupGroups,
   isPulsed,
   isDropdownOpen,
@@ -139,6 +146,8 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
   onToggleExpandAgg,
   onJumpToRow,
   onShowDuplicatesFilter,
+  onAcceptDuplicateGroup,
+  onUnacceptDuplicateGroup,
 }) => {
   const isManualRow = row.rowId.startsWith('manual-row-');
   const matchType = row.userModified ? 'exact' : row.recommendation.matchType;
@@ -157,6 +166,8 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
           ? 'opacity-60 bg-th-subtle/50'
           : isDup
           ? 'bg-amber-500/12 dark:bg-amber-500/15 border-l-4 border-l-amber-500 hover:bg-amber-500/18 dark:hover:bg-amber-500/20'
+          : isAcceptedDup
+          ? 'bg-emerald-500/8 dark:bg-emerald-500/10 hover:bg-emerald-500/12 dark:hover:bg-emerald-500/15'
           : isManualRow
           ? 'bg-sky-500/5 border-l-4 border-l-sky-500/70 hover:bg-sky-500/10'
           : 'hover:bg-th-subtle/40'
@@ -173,6 +184,8 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
               ? 'bg-th-surface border-th-border text-th-muted hover:border-th-border-strong'
               : isDup
               ? 'bg-amber-500/15 border-amber-500/60 text-amber-900 dark:text-amber-100 hover:bg-amber-500/25'
+              : isAcceptedDup
+              ? 'bg-emerald-500/12 border-emerald-500/45 text-emerald-900 dark:text-emerald-100 hover:bg-emerald-500/20'
               : 'bg-th-subtle border-th-border-strong text-th-text hover:bg-th-subtle-hover'
           }`}
         >
@@ -222,6 +235,11 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
                   </span>
                 </span>
               )}
+              {isAcceptedDup && (
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                  Accepted Duplicate · Aggregated
+                </span>
+              )}
             </div>
             <div className="text-xs sm:text-sm text-sky-800 dark:text-sky-300 font-semibold">
               Added manually on review form
@@ -249,6 +267,11 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
                   <span>
                     Duplicate{hasMultipleDupGroups && dupInfo ? ` #${dupInfo.groupNumber}` : ''}
                   </span>
+                </span>
+              )}
+              {isAcceptedDup && (
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                  Accepted Duplicate · Aggregated
                 </span>
               )}
             </div>
@@ -426,7 +449,7 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
           </div>
         )}
         {isDup && dupInfo && (
-          <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2.5 py-1.5 text-sm font-bold text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2.5 py-2 text-sm font-bold text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <span className="inline-flex items-center gap-1.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <span>
@@ -451,8 +474,8 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
                 ))}
               </span>
             </span>
-            <span className="text-xs font-mono font-semibold text-amber-950 dark:text-amber-100">
-              — If kept as-is, total saved:{' '}
+            <span className="text-xs font-mono tabular-nums font-semibold text-amber-950 dark:text-amber-100">
+              — Total if aggregated:{' '}
               {enabledTargets
                 .map((t) => {
                   const combined =
@@ -465,15 +488,76 @@ const ImportReviewRow = React.memo<ImportReviewRowProps>(({
                 })
                 .join(' · ')}
             </span>
-            {showCompareDupButton && (
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={onShowDuplicatesFilter}
-                className="text-xs px-2 py-0.5 rounded bg-amber-500/25 hover:bg-amber-500/40 text-amber-950 dark:text-amber-100 font-bold cursor-pointer transition-colors"
+                onClick={() => onAcceptDuplicateGroup(row.selectedLineItemId)}
+                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer transition-colors"
+                title="Accept this duplication and aggregate all matching rows together"
               >
-                Compare Side-by-Side
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Accept &amp; Aggregate</span>
               </button>
-            )}
+              {showCompareDupButton && (
+                <button
+                  type="button"
+                  onClick={onShowDuplicatesFilter}
+                  className="text-xs px-2 py-1 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 text-amber-950 dark:text-amber-100 font-bold cursor-pointer transition-colors"
+                >
+                  Compare Side-by-Side
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {isAcceptedDup && acceptedDupInfo && (
+          <div className="rounded-lg bg-emerald-500/12 border border-emerald-500/35 px-2.5 py-2 text-xs sm:text-sm font-semibold text-emerald-950 dark:text-emerald-100 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+              <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>
+                <strong>Note:</strong> Aggregated because duplicate entries were accepted (combined with{' '}
+                {acceptedDupInfo.peers.map((peer, idx) => (
+                  <React.Fragment key={peer.rowId}>
+                    {idx > 0 && ', '}
+                    <button
+                      type="button"
+                      onClick={() => onJumpToRow(peer.rowId)}
+                      className="underline decoration-emerald-500/70 underline-offset-2 hover:text-emerald-700 dark:hover:text-emerald-200 cursor-pointer font-bold"
+                    >
+                      {peer.rowId.startsWith('manual-row-')
+                        ? 'Manual Line'
+                        : `Excel Row ${peer.excelRowNumber}${
+                            peer.sourceColLetter && peer.sourceColLetter !== '?'
+                              ? ` (${peer.sourceColLetter})`
+                              : ''
+                          }`}
+                    </button>
+                  </React.Fragment>
+                ))}
+                ). Combined:{' '}
+                <span className="font-mono tabular-nums font-bold">
+                  {enabledTargets
+                    .map((t) => {
+                      const combined =
+                        (row.amountsByTargetId[t.id] ?? 0) +
+                        acceptedDupInfo.peers.reduce(
+                          (s, p) => s + (p.amountsByTargetId[t.id] ?? 0),
+                          0
+                        );
+                      return `FY ${t.targetYear}: ₱${formatAccounting(combined)}`;
+                    })
+                    .join(' · ')}
+                </span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onUnacceptDuplicateGroup(row.selectedLineItemId)}
+              className="text-xs px-2 py-1 rounded-lg bg-th-surface hover:bg-th-subtle border border-emerald-500/40 text-emerald-900 dark:text-emerald-200 font-bold cursor-pointer transition-colors shrink-0"
+              title="Reopen duplicate warning for this account"
+            >
+              Undo Accept
+            </button>
           </div>
         )}
       </div>
@@ -702,6 +786,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const [isColumnSettingsOpen, setIsColumnSettingsOpen] = useState<boolean>(false);
   const [activeDropdownRowId, setActiveDropdownRowId] = useState<string | null>(null);
   const [pendingDupPeersByRowId, setPendingDupPeersByRowId] = useState<Record<string, string[]>>({});
+  const [acceptedDuplicateItemIds, setAcceptedDuplicateItemIds] = useState<Record<string, boolean>>({});
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [isLumpedDepPromptOpen, setIsLumpedDepPromptOpen] = useState<boolean>(false);
   const [dismissedLumpedKey, setDismissedLumpedKey] = useState<string>('');
@@ -737,6 +822,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     setIsColumnSettingsOpen(false);
     setRememberAliasMap({});
     setPendingDupPeersByRowId({});
+    setAcceptedDuplicateItemIds({});
     setHighlightedRowId(null);
     setDismissedLumpedKey('');
     setIsLumpedDepPromptOpen(false);
@@ -756,6 +842,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     setRows([]);
     setInspectedTarget(null);
     setInspection(null);
+    setAcceptedDuplicateItemIds({});
     setManualBegCash2024(null);
     setIsEditingModalBegCash2024(false);
     setModalBegCash2024Input('');
@@ -987,12 +1074,16 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const deferredRows = useDeferredValue(rows);
   const deferredSearchQuery = useDeferredValue(rowSearchQuery);
 
-  // Detect duplicate target lineItemIds among included rows and group peer rows for clear highlighting
+  // Detect duplicate target lineItemIds among included rows and separate pending vs user-accepted duplications
   const {
     duplicateLineItemIds,
     duplicateGroups,
     duplicateInfoByRowId,
     duplicateRowCount,
+    acceptedDuplicateLineItemIds,
+    acceptedDuplicateGroups,
+    acceptedDuplicateInfoByRowId,
+    acceptedDuplicateRowCount,
   } = useMemo(() => {
     const byTarget = new Map<string, ExtractedPositionRow[]>();
     rows.forEach((r) => {
@@ -1016,19 +1107,45 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     > = {};
     let totalDupRows = 0;
 
+    const acceptedDups = new Set<string>();
+    const acceptedGroups: {
+      lineItemId: string;
+      officialName: string;
+      groupNumber: number;
+      rows: ExtractedPositionRow[];
+    }[] = [];
+    const acceptedInfoByRowId: Record<
+      string,
+      { groupNumber: number; peers: ExtractedPositionRow[] }
+    > = {};
+    let totalAcceptedDupRows = 0;
+
     byTarget.forEach((groupRows, lineItemId) => {
       if (groupRows.length > 1) {
-        dups.add(lineItemId);
-        const groupNumber = groups.length + 1;
         const officialName = itemById.get(lineItemId)?.name || groupRows[0].rawName;
-        groups.push({ lineItemId, officialName, groupNumber, rows: groupRows });
-        totalDupRows += groupRows.length;
-        groupRows.forEach((row) => {
-          infoByRowId[row.rowId] = {
-            groupNumber,
-            peers: groupRows.filter((other) => other.rowId !== row.rowId),
-          };
-        });
+        if (acceptedDuplicateItemIds[lineItemId]) {
+          acceptedDups.add(lineItemId);
+          const groupNumber = acceptedGroups.length + 1;
+          acceptedGroups.push({ lineItemId, officialName, groupNumber, rows: groupRows });
+          totalAcceptedDupRows += groupRows.length;
+          groupRows.forEach((row) => {
+            acceptedInfoByRowId[row.rowId] = {
+              groupNumber,
+              peers: groupRows.filter((other) => other.rowId !== row.rowId),
+            };
+          });
+        } else {
+          dups.add(lineItemId);
+          const groupNumber = groups.length + 1;
+          groups.push({ lineItemId, officialName, groupNumber, rows: groupRows });
+          totalDupRows += groupRows.length;
+          groupRows.forEach((row) => {
+            infoByRowId[row.rowId] = {
+              groupNumber,
+              peers: groupRows.filter((other) => other.rowId !== row.rowId),
+            };
+          });
+        }
       }
     });
 
@@ -1037,8 +1154,12 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       duplicateGroups: groups,
       duplicateInfoByRowId: infoByRowId,
       duplicateRowCount: totalDupRows,
+      acceptedDuplicateLineItemIds: acceptedDups,
+      acceptedDuplicateGroups: acceptedGroups,
+      acceptedDuplicateInfoByRowId: acceptedInfoByRowId,
+      acceptedDuplicateRowCount: totalAcceptedDupRows,
     };
-  }, [rows, itemById]);
+  }, [rows, itemById, acceptedDuplicateItemIds]);
 
   const jumpToAccountRow = useCallback((targetRowId: string) => {
     setFilterMode((prev) => (prev === 'matched' || prev === 'skipped' ? 'all' : prev));
@@ -1730,7 +1851,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
       if (filterMode === 'duplicates') {
         return Boolean(
           r.included &&
-            ((r.selectedLineItemId && duplicateLineItemIds.has(r.selectedLineItemId)) ||
+            ((r.selectedLineItemId &&
+              (duplicateLineItemIds.has(r.selectedLineItemId) ||
+                acceptedDuplicateLineItemIds.has(r.selectedLineItemId))) ||
               activePendingDupRowIds.has(r.rowId))
         );
       }
@@ -1741,7 +1864,15 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
 
       return true;
     });
-  }, [rows, filterMode, deferredSearchQuery, duplicateLineItemIds, activePendingDupRowIds, itemById]);
+  }, [
+    rows,
+    filterMode,
+    deferredSearchQuery,
+    duplicateLineItemIds,
+    acceptedDuplicateLineItemIds,
+    activePendingDupRowIds,
+    itemById,
+  ]);
 
   const filterModeRef = useRef(filterMode);
   filterModeRef.current = filterMode;
@@ -1812,6 +1943,14 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
     ) {
       setRememberAliasMap((m) => ({ ...m, [rowId]: m[rowId] ?? true }));
     }
+    if (lineItemId) {
+      setAcceptedDuplicateItemIds((prev) => {
+        if (!prev[lineItemId]) return prev;
+        const next = { ...prev };
+        delete next[lineItemId];
+        return next;
+      });
+    }
     setRows((prev) =>
       prev.map((r) => {
         if (r.rowId !== rowId) return r;
@@ -1849,6 +1988,33 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
   const handleShowDuplicatesFilter = useCallback(() => {
     setFilterMode('duplicates');
   }, []);
+
+  const handleAcceptDuplicateGroup = useCallback((lineItemId: string) => {
+    setAcceptedDuplicateItemIds((prev) => ({
+      ...prev,
+      [lineItemId]: true,
+    }));
+  }, []);
+
+  const handleUnacceptDuplicateGroup = useCallback((lineItemId: string) => {
+    setAcceptedDuplicateItemIds((prev) => {
+      if (!prev[lineItemId]) return prev;
+      const next = { ...prev };
+      delete next[lineItemId];
+      return next;
+    });
+  }, []);
+
+  const handleAcceptAllDuplicateGroups = useCallback(() => {
+    if (duplicateGroups.length === 0) return;
+    setAcceptedDuplicateItemIds((prev) => {
+      const next = { ...prev };
+      duplicateGroups.forEach((g) => {
+        next[g.lineItemId] = true;
+      });
+      return next;
+    });
+  }, [duplicateGroups]);
 
   const handleAddManualRow = () => {
     const newRowId = `manual-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2122,10 +2288,22 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
             },
           ];
         });
+        const rowRefs = contributingRows
+          .map(({ row }) =>
+            row.rowId.startsWith('manual-row-')
+              ? row.cleanedName || row.rawName || 'Manual Line'
+              : `${row.cleanedName || row.rawName} (Row ${row.excelRowNumber})`
+          )
+          .join(' + ');
+        const wasAcceptedDup = Boolean(acceptedDuplicateItemIds[itemDef.id]);
         combinedAggRecord = {
           lineItemId: itemDef.id,
           lineItemName: itemDef.name,
           wasAggregated: true,
+          aggregationReason: 'duplicate_entries',
+          aggregationNote: wasAcceptedDup
+            ? `Aggregated because duplicate entries were accepted (${rowRefs}).`
+            : `Aggregated from ${contributingRows.length} duplicate entries mapped to ${itemDef.name} (${rowRefs}).`,
           totalAmount: Math.round(totalAmount * 10000) / 10000,
           parentOriginalAmount: 0,
           components,
@@ -2262,10 +2440,22 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
               },
             ];
           });
+          const rowRefs = contributingRows
+            .map(({ row }) =>
+              row.rowId.startsWith('manual-row-')
+                ? row.cleanedName || row.rawName || 'Manual Line'
+                : `${row.cleanedName || row.rawName} (Row ${row.excelRowNumber})`
+            )
+            .join(' + ');
+          const wasAcceptedDup = Boolean(acceptedDuplicateItemIds[itemDef.id]);
           yearAggMap.set(itemId, {
             lineItemId: itemDef.id,
             lineItemName: itemDef.name,
             wasAggregated: true,
+            aggregationReason: 'duplicate_entries',
+            aggregationNote: wasAcceptedDup
+              ? `Aggregated because duplicate entries were accepted (${rowRefs}).`
+              : `Aggregated from ${contributingRows.length} duplicate entries mapped to ${itemDef.name} (${rowRefs}).`,
             totalAmount: Math.round(combinedTotal * 10000) / 10000,
             parentOriginalAmount: 0,
             components,
@@ -3344,6 +3534,25 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                       </button>
                     </>
                   )}
+                  {acceptedDuplicateLineItemIds.size > 0 && (
+                    <>
+                      <span aria-hidden="true" className="mx-2">·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStep3ViewMode('accounts');
+                          setFilterMode((prev) => (prev === 'duplicates' ? 'all' : 'duplicates'));
+                        }}
+                        className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300 font-bold hover:underline cursor-pointer"
+                        title="View accepted duplicate groups"
+                      >
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {acceptedDuplicateLineItemIds.size} Accepted &amp; Aggregated
+                        </span>
+                      </button>
+                    </>
+                  )}
                 </span>
               </div>
 
@@ -3435,18 +3644,30 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                         <Filter className="w-4 h-4" />
                         <span>Needs Review ({stats.attentionCount})</span>
                       </button>
-                      {(duplicateRowCount > 0 || filterMode === 'duplicates') && (
+                      {(duplicateRowCount > 0 || acceptedDuplicateRowCount > 0 || filterMode === 'duplicates') && (
                         <button
                           type="button"
                           onClick={() => setFilterMode('duplicates')}
                           className={`px-3.5 py-2 min-h-[40px] rounded-lg text-sm font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
                             filterMode === 'duplicates'
-                              ? 'bg-amber-500 text-slate-950 shadow-xs'
-                              : 'bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/25'
+                              ? duplicateRowCount > 0
+                                ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                : 'bg-emerald-600 text-white shadow-xs'
+                              : duplicateRowCount > 0
+                              ? 'bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/40 hover:bg-amber-500/25'
+                              : 'bg-emerald-500/12 text-emerald-800 dark:text-emerald-200 border border-emerald-500/35 hover:bg-emerald-500/20'
                           }`}
                         >
-                          <AlertTriangle className="w-4 h-4 shrink-0" />
-                          <span>Duplicates ({duplicateRowCount})</span>
+                          {duplicateRowCount > 0 ? (
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                          ) : (
+                            <Check className="w-4 h-4 shrink-0" />
+                          )}
+                          <span>
+                            {duplicateRowCount > 0
+                              ? `Duplicates (${duplicateRowCount})`
+                              : `Aggregated Duplicates (${acceptedDuplicateRowCount})`}
+                          </span>
                         </button>
                       )}
                       <button
@@ -3494,9 +3715,9 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                             : `${duplicateGroups.length} duplicate official accounts detected:`}
                         </span>{' '}
                         <span className="text-th-text font-medium">
-                          If left unchanged, duplicate rows for the same official account will be summed and saved as their combined total (e.g. divided FS sub-items). You can still skip a row or reassign it below:
+                          Accept the duplication to aggregate them with an audit note, or skip/reassign individual rows below:
                         </span>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1.5">
+                        <div className="flex flex-col gap-2 mt-2">
                           {duplicateGroups.map((grp) => {
                             const combinedSummary = enabledTargets
                               .map((t) => {
@@ -3508,7 +3729,7 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                               })
                               .join(' · ');
                             return (
-                              <div key={grp.lineItemId} className="inline-flex flex-wrap items-center gap-1.5 text-sm">
+                              <div key={grp.lineItemId} className="flex flex-wrap items-center gap-2 text-sm">
                                 {duplicateGroups.length > 1 && (
                                   <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-extrabold">
                                     #{grp.groupNumber}
@@ -3534,10 +3755,18 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                                   </React.Fragment>
                                 ))}
                                 {combinedSummary && (
-                                  <span className="text-xs font-mono font-bold text-amber-900 dark:text-amber-200">
-                                    (Combined Total: {combinedSummary})
+                                  <span className="text-xs font-mono tabular-nums font-bold text-amber-900 dark:text-amber-200">
+                                    (Combined: {combinedSummary})
                                   </span>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleAcceptDuplicateGroup(grp.lineItemId)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                                >
+                                  <Check className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Accept &amp; Aggregate</span>
+                                </button>
                               </div>
                             );
                           })}
@@ -3555,7 +3784,17 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                     )}
                   </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
+                <div className="shrink-0 flex flex-wrap items-center gap-2">
+                  {duplicateGroups.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleAcceptAllDuplicateGroups}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors cursor-pointer whitespace-nowrap shadow-xs"
+                    >
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>Accept All ({duplicateGroups.length})</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>
@@ -3571,6 +3810,72 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                       ? `Show All ${stats.total} Rows`
                       : `Compare ${duplicateRowCount} Duplicates Side-by-Side`}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {step3ViewMode === 'accounts' && acceptedDuplicateGroups.length > 0 && (
+              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/40 px-4 py-3 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>
+                      Accepted &amp; Aggregated Duplicates ({acceptedDuplicateGroups.length}) — a note will be saved explaining these accounts were aggregated from duplicate entries:
+                    </span>
+                  </div>
+                  {duplicateGroups.length === 0 && filterMode === 'duplicates' && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterMode('all')}
+                      className="px-3 py-1.5 rounded-lg bg-th-surface hover:bg-th-subtle border border-th-border-strong text-xs font-bold text-th-text cursor-pointer"
+                    >
+                      Show All {stats.total} Rows
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {acceptedDuplicateGroups.map((grp) => {
+                    const combinedSummary = enabledTargets
+                      .map((t) => {
+                        const sum = grp.rows.reduce(
+                          (acc, r) => acc + (r.amountsByTargetId[t.id] ?? 0),
+                          0
+                        );
+                        return `FY ${t.targetYear}: ₱${formatAccounting(sum)}`;
+                      })
+                      .join(' · ');
+                    return (
+                      <div
+                        key={`accepted-${grp.lineItemId}`}
+                        className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-th-text"
+                      >
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <span className="font-bold">{grp.officialName}:</span>
+                          <span className="text-th-muted">
+                            {grp.rows
+                              .map((r) =>
+                                r.rowId.startsWith('manual-row-')
+                                  ? r.cleanedName || r.rawName || 'Manual Line'
+                                  : `Row ${r.excelRowNumber} (${r.cleanedName || r.rawName})`
+                              )
+                              .join(' + ')}
+                          </span>
+                          {combinedSummary && (
+                            <span className="font-mono tabular-nums font-bold text-emerald-800 dark:text-emerald-300">
+                              → {combinedSummary}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUnacceptDuplicateGroup(grp.lineItemId)}
+                          className="px-2.5 py-1 rounded-lg bg-th-surface hover:bg-th-subtle border border-emerald-500/40 text-xs font-bold text-emerald-900 dark:text-emerald-200 cursor-pointer transition-colors shrink-0"
+                        >
+                          Undo
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -3748,6 +4053,14 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                               row.included && row.selectedLineItemId && duplicateLineItemIds.has(row.selectedLineItemId)
                             );
                             const dupInfo = isDup ? duplicateInfoByRowId[row.rowId] : undefined;
+                            const isAcceptedDup = Boolean(
+                              row.included &&
+                                row.selectedLineItemId &&
+                                acceptedDuplicateLineItemIds.has(row.selectedLineItemId)
+                            );
+                            const acceptedDupInfo = isAcceptedDup
+                              ? acceptedDuplicateInfoByRowId[row.rowId]
+                              : undefined;
                             const selectedDef = row.selectedLineItemId
                               ? itemById.get(row.selectedLineItemId)
                               : undefined;
@@ -3768,6 +4081,8 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                                 selectedDef={selectedDef}
                                 isDup={isDup}
                                 dupInfo={dupInfo}
+                                isAcceptedDup={isAcceptedDup}
+                                acceptedDupInfo={acceptedDupInfo}
                                 hasMultipleDupGroups={duplicateGroups.length > 1}
                                 isPulsed={highlightedRowId === row.rowId}
                                 isDropdownOpen={activeDropdownRowId === row.rowId}
@@ -3794,6 +4109,8 @@ export const ExcelPositionImportModal: React.FC<ExcelPositionImportModalProps> =
                                 onToggleExpandAgg={handleToggleExpandAgg}
                                 onJumpToRow={jumpToAccountRow}
                                 onShowDuplicatesFilter={handleShowDuplicatesFilter}
+                                onAcceptDuplicateGroup={handleAcceptDuplicateGroup}
+                                onUnacceptDuplicateGroup={handleUnacceptDuplicateGroup}
                               />
                             );
                           })}

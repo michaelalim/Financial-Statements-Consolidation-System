@@ -38,12 +38,13 @@ import {
   X,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
-import { FinancialStatementSidebar } from './FinancialStatementSidebar';
+import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
+import { BudgetComparisonEntryTable } from './BudgetComparisonEntryTable';
 import { ExcelPositionImportModal } from './ExcelPositionImportModal';
 import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
 
-export type FinancialStatementType = 'position' | 'performance' | 'cash_flows' | 'net_assets';
+export type { FinancialStatementType };
 
 interface FinancialStatementOption {
   id: FinancialStatementType;
@@ -79,6 +80,13 @@ const FINANCIAL_STATEMENTS: FinancialStatementOption[] = [
     id: 'net_assets',
     title: 'Statement of Changes in Net Assets/Equity',
     subtitle: 'Accumulated Surplus/Deficit & Equity Reserves',
+    isLocked: false,
+    lockNotice: '',
+  },
+  {
+    id: 'budget_comparison',
+    title: 'Statement of Comparison of Budget and Actual Amounts',
+    subtitle: 'Receipts & Payments: Original, Final, Actual & Difference',
     isLocked: false,
     lockNotice: '',
   },
@@ -154,6 +162,13 @@ const STATEMENT_ENCODING_META: Record<FinancialStatementType, StatementEncodingM
       { id: 'na-cy-net-revenue-adj', label: 'Net Revenue Recognized Directly' },
       { id: 'na-cy-others', label: 'Others' },
     ],
+  },
+  budget_comparison: {
+    topPlaceholder: 'Use the table form below to encode budget & actual amounts...',
+    rowPlaceholder: 'Use the table form...',
+    batchExampleTyped: 'tax revenue',
+    batchExampleMatched: 'Tax Revenue',
+    frequentAccounts: [],
   },
 };
 
@@ -913,6 +928,18 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           onLockedClick={(title, message) => setLockedStatementModal({ title, message })}
         />
         <div className="flex-1 min-w-0 w-full space-y-6">
+      {selectedStatement === 'budget_comparison' ? (
+        <BudgetComparisonEntryTable
+          divisionId={selectedDivisionId}
+          divisionName={currentDivision?.name || ''}
+          selectedYear={selectedYear}
+          dataStore={dataStore}
+          onSaveBatchAmounts={(yr, divId, entries) => onSaveBatchAmounts(yr, divId, entries)}
+          onDeleteAmount={onDeleteAmount}
+          onNavigateToViewFS={onNavigateToViewFS}
+        />
+      ) : (
+      <>
       {/* Batch Multiple Entries Form */}
       <div className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors">
         {/* Header with Title and Presets */}
@@ -1427,13 +1454,20 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                         <div className="rounded-lg bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-800 px-3 py-1.5 text-xs text-sky-900 dark:text-sky-200 flex items-center gap-2 flex-wrap">
                           <Info className="w-3.5 h-3.5 text-sky-700 dark:text-sky-300 shrink-0" />
                           <span className="font-bold">
-                            {row.aggregationRecord.wasAggregated
+                            {row.aggregationRecord.aggregationReason === 'duplicate_entries'
+                              ? 'Aggregated from duplicate entries'
+                              : row.aggregationRecord.wasAggregated
                               ? 'This account has been aggregated'
                               : 'Parent matched sub-items'}
                           </span>
                           <span>
-                            ({row.aggregationRecord.components.length} sub-item{row.aggregationRecord.components.length === 1 ? '' : 's'} · Total ₱{formatAccounting(row.aggregationRecord.totalAmount)})
+                            ({row.aggregationRecord.components.length} {row.aggregationRecord.aggregationReason === 'duplicate_entries' ? 'entries' : `sub-item${row.aggregationRecord.components.length === 1 ? '' : 's'}`} · Total ₱{formatAccounting(row.aggregationRecord.totalAmount)})
                           </span>
+                          {row.aggregationRecord.aggregationNote && (
+                            <span className="w-full text-[11px] text-sky-800 dark:text-sky-300 font-medium">
+                              Note: {row.aggregationRecord.aggregationNote}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1710,8 +1744,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                       <span className="font-mono shrink-0">₱ {formatAccounting(rec.totalAmount)}</span>
                     </div>
                     <div className="text-[11px] font-bold text-sky-700 dark:text-sky-300">
-                      {rec.wasAggregated ? 'This account has been aggregated' : 'Parent amount already equaled sub-items'}
+                      {rec.aggregationReason === 'duplicate_entries'
+                        ? 'Aggregated from duplicate entries'
+                        : rec.wasAggregated
+                        ? 'This account has been aggregated'
+                        : 'Parent amount already equaled sub-items'}
                     </div>
+                    {rec.aggregationNote && (
+                      <div className="text-[11px] text-sky-900 dark:text-sky-200 font-medium">
+                        Note: {rec.aggregationNote}
+                      </div>
+                    )}
                     <div className="space-y-1 pt-1 border-t border-sky-100 dark:border-sky-900/60">
                       {rec.components.map((comp, idx) => (
                         <div
@@ -2109,7 +2152,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                               <span className="inline-flex items-center gap-1 text-xs text-sky-900 dark:text-sky-200 bg-sky-50 dark:bg-sky-950/60 px-2.5 py-0.5 rounded-md font-bold border border-sky-300 dark:border-sky-700">
                                 <Info className="w-3.5 h-3.5 shrink-0" />
                                 <span>
-                                  {aggRec.wasAggregated
+                                  {aggRec.aggregationReason === 'duplicate_entries'
+                                    ? 'Aggregated from duplicate entries'
+                                    : aggRec.wasAggregated
                                     ? 'This account has been aggregated'
                                     : 'Parent matched sub-items'}
                                 </span>
@@ -2195,6 +2240,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                                 </span>
                               )}
                             </div>
+                            {aggRec.aggregationNote && (
+                              <div className="text-[11px] font-semibold text-sky-900 dark:text-sky-200">
+                                Note: {aggRec.aggregationNote}
+                              </div>
+                            )}
                             {aggRec.components.map((comp, cIdx) => (
                               <div
                                 key={`${item.id}-comp-${cIdx}`}
@@ -2336,6 +2386,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Confirmation Modal: Delete All / Reset to Zero */}
       <ConfirmModal

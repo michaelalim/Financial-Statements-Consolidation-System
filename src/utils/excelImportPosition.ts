@@ -56,6 +56,8 @@ export interface AggregationBreakdown {
   parentRawName: string;
   parentExcelRowNumber?: number;
   isParentless: boolean;
+  aggregationReason?: 'hierarchy_rollup' | 'duplicate_entries';
+  aggregationNote?: string;
   parentOwnAmountsByTargetId: Record<string, number | null>;
   resolvedAmountsByTargetId: Record<string, number | null>;
   wasAggregatedByTargetId: Record<string, boolean>;
@@ -1637,6 +1639,29 @@ function classifyNetRevenueAdjustmentChildLabel(rawText: string): boolean {
   return false;
 }
 
+function isNetAssetsCorrectionOfErrorLabel(rawText: string): boolean {
+  const withoutFootnote = stripTrailingNetAssetsFootnote(rawText);
+  if (!withoutFootnote) return false;
+  const lower = withoutFootnote
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!lower || isNetAssetsSummaryOrHeaderText(lower)) return false;
+  if (classifyCanonicalNetAssetsItemId(rawText) !== null) return false;
+  if (/\bprior\s+period\b/.test(lower)) return false;
+
+  const norm = lower.replace(/[^a-z0-9]/g, '');
+  return (
+    norm === 'correctionoferror' ||
+    norm === 'correctionoferrors' ||
+    norm === 'correctionsoferror' ||
+    norm === 'correctionsoferrors' ||
+    /^corrections?\s+of\s+errors?$/.test(lower) ||
+    scoreStringSimilarity(withoutFootnote, 'Correction of Error') >= 88
+  );
+}
+
 const PERFORMANCE_SYNONYM_GROUPS: string[][] = [
   ['retirementandlifeinsurancepremiums', 'lifeandretirementinsurancecontributions'],
   ['employeescompensationinsurancepremiums', 'ecccontributions'],
@@ -1866,6 +1891,7 @@ interface PrecomputedQueryMatchMeta {
   isCashBeginning: boolean;
   netAssetsCanonicalId: string | null;
   isNetAssetsRevenueChild: boolean;
+  isNetAssetsCorrectionOfError: boolean;
   perfSemiFurnKind: 'furniture' | 'books' | null;
   perfSemiMachKind: string | null;
   perfDeprMachKind: string | null;
@@ -1912,6 +1938,8 @@ function buildPrecomputedQueryMeta(
     netAssetsCanonicalId,
     isNetAssetsRevenueChild:
       isNetAssets && !netAssetsCanonicalId && classifyNetRevenueAdjustmentChildLabel(rawQuery),
+    isNetAssetsCorrectionOfError:
+      isNetAssets && !netAssetsCanonicalId && isNetAssetsCorrectionOfErrorLabel(rawQuery),
     perfSemiFurnKind: canPerfUmbrellaChild ? classifySemiFurnBooksChildKind(rawQuery) : null,
     perfSemiMachKind: canPerfUmbrellaChild ? classifySemiMachChildKind(rawQuery) : null,
     perfDeprMachKind:
@@ -1952,6 +1980,13 @@ function scoreLineItemMatchFast(
       score = Math.max(0, score - 24);
     } else if (q.isNetAssetsRevenueChild && item.id === 'na-cy-net-revenue-adj') {
       score = Math.max(score, 90);
+    } else if (q.isNetAssetsCorrectionOfError) {
+      // As per prior consolidation basis, "Correction of Error" maps/suggests to "Other Adjustments"
+      if (item.id === 'na-adj-other-adjustments') {
+        score = Math.max(score, 88);
+      } else if (item.id === 'na-adj-prior-period-errors') {
+        score = Math.min(score, 62);
+      }
     }
   }
 
@@ -3851,6 +3886,7 @@ export function extractPositionRowsFromSheet(
         }
 
         const isNetRevParent = parentCanonicalId === 'na-cy-net-revenue-adj';
+        const isOtherAdjParent = parentCanonicalId === 'na-adj-other-adjustments';
         const childIndices: number[] = [];
         let hasEnteredIndentedBlock = false;
 
@@ -3862,6 +3898,9 @@ export function extractPositionRowsFromSheet(
             break;
           }
           if (!isNetRevParent && classifyNetRevenueAdjustmentChildLabel(child.rawName)) {
+            break;
+          }
+          if (!isOtherAdjParent && isNetAssetsCorrectionOfErrorLabel(child.rawName)) {
             break;
           }
           if (child.netAssetsContext !== parent.netAssetsContext) {

@@ -72,6 +72,10 @@ const DRAFT_STATEMENT_TITLES: Record<StatementType, { condensed: string; detaile
     condensed: 'Statement of Changes in Net Assets/Equity (Draft Preview)',
     detailed: 'Statement of Changes in Net Assets/Equity (Draft Preview)',
   },
+  budget_comparison: {
+    condensed: 'Statement of Comparison of Budget and Actual Amounts (Draft Preview)',
+    detailed: 'Statement of Comparison of Budget and Actual Amounts (Draft Preview)',
+  },
 };
 
 export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
@@ -131,6 +135,13 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
         resolvedAmountsByTargetId[t.id] = hasAny ? Math.round(sum * 10000) / 10000 : null;
         wasAggregatedByTargetId[t.id] = hasAny && Math.abs(sum) >= 0.005;
       });
+      const rowRefs = groupRows
+        .map((r) =>
+          r.rowId.startsWith('manual-row-')
+            ? r.cleanedName || r.rawName || 'Manual Line'
+            : `${r.cleanedName || r.rawName} (Row ${r.excelRowNumber})`
+        )
+        .join(' + ');
       map[itemId] = {
         ...groupRows[0],
         amountsByTargetId: resolvedAmountsByTargetId,
@@ -139,6 +150,8 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
           parentLabel: itemDef?.name || groupRows[0].rawName,
           parentRawName: itemDef?.name || groupRows[0].rawName,
           isParentless: true,
+          aggregationReason: 'duplicate_entries',
+          aggregationNote: `Aggregated from duplicate entries mapped to this account (${rowRefs}).`,
           parentOwnAmountsByTargetId: {},
           resolvedAmountsByTargetId,
           wasAggregatedByTargetId,
@@ -427,18 +440,25 @@ export const DraftStatementPreview: React.FC<DraftStatementPreviewProps> = ({
         >
           <Info className="w-3 h-3 text-sky-700 shrink-0" />
           <span>
-            {anyWasAggregated
+            {breakdown.aggregationReason === 'duplicate_entries'
+              ? 'Notice: Aggregated from duplicate entries'
+              : anyWasAggregated
               ? 'Notice: This account has been aggregated'
               : 'Notice: Parent matched sub-items'}
           </span>
           <span className="text-sky-700 font-semibold">
-            ({breakdown.children.length} sub-item{breakdown.children.length === 1 ? '' : 's'})
+            ({breakdown.children.length} {breakdown.aggregationReason === 'duplicate_entries' ? 'entr' + (breakdown.children.length === 1 ? 'y' : 'ies') : `sub-item${breakdown.children.length === 1 ? '' : 's'}`})
           </span>
           {isExpanded ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
         </button>
 
         {isExpanded && (
           <div className="mt-1.5 p-2.5 rounded-lg bg-sky-50/95 border border-sky-300 text-sky-950 text-[11px] max-w-xl space-y-2 shadow-2xs">
+            {breakdown.aggregationNote && (
+              <div className="text-sky-900 font-semibold border-b border-sky-200 pb-1">
+                Note: {breakdown.aggregationNote}
+              </div>
+            )}
             {activeCols.map(({ colKey, label }) => {
               const parentOrig = breakdown.parentOwnAmountsByTargetId[colKey] || 0;
               const resolvedAmt = sourceRow.amountsByTargetId[colKey] || 0;
