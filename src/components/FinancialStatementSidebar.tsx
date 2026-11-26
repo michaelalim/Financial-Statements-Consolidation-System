@@ -58,13 +58,13 @@ export const FinancialStatementSidebar: React.FC<FinancialStatementSidebarProps>
   onLockedClick,
 }) => {
   return (
-    <aside className="w-full lg:w-72 shrink-0 lg:sticky lg:top-28 lg:self-start no-print">
-      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-4 shadow-xs max-h-[calc(100vh-8.5rem)] overflow-y-auto transition-colors">
-        <div className="px-2.5 pb-3 mb-2 border-b border-th-border text-sm font-bold uppercase tracking-wider text-th-text flex items-center gap-2">
+    <aside className="w-full lg:w-64 2xl:w-72 shrink-0 lg:sticky lg:top-28 lg:self-start no-print">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-3.5 sm:p-4 shadow-xs lg:max-h-[calc(100vh-8.5rem)] lg:overflow-y-auto transition-colors">
+        <div className="px-2 pb-2.5 mb-2 border-b border-th-border text-xs sm:text-sm font-bold uppercase tracking-wider text-th-text flex items-center gap-2">
           <FileSpreadsheet className="w-4 h-4 text-th-text shrink-0" />
           <span>Financial Statements</span>
         </div>
-        <nav className="space-y-1.5">
+        <nav className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-1.5">
           {STATEMENTS.map((stmt) => {
             const isActive = selectedStatement === stmt.id;
             return (
@@ -78,7 +78,7 @@ export const FinancialStatementSidebar: React.FC<FinancialStatementSidebarProps>
                     onSelectStatement(stmt.id);
                   }
                 }}
-                className={`w-full text-left px-3.5 py-3 rounded-xl text-sm font-bold transition-colors flex items-center justify-between gap-2.5 cursor-pointer border ${
+                className={`w-full text-left px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-xl text-sm font-bold transition-colors flex items-center justify-between gap-2.5 cursor-pointer border ${
                   stmt.isLocked
                     ? 'text-th-muted border-transparent hover:bg-th-subtle'
                     : isActive

@@ -1564,12 +1564,18 @@
 
 @media print {
   @page {
-    size: A4;
-    margin: 15mm;
+    size: A4 portrait;
+    margin: 12mm 14mm;
   }
+  html,
   body {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
     background: white !important;
     color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .no-print {
     display: none !important;
@@ -1583,5 +1589,33 @@
   }
   .print-page-break {
     page-break-before: always;
+  }
+  .fs-a4-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .fs-a4-sheet .overflow-x-auto {
+    overflow: visible !important;
+  }
+  .fs-a4-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  .fs-a4-table thead {
+    display: table-header-group;
+  }
+  .fs-a4-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .fs-a4-table th,
+  .fs-a4-table td {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
 }

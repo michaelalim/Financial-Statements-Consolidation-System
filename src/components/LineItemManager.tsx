@@ -4,6 +4,7 @@ import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems
 import { Plus, Trash2, Search, SlidersHorizontal, RotateCcw, Pencil, X, Check } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
+import { TipsButton } from './TipsButton';
 
 interface LineItemManagerProps {
   lineItems: LineItemDefinition[];
@@ -464,41 +465,49 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
           selectedStatement={selectedStatement}
           onSelectStatement={handleSelectStatement}
         />
-        <div className="flex-1 min-w-0 w-full space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-th-text">Line Items Master Catalog</h2>
-          <p className="text-sm text-th-muted mt-1 leading-relaxed">
-            Official line items benchmarked against DepEd Regional Office VI Final Statement of Financial Position.
-          </p>
+        <div className="@container flex-1 min-w-0 w-full space-y-6">
+      <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+            <span>Line Items Master Catalog</span>
+            <TipsButton>
+              <p>
+                Official line items benchmarked against DepEd Regional Office VI Final Statement of Financial Position.
+              </p>
+            </TipsButton>
+          </h2>
         </div>
         <button
           onClick={() => setIsResetConfirmOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-surface border border-th-border-strong rounded-lg shadow-2xs hover:bg-th-subtle transition-colors self-start cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-th-text bg-th-surface border border-th-border-strong rounded-lg shadow-2xs hover:bg-th-subtle transition-colors self-start shrink-0 cursor-pointer"
         >
-          <RotateCcw className="w-4 h-4 text-th-muted" />
-          Reset to Benchmark Line Items
+          <RotateCcw className="w-4 h-4 text-th-muted shrink-0" />
+          <span>Reset to Benchmark Line Items</span>
         </button>
       </div>
 
       {/* Add Line Item Form Card (or fixed-structure notice for fixed statements) */}
       {selectedStatement === 'net_assets' ? (
         <div className="bg-th-surface border border-th-border rounded-xl p-5 shadow-xs transition-colors">
-          <h3 className="text-base font-bold text-th-text mb-1">
-            Fixed Canonical Structure — Statement of Changes in Net Assets/Equity
+          <h3 className="text-base font-bold text-th-text flex items-center gap-2 flex-wrap">
+            <span>Fixed Canonical Structure — Statement of Changes in Net Assets/Equity</span>
+            <TipsButton>
+              <p>
+                This statement uses only the standard Government Equity line items (Balance at January 1, Changes in Accounting Policy, Prior period errors, Other Adjustments, Restated Balance, Surplus/(Deficit) for the Period, Adjustment of net revenue recognized directly in net assets/equity, Others, and Balance at December 31). Itemized breakdowns in uploaded Excel files are automatically summed into their parent line item. You may still assign or edit UACS codes below.
+              </p>
+            </TipsButton>
           </h3>
-          <p className="text-sm text-th-muted leading-relaxed">
-            This statement uses only the standard Government Equity line items (Balance at January 1, Changes in Accounting Policy, Prior period errors, Other Adjustments, Restated Balance, Surplus/(Deficit) for the Period, Adjustment of net revenue recognized directly in net assets/equity, Others, and Balance at December 31). Itemized breakdowns in uploaded Excel files are automatically summed into their parent line item. You may still assign or edit UACS codes below.
-          </p>
         </div>
       ) : selectedStatement === 'budget_comparison' ? (
         <div className="bg-th-surface border border-th-border rounded-xl p-5 shadow-xs transition-colors">
-          <h3 className="text-base font-bold text-th-text mb-1">
-            Fixed Canonical Structure — Statement of Comparison of Budget and Actual Amounts
+          <h3 className="text-base font-bold text-th-text flex items-center gap-2 flex-wrap">
+            <span>Fixed Canonical Structure — Statement of Comparison of Budget and Actual Amounts</span>
+            <TipsButton>
+              <p>
+                This statement uses the standard Receipts (Tax Revenue, Service and Business Income, Assistance and Subsidy, Shares, Grants and Donations, Gains, Others) and Payments (Personnel Services, Maintenance and Other Operating Expenses, Capital Outlays, Financial Expenses, Others) line items. Totals, Differences (Final Budget less Actual), and Net Receipts/Payment are computed automatically. You may assign or edit UACS codes below.
+              </p>
+            </TipsButton>
           </h3>
-          <p className="text-sm text-th-muted leading-relaxed">
-            This statement uses the standard Receipts (Tax Revenue, Service and Business Income, Assistance and Subsidy, Shares, Grants and Donations, Gains, Others) and Payments (Personnel Services, Maintenance and Other Operating Expenses, Capital Outlays, Financial Expenses, Others) line items. Totals, Differences (Final Budget less Actual), and Net Receipts/Payment are computed automatically. You may assign or edit UACS codes below.
-          </p>
         </div>
       ) : (
       <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
@@ -684,8 +693,8 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-th-surface border border-th-border rounded-xl p-4 shadow-xs flex flex-col lg:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
+      <div className="bg-th-surface border border-th-border rounded-xl p-4 shadow-xs flex flex-col @2xl:flex-row items-stretch @2xl:items-center gap-3">
+        <div className="relative flex-1 min-w-0 w-full">
           <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -696,12 +705,12 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-          <SlidersHorizontal className="w-4 h-4 text-th-muted shrink-0" />
+        <div className="flex flex-wrap items-center gap-2 w-full @2xl:w-auto min-w-0">
+          <SlidersHorizontal className="w-4 h-4 text-th-muted shrink-0 hidden sm:block" />
           <select
             value={selectedSubsectionFilter}
             onChange={(e) => setSelectedSubsectionFilter(e.target.value)}
-            className="flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+            className="min-w-0 max-w-full flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
           >
             <option value="all">All Classifications ({statementLineItems.length})</option>
             {subsectionOptions.map((sub) => (
@@ -715,7 +724,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
             value={uacsFilter}
             onChange={(e) => setUacsFilter(e.target.value as 'all' | 'assigned' | 'unassigned')}
             aria-label="Filter by UACS assignment"
-            className="flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+            className="min-w-0 max-w-full flex-1 sm:flex-none px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
           >
             <option value="all">All UACS ({uacsAssignedCount}/{statementLineItems.length})</option>
             <option value="assigned">With UACS ({uacsAssignedCount})</option>
@@ -728,7 +737,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
 
       {/* Items List Table */}
       <div className="bg-th-surface border border-th-border rounded-xl overflow-hidden shadow-xs">
-        <div className="px-6 py-3.5 border-b border-th-border bg-th-table-head flex items-center justify-between text-xs font-bold text-th-table-head-fg uppercase tracking-wider">
+        <div className="px-4 sm:px-6 py-3.5 border-b border-th-border bg-th-table-head flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-th-table-head-fg uppercase tracking-wider">
           <span>Account Title / Line Item &amp; UACS</span>
           <span>Classification &amp; Actions</span>
         </div>
@@ -809,7 +818,7 @@ export const LineItemManager: React.FC<LineItemManagerProps> = ({
                           }}
                           placeholder="Enter UACS (e.g. 10101010)"
                           autoFocus
-                          className="w-56 px-2.5 py-1.5 text-xs sm:text-sm font-mono font-semibold bg-th-input border-2 border-th-accent text-th-text rounded-lg focus:outline-hidden"
+                          className="w-full sm:w-56 min-w-0 px-2.5 py-1.5 text-xs sm:text-sm font-mono font-semibold bg-th-input border-2 border-th-accent text-th-text rounded-lg focus:outline-hidden"
                         />
                         <button
                           type="button"

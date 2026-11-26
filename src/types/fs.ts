@@ -108,3 +108,24 @@ export type AggregationMetadataStore = {
     };
   };
 };
+
+export interface StagedEntry {
+  id: string;
+  lineItemId: string;
+  rawText?: string;
+  amount: string;
+  aggregationRecord?: DivisionAggregationRecord;
+}
+
+export interface TopEntryDraft {
+  selectedItemId: string;
+  rawText: string;
+  amountInput: string;
+}
+
+export interface BudgetComparisonDraft {
+  draftGrid: Record<string, { orig: string; final: string; actual: string }>;
+  draftNotes: Record<string, string>;
+  isDirty: boolean;
+}
+

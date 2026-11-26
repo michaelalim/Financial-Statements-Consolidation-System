@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Division } from '../types/fs';
 import { Plus, Trash2, Building2, CheckCircle2 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
+import { TipsButton } from './TipsButton';
 
 interface DivisionManagerProps {
   divisions: Division[];
@@ -52,10 +53,14 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
   return (
     <div className="w-full max-w-[1780px] mx-auto px-2 sm:px-4 py-4 space-y-6">
       <div className="mb-2">
-        <h2 className="text-xl sm:text-2xl font-bold text-th-text">Schools Division Offices &amp; Regional Management</h2>
-        <p className="text-sm text-th-muted mt-1 leading-relaxed">
-          Manage reporting divisions for Region VI Western Visayas. Confirmation is required before adding or deleting any division.
-        </p>
+        <h2 className="text-xl sm:text-2xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+          <span>Schools Division Offices &amp; Regional Management</span>
+          <TipsButton>
+            <p>
+              Manage reporting divisions for Region VI Western Visayas. Confirmation is required before adding or deleting any division.
+            </p>
+          </TipsButton>
+        </h2>
       </div>
 
       {/* Add Division Card */}
@@ -81,15 +86,12 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
             Add Division
           </button>
         </form>
-        <p className="text-sm text-th-muted mt-2.5 leading-relaxed">
-          You will be prompted to confirm before this division is created.
-        </p>
       </div>
 
       {/* Existing Divisions List */}
       <div className="bg-th-surface border border-th-border rounded-xl overflow-hidden shadow-xs transition-colors">
-        <div className="px-6 py-4 border-b border-th-border bg-th-subtle flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="px-4 sm:px-6 py-4 border-b border-th-border bg-th-subtle flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-bold text-th-text">Registered Divisions</span>
             <span className="text-sm font-medium text-th-muted">({divisions.length} total)</span>
           </div>
@@ -105,23 +107,23 @@ export const DivisionManager: React.FC<DivisionManagerProps> = ({
           {divisions.map((division, idx) => (
             <div
               key={division.id}
-              className="px-6 py-3.5 flex items-center justify-between hover:bg-th-subtle transition-colors"
+              className="px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3 hover:bg-th-subtle transition-colors"
             >
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-mono font-semibold text-th-muted w-7">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 flex-1">
+                <span className="text-sm font-mono font-semibold text-th-muted w-7 shrink-0">
                   {(idx + 1).toString().padStart(2, '0')}
                 </span>
-                <span className="text-base font-semibold text-th-text">
+                <span className="text-base font-semibold text-th-text break-words min-w-0">
                   {division.name}
                 </span>
                 {division.id === 'ro-vi' && (
-                  <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2.5 py-0.5 rounded-md font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-th-muted" /> Regional Office
+                  <span className="text-xs text-th-text bg-th-subtle border border-th-border-strong px-2.5 py-0.5 rounded-md font-bold inline-flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-th-muted shrink-0" /> Regional Office
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleInitiateDelete(division)}

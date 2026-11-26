@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { FinancialDataStore } from '../types/fs';
+import { BudgetComparisonDraft, FinancialDataStore } from '../types/fs';
 import {
   BUDGET_COMPARISON_ROWS,
   BUDGET_COMPARISON_ALL_STORAGE_KEYS,
@@ -22,8 +22,13 @@ import {
   Table2,
   CheckCircle2,
   Lock,
+  FileText,
+  ArrowLeft,
+  Printer,
+  Download,
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
+import { TipsButton } from './TipsButton';
 
 interface BudgetComparisonEntryTableProps {
   divisionId: string;
@@ -37,6 +42,8 @@ interface BudgetComparisonEntryTableProps {
   ) => void;
   onDeleteAmount: (year: string, divisionId: string, lineItemId: string) => void;
   onNavigateToViewFS: () => void;
+  savedDraft?: BudgetComparisonDraft;
+  onDraftStateChange?: (draftKey: string, draft: BudgetComparisonDraft | null) => void;
 }
 
 type CellDraft = {
@@ -46,6 +53,63 @@ type CellDraft = {
 };
 
 type DraftGridState = Record<string, CellDraft>;
+
+const NUMERIC_COLS: BudgetComparisonColumnKey[] = ['orig', 'final', 'actual'];
+
+const parseClipboardTsvGrid = (rawText: string): string[][] => {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < rawText.length; i++) {
+    const ch = rawText[i];
+    const next = rawText[i + 1];
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        currentCell += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        currentCell += ch;
+      }
+    } else if (ch === '"' && currentCell === '') {
+      inQuotes = true;
+    } else if (ch === '\t') {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if (ch === '\r' && next === '\n') {
+      currentRow.push(currentCell.trim());
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+      i++;
+    } else if (ch === '\n' || ch === '\r') {
+      currentRow.push(currentCell.trim());
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += ch;
+    }
+  }
+
+  if (currentCell !== '' || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    rows.push(currentRow);
+  }
+
+  while (
+    rows.length > 0 &&
+    rows[rows.length - 1].every((cell) => cell === '')
+  ) {
+    rows.pop();
+  }
+
+  return rows;
+};
 
 const formatEditableNumeric = (val: number | undefined): string => {
   if (!val || Math.abs(val) < 0.005) return '';
@@ -80,25 +144,66 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
   onSaveBatchAmounts,
   onDeleteAmount,
   onNavigateToViewFS,
+  savedDraft,
+  onDraftStateChange,
 }) => {
+  const draftKey = `${selectedYear}::${divisionId}`;
+  const savedDraftRef = useRef(savedDraft);
+  savedDraftRef.current = savedDraft;
+  const onDraftStateChangeRef = useRef(onDraftStateChange);
+  onDraftStateChangeRef.current = onDraftStateChange;
+
   const [draftGrid, setDraftGrid] = useState<DraftGridState>(() =>
-    buildDraftGridFromStore(dataStore, selectedYear, divisionId)
+    savedDraft?.isDirty
+      ? savedDraft.draftGrid
+      : buildDraftGridFromStore(dataStore, selectedYear, divisionId)
   );
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>(() =>
-    loadBudgetComparisonNotes(selectedYear, divisionId)
+    savedDraft?.isDirty
+      ? savedDraft.draftNotes
+      : loadBudgetComparisonNotes(selectedYear, divisionId)
   );
-  const [isDirty, setIsDirty] = useState(false);
+  const [isDirty, setIsDirty] = useState<boolean>(() => Boolean(savedDraft?.isDirty));
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isDraftPreviewOpen, setIsDraftPreviewOpen] = useState(false);
 
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
-    setDraftGrid(buildDraftGridFromStore(dataStore, selectedYear, divisionId));
-    setDraftNotes(loadBudgetComparisonNotes(selectedYear, divisionId));
-    setIsDirty(false);
+    const restored = savedDraftRef.current;
+    if (restored?.isDirty) {
+      setDraftGrid(restored.draftGrid);
+      setDraftNotes(restored.draftNotes);
+      setIsDirty(true);
+    } else {
+      setDraftGrid(buildDraftGridFromStore(dataStore, selectedYear, divisionId));
+      setDraftNotes(loadBudgetComparisonNotes(selectedYear, divisionId));
+      setIsDirty(false);
+    }
     setSaveMessage(null);
+    setIsDraftPreviewOpen(false);
   }, [selectedYear, divisionId]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    onDraftStateChangeRef.current?.(draftKey, {
+      draftGrid,
+      draftNotes,
+      isDirty: true,
+    });
+  }, [draftKey, draftGrid, draftNotes, isDirty]);
+
+  useEffect(() => {
+    if (!isDraftPreviewOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDraftPreviewOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDraftPreviewOpen]);
 
   // Also sync external updates (e.g., benchmark reload or data transfer) if user has no unsaved edits
   useEffect(() => {
@@ -230,6 +335,7 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
       }, {})
     );
     setIsDirty(false);
+    onDraftStateChange?.(draftKey, null);
     setSaveMessage(
       `Saved Statement of Comparison of Budget and Actual Amounts for ${divisionName} (FY ${selectedYear}).`
     );
@@ -240,6 +346,7 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
     setDraftGrid(buildDraftGridFromStore(dataStore, selectedYear, divisionId));
     setDraftNotes(loadBudgetComparisonNotes(selectedYear, divisionId));
     setIsDirty(false);
+    onDraftStateChange?.(draftKey, null);
     setSaveMessage(null);
   };
 
@@ -255,6 +362,7 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
     setDraftGrid(clearedGrid);
     setDraftNotes({});
     setIsDirty(false);
+    onDraftStateChange?.(draftKey, null);
     setIsResetConfirmOpen(false);
     setSaveMessage(
       `Reset all Budget & Actual amounts to zero for ${divisionName} (FY ${selectedYear}).`
@@ -269,6 +377,81 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
     if (el) {
       el.focus();
       el.select();
+    }
+  };
+
+  const handleGridPaste = (
+    e: React.ClipboardEvent<HTMLInputElement>,
+    startRowId: string,
+    startCol: 'notes' | BudgetComparisonColumnKey
+  ) => {
+    const raw = e.clipboardData?.getData('text/plain');
+    if (!raw) return;
+
+    const pastedRows = parseClipboardTsvGrid(raw);
+    const isMultiCell =
+      pastedRows.length > 1 || (pastedRows[0] && pastedRows[0].length > 1);
+    if (!isMultiCell) return;
+
+    const startRow = BUDGET_COMPARISON_ROWS.find((r) => r.id === startRowId);
+    if (!startRow) return;
+
+    const sectionRows = BUDGET_COMPARISON_ROWS.filter(
+      (r) => r.group === startRow.group
+    );
+    const sectionStartIdx = sectionRows.findIndex((r) => r.id === startRowId);
+    if (sectionStartIdx < 0) return;
+
+    e.preventDefault();
+
+    const colOrder: ('notes' | BudgetComparisonColumnKey)[] =
+      startCol === 'notes'
+        ? ['notes', ...NUMERIC_COLS]
+        : NUMERIC_COLS;
+    const startColIdx = colOrder.indexOf(startCol);
+    if (startColIdx < 0) return;
+
+    let cellsUpdated = 0;
+    const nextGrid: DraftGridState = { ...draftGrid };
+    const nextNotes: Record<string, string> = { ...draftNotes };
+
+    for (let rOffset = 0; rOffset < pastedRows.length; rOffset++) {
+      const targetRow = sectionRows[sectionStartIdx + rOffset];
+      if (!targetRow) break;
+
+      const sourceCols = pastedRows[rOffset];
+      const existingCell = nextGrid[targetRow.id] || {
+        orig: '',
+        final: '',
+        actual: '',
+      };
+      const updatedCell: CellDraft = { ...existingCell };
+
+      for (let cOffset = 0; cOffset < sourceCols.length; cOffset++) {
+        const targetCol = colOrder[startColIdx + cOffset];
+        if (!targetCol) break;
+
+        const rawCell = sourceCols[cOffset];
+        if (targetCol === 'notes') {
+          nextNotes[targetRow.id] = rawCell;
+          cellsUpdated++;
+        } else {
+          const parsedNum = parseNumberInput(rawCell);
+          updatedCell[targetCol] = formatEditableNumeric(parsedNum);
+          cellsUpdated++;
+        }
+      }
+
+      nextGrid[targetRow.id] = updatedCell;
+    }
+
+    if (cellsUpdated > 0) {
+      setDraftGrid(nextGrid);
+      setDraftNotes(nextNotes);
+      setIsDirty(true);
+      setSaveMessage(
+        `Pasted ${cellsUpdated} cell${cellsUpdated === 1 ? '' : 's'} into ${startRow.group}. Click "Save Table" to commit changes.`
+      );
     }
   };
 
@@ -294,6 +477,87 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
         focusCell(rowIdx + 1, 'orig');
       }
     }
+  };
+
+  const handleExportDraftCSV = () => {
+    const bcRows: string[][] = [
+      ['Department of Education'],
+      ['Regional Office No. VI'],
+      [divisionName],
+      ['Statement of Comparison of Budget and Actual Amounts (Draft)'],
+      ['All Funds'],
+      [`For the Year Ended December 31, ${selectedYear}`],
+      [],
+      [
+        'Particulars',
+        'Notes',
+        'Budgeted Amount - Original',
+        'Budgeted Amount - Final',
+        'Actual Amounts on Comparable Basis',
+        'Difference Final Budget and Actual',
+      ],
+      ['"RECEIPTS"'],
+    ];
+
+    liveSummary.receipts.forEach((row) => {
+      bcRows.push([
+        `"${row.name}"`,
+        `"${draftNotes[row.id] || ''}"`,
+        row.original.toString(),
+        row.final.toString(),
+        row.actual.toString(),
+        row.difference.toString(),
+      ]);
+    });
+    bcRows.push([
+      '"Total Receipts"',
+      '""',
+      liveSummary.totalReceipts.original.toString(),
+      liveSummary.totalReceipts.final.toString(),
+      liveSummary.totalReceipts.actual.toString(),
+      liveSummary.totalReceipts.difference.toString(),
+    ]);
+    bcRows.push([]);
+    bcRows.push(['"PAYMENTS"']);
+    liveSummary.payments.forEach((row) => {
+      bcRows.push([
+        `"${row.name}"`,
+        `"${draftNotes[row.id] || ''}"`,
+        row.original.toString(),
+        row.final.toString(),
+        row.actual.toString(),
+        row.difference.toString(),
+      ]);
+    });
+    bcRows.push([
+      '"Total Payments"',
+      '""',
+      liveSummary.totalPayments.original.toString(),
+      liveSummary.totalPayments.final.toString(),
+      liveSummary.totalPayments.actual.toString(),
+      liveSummary.totalPayments.difference.toString(),
+    ]);
+    bcRows.push([]);
+    bcRows.push([
+      '"NET RECEIPTS/PAYMENT"',
+      '""',
+      liveSummary.netReceiptsPayments.original.toString(),
+      liveSummary.netReceiptsPayments.final.toString(),
+      liveSummary.netReceiptsPayments.actual.toString(),
+      liveSummary.netReceiptsPayments.difference.toString(),
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + bcRows.map((r) => r.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `${divisionName.replace(/\s+/g, '_')}_BUDGET_COMPARISON_DRAFT_${selectedYear}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const renderEditableSection = (
@@ -337,6 +601,7 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
                 type="text"
                 value={draftNotes[row.id] || ''}
                 onChange={(e) => handleNoteChange(row.id, e.target.value)}
+                onPaste={(e) => handleGridPaste(e, row.id, 'notes')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.shiftKey) {
                     e.preventDefault();
@@ -369,6 +634,7 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
                     onChange={(e) => handleCellChange(row.id, col, e.target.value)}
                     onFocus={(e) => e.target.select()}
                     onBlur={() => handleCellBlur(row.id, col)}
+                    onPaste={(e) => handleGridPaste(e, row.id, col)}
                     onKeyDown={(e) => handleNumericKeyDown(e, row.id, col)}
                     placeholder="0.00"
                     aria-label={`${row.name} — ${colLabel}`}
@@ -416,37 +682,45 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
   );
 
   return (
-    <div className="space-y-6">
+    <div className="@container space-y-6">
+      {!isDraftPreviewOpen && (
       <form
         onSubmit={handleSaveTable}
-        className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors space-y-5"
+        className="bg-th-surface border-2 border-th-border rounded-2xl p-4 sm:p-6 shadow-xs transition-colors space-y-5"
       >
         {/* Header & Primary Controls */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-4 border-b border-th-border">
+        <div className="flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-4 pb-4 border-b border-th-border">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5 flex-wrap">
               <Table2 className="w-5 h-5 text-th-muted shrink-0" />
               <h3 className="text-lg sm:text-xl font-bold text-th-text">
                 Statement of Comparison of Budget and Actual Amounts
               </h3>
+              <TipsButton>
+                <p>
+                  Enter amounts directly or copy cells from Excel and paste (<strong className="text-th-text">Ctrl+V</strong>) into any starting cell of Receipts or Payments. Differences and totals calculate automatically.
+                </p>
+                <p className="pt-2 border-t border-th-border">
+                  Press <strong className="text-th-text">Enter</strong> to advance to the next cell, or <strong className="text-th-text">Shift + Enter</strong> to save the table.
+                </p>
+              </TipsButton>
               {isDirty && (
                 <span className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 px-2.5 py-0.5 rounded-lg whitespace-nowrap">
                   Unsaved changes
                 </span>
               )}
             </div>
-            <p className="text-sm text-th-muted mt-1 leading-relaxed">
-              Table-form entry for <strong className="text-th-text">{divisionName}</strong>{' '}
-              <span aria-hidden="true">·</span>{' '}
+            <p className="text-sm text-th-muted mt-1 leading-relaxed flex items-center gap-1.5 flex-wrap">
+              <strong className="text-th-text">{divisionName}</strong>
+              <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1 font-semibold text-th-text">
                 <Calendar className="w-3.5 h-3.5 text-th-muted" />
                 FY {selectedYear}
               </span>
-              . Enter Original, Final, and Actual amounts directly in the grid. Difference, Total Receipts, Total Payments, and Net Receipts/Payment calculate automatically.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5">
             {isDirty && (
               <button
                 type="button"
@@ -469,10 +743,21 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
 
             <button
               type="button"
+              onClick={() => setIsDraftPreviewOpen(true)}
+              className="min-h-[42px] px-4 py-2 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover rounded-xl transition-colors border-2 border-th-border-strong inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              title="Preview formatted statement using your current table figures without saving yet"
+            >
+              <FileText className="w-4 h-4 text-th-muted shrink-0" />
+              <span>View Statement Draft</span>
+            </button>
+
+            <button
+              type="button"
               onClick={onNavigateToViewFS}
               className="min-h-[42px] px-4 py-2 text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+              title="Open saved Statement of Comparison of Budget and Actual Amounts in Financial Statements"
             >
-              <span>View Statement</span>
+              <span>View Saved FS</span>
               <ChevronRight className="w-4 h-4 shrink-0" />
             </button>
 
@@ -665,21 +950,272 @@ export const BudgetComparisonEntryTable: React.FC<BudgetComparisonEntryTableProp
         </div>
 
         {/* Footer Save Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-          <div className="text-xs sm:text-sm text-th-muted font-medium">
-            Press <strong className="text-th-text">Enter</strong> to advance across Original → Final → Actual, or{' '}
-            <strong className="text-th-text">Shift + Enter</strong> to save the table.
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => setIsDraftPreviewOpen(true)}
+              className="min-h-[44px] px-4 py-2.5 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap cursor-pointer"
+            >
+              <FileText className="w-4 h-4 text-th-muted shrink-0" />
+              <span>View Statement Draft</span>
+            </button>
 
-          <button
-            type="submit"
-            className="self-end sm:self-auto min-h-[44px] px-6 py-2.5 text-sm sm:text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Check className="w-5 h-5 stroke-[2.5] shrink-0" />
-            <span>Save Budget Comparison Table</span>
-          </button>
+            <button
+              type="submit"
+              className="min-h-[44px] px-5 sm:px-6 py-2.5 text-sm sm:text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors inline-flex items-center justify-center gap-2 text-center cursor-pointer"
+            >
+              <Check className="w-5 h-5 stroke-[2.5] shrink-0" />
+              <span>Save Budget Comparison Table</span>
+            </button>
         </div>
       </form>
+      )}
+
+      {isDraftPreviewOpen && (
+        <div className="space-y-4">
+          {/* Draft Preview Controls Banner (No-Print) */}
+          <div className="no-print bg-th-surface border-2 border-th-border-strong rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                <div className="p-2.5 rounded-xl bg-th-primary text-th-primary-fg border border-th-border-strong shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-bold text-th-text">
+                      Statement of Comparison of Budget and Actual Amounts — Draft Preview
+                    </h3>
+                    {isDirty && (
+                      <span className="text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 px-2.5 py-0.5 rounded-lg whitespace-nowrap">
+                        Not Yet Saved
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-th-muted mt-0.5">
+                    {isDirty
+                      ? 'Showing your live encoded/pasted figures. Returning to the table keeps your unsaved edits intact.'
+                      : 'Previewing your current encoded amounts as an official statement.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsDraftPreviewOpen(false)}
+                  className="min-h-[42px] px-4 py-2 text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4 text-th-muted shrink-0" />
+                  <span>Back to Edit Table</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportDraftCSV}
+                  className="min-h-[42px] px-4 py-2 text-sm font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-th-muted shrink-0" />
+                  <span>Export Draft CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="min-h-[42px] px-4 py-2 text-sm font-bold text-th-text bg-th-surface hover:bg-th-subtle-hover border-2 border-th-border-strong rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 text-th-muted shrink-0" />
+                  <span>Print Draft</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveTable()}
+                  className="min-h-[42px] px-5 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-xl shadow-sm transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Check className="w-4 h-4 stroke-[2.5] shrink-0" />
+                  <span>{isDirty ? 'Save Table Changes' : 'Save Table'}</span>
+                </button>
+              </div>
+            </div>
+
+            {saveMessage && (
+              <div className="px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-sm font-bold flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                <span>{saveMessage}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Official Financial Statement Draft Paper Sheet */}
+          <div className="bg-white text-black p-4 sm:p-8 lg:p-12 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug rounded-2xl border-2 border-th-border shadow-xs print:border-0 print:shadow-none print:rounded-none print:p-0">
+            <div className="text-center mb-8">
+              <div className="text-base font-bold">Department of Education</div>
+              <div className="text-base font-bold">Regional Office No. VI</div>
+              <div className="text-base font-bold">{divisionName}</div>
+              <div className="text-base font-bold">
+                Statement of Comparison of Budget and Actual Amounts
+              </div>
+              <div className="text-base font-bold">All Funds</div>
+              <div className="text-base font-bold">
+                For the Year Ended December 31, {selectedYear}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11pt] border-collapse">
+                <thead>
+                  <tr>
+                    <th
+                      rowSpan={2}
+                      colSpan={2}
+                      className="py-2 px-3 text-center font-bold border border-black w-[36%]"
+                    >
+                      Particulars
+                    </th>
+                    <th
+                      colSpan={2}
+                      className="py-1.5 px-3 text-center font-bold border-t border-r border-b border-black w-[30%]"
+                    >
+                      Budgeted Amount
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="py-2 px-3 text-center font-bold border-t border-r border-b border-black w-[17%]"
+                    >
+                      Actual Amounts on Comparable Basis
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="py-2 px-3 text-center font-bold border-t border-r border-b border-black w-[17%]"
+                    >
+                      Difference Final Budget and Actual
+                    </th>
+                  </tr>
+                  <tr>
+                    <th className="py-2 px-3 text-center font-bold border-b border-r border-black w-[15%]">
+                      Original
+                    </th>
+                    <th className="py-2 px-3 text-center font-bold border-b border-r border-black w-[15%]">
+                      Final
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="pt-2 pb-0.5 pr-2 font-bold uppercase">RECEIPTS</td>
+                    <td className="pt-2 pb-0.5 px-2 text-center font-bold w-14">Notes</td>
+                    <td colSpan={4} />
+                  </tr>
+                  {liveSummary.receipts.map((row) => (
+                    <tr key={row.id}>
+                      <td className="py-0.5 pl-6 pr-2">{row.name}</td>
+                      <td className="py-0.5 px-2 text-center">
+                        {draftNotes[row.id] || ''}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.original)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.final)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.actual)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.difference)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className="py-1 pl-6 pr-2 font-bold">Total Receipts</td>
+                    <td className="py-1 px-2" />
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalReceipts.original)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalReceipts.final)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalReceipts.actual)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalReceipts.difference)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan={6} className="h-4" />
+                  </tr>
+
+                  <tr>
+                    <td className="pt-2 pb-0.5 pr-2 font-bold uppercase">PAYMENTS</td>
+                    <td colSpan={5} />
+                  </tr>
+                  {liveSummary.payments.map((row) => (
+                    <tr key={row.id}>
+                      <td className="py-0.5 pl-6 pr-2">{row.name}</td>
+                      <td className="py-0.5 px-2 text-center">
+                        {draftNotes[row.id] || ''}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.original)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.final)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.actual)}
+                      </td>
+                      <td className="py-0.5 px-3 text-right tabular-nums">
+                        {formatBudgetComparisonNumber(row.difference)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className="py-1 pl-6 pr-2 font-bold">Total Payments</td>
+                    <td className="py-1 px-2" />
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalPayments.original)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalPayments.final)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalPayments.actual)}
+                    </td>
+                    <td className="py-1 px-3 text-right font-bold tabular-nums border-t border-b border-black">
+                      {formatBudgetComparisonNumber(liveSummary.totalPayments.difference)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td colSpan={6} className="h-4" />
+                  </tr>
+
+                  <tr>
+                    <td className="py-1.5 pr-2 font-bold uppercase border-t border-black border-b-4 border-double">
+                      NET RECEIPTS/PAYMENT
+                    </td>
+                    <td className="py-1.5 px-2 border-t border-black border-b-4 border-double" />
+                    <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                      {formatBudgetComparisonNumber(liveSummary.netReceiptsPayments.original)}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                      {formatBudgetComparisonNumber(liveSummary.netReceiptsPayments.final)}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                      {formatBudgetComparisonNumber(liveSummary.netReceiptsPayments.actual)}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-bold tabular-nums border-t border-black border-b-4 border-double">
+                      {formatBudgetComparisonNumber(liveSummary.netReceiptsPayments.difference)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={isResetConfirmOpen}

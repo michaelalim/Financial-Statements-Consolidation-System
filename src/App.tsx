@@ -3,13 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
+  BudgetComparisonDraft,
   Division,
   LineItemDefinition,
   FinancialDataStore,
   DivisionAggregationRecord,
   AggregationMetadataStore,
+  StagedEntry,
+  TopEntryDraft,
 } from './types/fs';
 import { INITIAL_DIVISIONS } from './data/defaultDivisions';
 import {
@@ -21,12 +24,10 @@ import {
   AGGREGATED_ACCUMULATED_DEPRECIATION_ITEM,
 } from './data/defaultLineItems';
 import { BENCHMARK_FINANCIAL_DATA } from './data/benchmarkData';
-import { calculateReport } from './utils/calculations';
-import { calculateCashFlowsSummary } from './utils/cashFlowCalculations';
-import { calculateNetAssetsSummary } from './utils/netAssetsCalculations';
+import { buildCrossStatementAuditReport } from './utils/auditChecks';
 import { YEAR_RANGE, getComparativeYear, getDefaultFiscalYear } from './utils/yearUtils';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { AccountingAuditDrawer, CrossStatementAuditSummary } from './components/AccountingAuditDrawer';
+import { AccountingAuditDrawer } from './components/AccountingAuditDrawer';
 import { FinancialStatementType } from './components/FinancialStatementSidebar';
 import { DataEntryForm } from './components/DataEntryForm';
 import { DivisionalFSView } from './components/DivisionalFSView';
@@ -323,6 +324,51 @@ export default function App() {
 
   // Transfer notification toast state
   const [transferToastMessage, setTransferToastMessage] = useState<string | null>(null);
+
+  // In-memory unsaved batches & drafts per (year, division, statement) — intentionally NOT persisted to storage
+  // so they survive switching statements/tabs in-session but clear when the window/webpage is closed.
+  const [stagedBatchesByKey, setStagedBatchesByKey] = useState<Record<string, StagedEntry[]>>({});
+  const [topDraftsByKey, setTopDraftsByKey] = useState<Record<string, TopEntryDraft>>({});
+  const [budgetDraftsByKey, setBudgetDraftsByKey] = useState<Record<string, BudgetComparisonDraft>>({});
+
+  const hasPendingUnsavedEntries = useMemo(() => {
+    const hasStagedRows = Object.values(stagedBatchesByKey).some((rows) =>
+      rows.some((r) => Boolean(r.lineItemId || r.rawText?.trim() || r.amount?.trim()))
+    );
+    if (hasStagedRows) return true;
+
+    const hasTopDraft = Object.values(topDraftsByKey).some((d) =>
+      Boolean(d.selectedItemId || d.rawText.trim() || d.amountInput.trim())
+    );
+    if (hasTopDraft) return true;
+
+    return Object.values(budgetDraftsByKey).some((d) => d.isDirty);
+  }, [stagedBatchesByKey, topDraftsByKey, budgetDraftsByKey]);
+
+  useEffect(() => {
+    if (!hasPendingUnsavedEntries) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasPendingUnsavedEntries]);
+
+  const handleBudgetDraftChange = useCallback((draftKey: string, draft: BudgetComparisonDraft | null) => {
+    setBudgetDraftsByKey((prev) => {
+      if (!draft || !draft.isDirty) {
+        if (!(draftKey in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[draftKey];
+        return copy;
+      }
+      return {
+        ...prev,
+        [draftKey]: draft,
+      };
+    });
+  }, []);
 
   // Global Confirmation Modals for Cross-Component Prompting
   const [isResetBenchmarkModalOpen, setIsResetBenchmarkModalOpen] = useState(false);
@@ -660,74 +706,16 @@ export default function App() {
     ? 'Consolidated Region VI (All Funds)'
     : divisions.find((d) => d.id === selectedDivisionId)?.name || 'Regional Office VI';
 
-  const liveChecksReport = useMemo(() => {
-    return calculateReport(lineItems, dataStore, selectedYear, activeDivForChecks);
+  const auditReport = useMemo(() => {
+    return buildCrossStatementAuditReport(
+      lineItems,
+      dataStore,
+      selectedYear,
+      activeDivForChecks
+    );
   }, [lineItems, dataStore, selectedYear, activeDivForChecks]);
 
-  const crossStatementAudit: CrossStatementAuditSummary = useMemo(() => {
-    const perfItems = lineItems.filter((i) => (i.statementType || 'position') === 'performance');
-    const sumPerfNet = (items: LineItemDefinition[]) =>
-      items.reduce((sum, item) => {
-        const v = liveChecksReport.values[item.id] || 0;
-        return sum + (item.isContra ? -v : v);
-      }, 0);
-    const revItems = perfItems.filter((i) => i.section === 'REVENUE');
-    const expItems = perfItems.filter((i) => i.section === 'EXPENSES');
-    const trItems = perfItems.filter((i) => i.section === 'TRANSFERS');
-    const trFromItems = trItems.filter((i) => !i.group.startsWith('Less:'));
-    const trToItems = trItems.filter((i) => i.group.startsWith('Less:'));
-    const nonOpItems = perfItems.filter((i) => i.section === 'NON_OPERATING');
-    const lossItems = perfItems.filter((i) => i.section === 'LOSSES');
-
-    const perfTotalRevenue = sumPerfNet(revItems);
-    const perfTotalExpenses = sumPerfNet(expItems);
-    const netTransfers = sumPerfNet(trFromItems) - sumPerfNet(trToItems);
-    const netNonOp = sumPerfNet(nonOpItems);
-    const totalLosses = lossItems.reduce(
-      (sum, item) => sum + Math.abs(liveChecksReport.values[item.id] || 0),
-      0
-    );
-    const perfNetSurplusDeficit =
-      perfTotalRevenue - perfTotalExpenses + netTransfers + netNonOp - totalLosses;
-
-    const cfSummary = calculateCashFlowsSummary(lineItems, dataStore, selectedYear, activeDivForChecks);
-    const naSummary = calculateNetAssetsSummary(dataStore, selectedYear, activeDivForChecks);
-    const sfpCashAndCashEquivalents =
-      liveChecksReport.groupTotals['Current Assets__Cash and Cash Equivalents'] || 0;
-
-    return {
-      sfpCashAndCashEquivalents,
-      perfTotalRevenue,
-      perfTotalExpenses,
-      perfNetSurplusDeficit,
-      cfNetOperating: cfSummary.netOperating,
-      cfNetInvesting: cfSummary.netInvesting,
-      cfNetFinancing: cfSummary.netFinancing,
-      cfNetIncreaseDecrease: cfSummary.netIncreaseDecrease,
-      cfBeginningCash: cfSummary.january1Cash,
-      cfEndingCash: cfSummary.december31Cash,
-      cfHasData:
-        Math.abs(cfSummary.netOperating) >= 0.005 ||
-        Math.abs(cfSummary.netInvesting) >= 0.005 ||
-        Math.abs(cfSummary.netFinancing) >= 0.005 ||
-        Math.abs(cfSummary.netIncreaseDecrease) >= 0.005 ||
-        Math.abs(cfSummary.january1Cash) >= 0.005 ||
-        Math.abs(cfSummary.december31Cash) >= 0.005,
-      naBeginningBalance: naSummary.january1Balance,
-      naRestatedBalance: naSummary.restatedBalance,
-      naSurplusForPeriod: naSummary.surplusDeficitForPeriod,
-      naEndingBalance: naSummary.december31Balance,
-      naHasData:
-        Math.abs(naSummary.january1Balance) >= 0.005 ||
-        Math.abs(naSummary.restatedBalance) >= 0.005 ||
-        Math.abs(naSummary.surplusDeficitForPeriod) >= 0.005 ||
-        Math.abs(naSummary.totalCalendarYearChanges) >= 0.005 ||
-        Math.abs(naSummary.december31Balance) >= 0.005,
-    };
-  }, [lineItems, dataStore, selectedYear, activeDivForChecks, liveChecksReport]);
-
-  const liabilitiesPlusEquity = liveChecksReport.totalLiabilities + liveChecksReport.totalEquity;
-  const isBalanced = Math.abs(liveChecksReport.totalAssets - liabilitiesPlusEquity) < 0.01;
+  const isBalanced = auditReport.allPassed;
 
   const currentDivisionIndex = divisions.findIndex((d) => d.id === selectedDivisionId);
   const hasPrevDivision = currentDivisionIndex > 0;
@@ -764,7 +752,7 @@ export default function App() {
   const navIconButtonClass = isSecondNavCompact ? 'min-w-[34px] min-h-[34px]' : 'min-w-[42px] min-h-[42px]';
 
   return (
-    <div className="min-h-screen bg-th-canvas text-th-text flex flex-col antialiased transition-colors">
+    <div className="min-h-screen bg-th-canvas text-th-text flex flex-col antialiased transition-colors overflow-x-clip">
       {/* Unified Sticky Dual Navigation Bars (Main Navbar + Contextual Institutional Ribbon) */}
       <div className="sticky top-0 z-40 no-print shadow-md">
         <Navbar
@@ -774,116 +762,121 @@ export default function App() {
           isAuditOpen={isAuditOpen}
           onToggleAudit={() => setIsAuditOpen((prev) => !prev)}
           isBalanced={isBalanced}
+          failedChecksCount={auditReport.failedChecksCount}
         />
 
         {/* Contextual Institutional Ribbon (Frozen + Vertically Adjustable Height) */}
         <div
           ref={secondNavRef}
           style={{ minHeight: `${secondNavHeight}px` }}
-          className={`relative group bg-th-surface border-b border-th-border text-sm sm:text-base text-th-muted px-4 sm:px-6 lg:px-8 flex items-center transition-colors ${
+          className={`relative group bg-th-surface border-b border-th-border text-sm sm:text-base text-th-muted px-3 sm:px-6 lg:px-8 flex items-center transition-colors ${
             isSecondNavCompact ? 'py-1.5' : 'py-2.5'
           }`}
         >
-          <div className="max-w-[1780px] w-full mx-auto flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="font-bold text-th-muted">Office:</span>
-              {activeTab === 'consolidated' || activeTab === 'matrix' ? (
-                <span
-                  className={`font-bold text-th-text bg-th-subtle px-3.5 rounded-xl border border-th-border flex items-center ${navControlHeightClass}`}
-                >
-                  {currentEntityName}
-                </span>
-              ) : (
+          <div className="max-w-[1780px] w-full mx-auto flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap min-w-0 max-w-full">
+              <div className="inline-flex items-center gap-2 flex-wrap min-w-0 max-w-full">
+                <span className="font-bold text-th-muted">Office:</span>
+                {activeTab === 'consolidated' || activeTab === 'matrix' ? (
+                  <span
+                    className={`font-bold text-th-text bg-th-subtle px-3.5 rounded-xl border border-th-border flex items-center min-w-0 max-w-full ${navControlHeightClass}`}
+                  >
+                    <span className="truncate">{currentEntityName}</span>
+                  </span>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hasPrevDivision) {
+                          setSelectedDivisionId(divisions[currentDivisionIndex - 1].id);
+                        }
+                      }}
+                      disabled={!hasPrevDivision}
+                      className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
+                      title="Previous Division"
+                      aria-label="Previous Division"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <select
+                      value={selectedDivisionId}
+                      onChange={(e) => setSelectedDivisionId(e.target.value)}
+                      aria-label="Reporting Office / Schools Division"
+                      className={`${navControlHeightClass} min-w-0 max-w-[55vw] sm:max-w-none font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
+                    >
+                      {divisions.map((div) => (
+                        <option key={div.id} value={div.id}>
+                          {div.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hasNextDivision) {
+                          setSelectedDivisionId(divisions[currentDivisionIndex + 1].id);
+                        }
+                      }}
+                      disabled={!hasNextDivision}
+                      className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
+                      title="Next Division"
+                      aria-label="Next Division"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <span className="hidden sm:inline text-th-muted" aria-hidden="true">·</span>
+
+              <div className="inline-flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-th-muted">Fiscal Year:</span>
                 <div className="inline-flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      if (hasPrevDivision) {
-                        setSelectedDivisionId(divisions[currentDivisionIndex - 1].id);
-                      }
+                      const prevYr = String(Number(selectedYear) - 1);
+                      if (YEAR_RANGE.includes(prevYr)) setSelectedYear(prevYr);
                     }}
-                    disabled={!hasPrevDivision}
-                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
-                    title="Previous Division"
-                    aria-label="Previous Division"
+                    disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
+                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
+                    title="Previous Fiscal Year"
+                    aria-label="Previous Fiscal Year"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <select
-                    value={selectedDivisionId}
-                    onChange={(e) => setSelectedDivisionId(e.target.value)}
-                    aria-label="Reporting Office / Schools Division"
-                    className={`${navControlHeightClass} font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    aria-label="Fiscal Year"
+                    className={`${navControlHeightClass} font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
                   >
-                    {divisions.map((div) => (
-                      <option key={div.id} value={div.id}>
-                        {div.name}
+                    {YEAR_RANGE.map((yr) => (
+                      <option key={yr} value={yr}>
+                        FY {yr}
                       </option>
                     ))}
                   </select>
                   <button
                     type="button"
                     onClick={() => {
-                      if (hasNextDivision) {
-                        setSelectedDivisionId(divisions[currentDivisionIndex + 1].id);
-                      }
+                      const nextYr = String(Number(selectedYear) + 1);
+                      if (YEAR_RANGE.includes(nextYr)) setSelectedYear(nextYr);
                     }}
-                    disabled={!hasNextDivision}
-                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer shrink-0`}
-                    title="Next Division"
-                    aria-label="Next Division"
+                    disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
+                    className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
+                    title="Next Fiscal Year"
+                    aria-label="Next Fiscal Year"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
                 </div>
-              )}
-
-              <span className="text-th-muted" aria-hidden="true">·</span>
-
-              <span className="font-bold text-th-muted">Fiscal Year:</span>
-              <div className="inline-flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const prevYr = String(Number(selectedYear) - 1);
-                    if (YEAR_RANGE.includes(prevYr)) setSelectedYear(prevYr);
-                  }}
-                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) - 1))}
-                  className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
-                  title="Previous Fiscal Year"
-                  aria-label="Previous Fiscal Year"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  aria-label="Fiscal Year"
-                  className={`${navControlHeightClass} font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover px-3.5 rounded-xl border-2 border-th-border-strong focus:outline-hidden focus:ring-2 focus:ring-th-accent focus:border-th-accent cursor-pointer transition-colors`}
-                >
-                  {YEAR_RANGE.map((yr) => (
-                    <option key={yr} value={yr}>
-                      FY {yr}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextYr = String(Number(selectedYear) + 1);
-                    if (YEAR_RANGE.includes(nextYr)) setSelectedYear(nextYr);
-                  }}
-                  disabled={!YEAR_RANGE.includes(String(Number(selectedYear) + 1))}
-                  className={`${navIconButtonClass} flex items-center justify-center rounded-xl bg-th-subtle hover:bg-th-subtle-hover disabled:opacity-40 disabled:cursor-not-allowed border-2 border-th-border-strong text-th-text transition-colors cursor-pointer`}
-                  title="Next Fiscal Year"
-                  aria-label="Next Fiscal Year"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+                <span className="text-sm font-mono font-semibold text-th-muted whitespace-nowrap">
+                  Prior: FY {getComparativeYear(selectedYear)}
+                </span>
               </div>
-              <span className="text-sm font-mono font-semibold text-th-muted">
-                Prior: FY {getComparativeYear(selectedYear)}
-              </span>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -895,9 +888,13 @@ export default function App() {
                     ? 'bg-th-subtle hover:bg-th-subtle-hover text-th-text border-th-border-strong'
                     : 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/80 dark:hover:bg-amber-900/80 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-800'
                 }`}
-                title="Click to inspect Balance Sheet & Cross-Statement Checks"
+                title="Click to inspect the 6 Cross-Statement Audit Checks (both years)"
               >
-                {isBalanced ? 'Balanced (A = L + E)' : 'Balance Variance'}
+                {isBalanced
+                  ? `Audit Checks Passed (${auditReport.passedEvaluations}/${auditReport.totalApplicableEvaluations})`
+                  : `${auditReport.failedChecksCount} Audit Check${
+                      auditReport.failedChecksCount === 1 ? '' : 's'
+                    } with Variance`}
               </button>
             </div>
           </div>
@@ -965,10 +962,10 @@ export default function App() {
       )}
 
       {/* Main Container: Expanded Widescreen Layout utilizing horizontal space cleanly */}
-      <div className="flex-1 max-w-[1780px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-6 items-start">
+      <div className="flex-1 max-w-[1780px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:max-w-none print:p-0 print:m-0">
+        <div className="flex gap-6 items-start print:block">
           {/* Main Active Workspace */}
-          <main className="flex-1 min-w-0 w-full space-y-6">
+          <main className="flex-1 min-w-0 w-full space-y-6 print:space-y-0">
             {activeTab === 'entry' && (
               <DataEntryForm
                 divisions={divisions}
@@ -985,6 +982,12 @@ export default function App() {
                 onDeleteLineItemPrompt={(item) => setPendingDeleteLineItem(item)}
                 selectedStatement={selectedStatement}
                 onSelectStatement={setSelectedStatement}
+                stagedBatchesByKey={stagedBatchesByKey}
+                onStagedBatchesChange={setStagedBatchesByKey}
+                topDraftsByKey={topDraftsByKey}
+                onTopDraftsChange={setTopDraftsByKey}
+                budgetDraftsByKey={budgetDraftsByKey}
+                onBudgetDraftChange={handleBudgetDraftChange}
               />
             )}
 
@@ -1056,16 +1059,9 @@ export default function App() {
             onToggle={() => setIsAuditOpen((prev) => !prev)}
             isPinned={isAuditPinned}
             onTogglePin={() => setIsAuditPinned((prev) => !prev)}
-            totalAssets={liveChecksReport.totalAssets}
-            totalCurrentAssets={liveChecksReport.totalCurrentAssets}
-            totalNonCurrentAssets={liveChecksReport.totalNonCurrentAssets}
-            totalLiabilities={liveChecksReport.totalLiabilities}
-            totalCurrentLiabilities={liveChecksReport.totalCurrentLiabilities}
-            totalNonCurrentLiabilities={liveChecksReport.totalNonCurrentLiabilities}
-            totalEquity={liveChecksReport.totalEquity}
             selectedYear={selectedYear}
             divisionName={currentEntityName}
-            crossStatementAudit={crossStatementAudit}
+            auditReport={auditReport}
           />
         </div>
       </div>

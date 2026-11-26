@@ -4,6 +4,7 @@ import { calculateReport } from '../utils/calculations';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { getComparativeYear, YEAR_RANGE } from '../utils/yearUtils';
 import { AccountingBalanceCheck } from './AccountingBalanceCheck';
+import { TipsButton } from './TipsButton';
 import { Search, Database, Download, Edit3, Check, Filter } from 'lucide-react';
 
 interface DataBankViewProps {
@@ -142,30 +143,32 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
   return (
     <div className="w-full max-w-[1780px] mx-auto px-2 sm:px-4 py-4 space-y-6">
       {/* Page Header */}
-      <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
+      <div className="bg-th-surface border border-th-border rounded-xl p-4 sm:p-6 shadow-xs transition-colors">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-th-border">
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3.5 min-w-0">
             <div className="p-3 rounded-xl bg-th-primary text-th-primary-fg border border-th-border-strong shrink-0">
               <Database className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-th-text">
-                Financial Statement Data Bank
+            <div className="min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+                <span>Financial Statement Data Bank</span>
+                <TipsButton>
+                  <p>
+                    Banked line items, balances, and benchmark accounting data for Department of Education Region VI.
+                  </p>
+                </TipsButton>
               </h2>
-              <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                Banked line items, balances, and benchmark accounting data for Department of Education Region VI.
-              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
             {/* Division Scope */}
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-bold text-th-text">Scope:</span>
+            <div className="flex flex-wrap items-center gap-2 text-sm min-w-0 w-full sm:w-auto">
+              <span className="font-bold text-th-text shrink-0">Scope:</span>
               <select
                 value={selectedDivisionFilter}
                 onChange={(e) => setSelectedDivisionFilter(e.target.value)}
-                className="px-3.5 py-2 text-sm font-semibold text-th-text bg-th-input border border-th-border-strong rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+                className="min-w-0 w-full sm:w-auto max-w-full px-3.5 py-2 text-sm font-semibold text-th-text bg-th-input border border-th-border-strong rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
               >
                 <option value="all">Consolidated Region VI (All Divisions)</option>
                 {divisions.map((d) => (
@@ -177,7 +180,7 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
             </div>
 
             {/* Year Selector (2024 - 2099) */}
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="font-bold text-th-text">Fiscal Year:</span>
               <select
                 value={selectedYear}
@@ -199,15 +202,15 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
               onClick={handleExportBankCSV}
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover rounded-lg shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 shrink-0" />
               <span>Export Data Bank</span>
             </button>
           </div>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="mt-4 flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
+        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative flex-1 min-w-0 w-full">
             <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -218,12 +221,12 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
             <Filter className="w-4 h-4 text-th-muted shrink-0" />
             <select
               value={selectedClassificationFilter}
               onChange={(e) => setSelectedClassificationFilter(e.target.value)}
-              className="px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
+              className="min-w-0 w-full sm:w-auto max-w-full px-3.5 py-2.5 text-sm font-semibold bg-th-input border border-th-border-strong text-th-text rounded-lg focus:outline-hidden focus:ring-2 focus:ring-th-accent"
             >
               <option value="all">All Classifications ({lineItems.length})</option>
               <option value="Current Assets">Current Assets</option>
@@ -402,17 +405,17 @@ export const DataBankView: React.FC<DataBankViewProps> = ({
       {/* Banked Ledger Table */}
       <div className="bg-th-surface border border-th-border rounded-xl shadow-xs overflow-hidden transition-colors">
         <div className="px-6 py-4 border-b border-th-border bg-th-subtle flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-base font-bold text-th-text">
               Banked Line Items Catalog
             </span>
             <span className="text-sm font-medium text-th-muted">
               ({filteredBankedItems.length} accounts found)
             </span>
+            <TipsButton>
+              <p>Click on any account row to inspect subgroup details or edit its balance.</p>
+            </TipsButton>
           </div>
-          <span className="text-sm text-th-muted font-medium">
-            Click on any account to inspect details or edit balance
-          </span>
         </div>
 
         <div className="overflow-x-auto max-h-[600px]">

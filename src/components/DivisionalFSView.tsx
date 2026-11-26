@@ -755,13 +755,13 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
           selectedStatement={selectedStatement}
           onSelectStatement={setSelectedStatement}
         />
-        <div className="flex-1 min-w-0 w-full space-y-6">
+        <div className="@container flex-1 min-w-0 w-full space-y-6">
       {/* Control Toolbar (No-Print) */}
-      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-5 shadow-sm space-y-4 no-print transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 no-print transition-colors">
         {/* Row 1: Office, Year & Primary Actions */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex items-center gap-1.5">
+        <div className="flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
+            <div className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
               <button
                 type="button"
                 onClick={() => {
@@ -780,7 +780,7 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
                 value={selectedDivisionId}
                 onChange={(e) => onSelectDivision(e.target.value)}
                 aria-label="Select Division Office"
-                className="min-h-[42px] pl-4 pr-9 py-2 text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 cursor-pointer shadow-xs"
+                className="min-w-0 max-w-[55vw] sm:max-w-none min-h-[42px] pl-3 sm:pl-4 pr-8 sm:pr-9 py-2 text-sm sm:text-base font-bold text-th-text bg-th-input border-2 border-th-border-strong rounded-xl focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 cursor-pointer shadow-xs"
               >
                 {divisions.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -852,7 +852,7 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={handleExportCSV}
@@ -873,9 +873,9 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
         </div>
 
         {/* Row 2: Search, View Options & Section Jumps */}
-        <div className="pt-3.5 border-t border-th-border flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            <div className="relative min-w-[220px] flex-1 max-w-sm">
+        <div className="pt-3.5 border-t border-th-border flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+            <div className="relative min-w-0 w-full sm:min-w-[200px] sm:flex-1 max-w-sm">
               <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
@@ -1077,7 +1077,7 @@ export const DivisionalFSView: React.FC<DivisionalFSViewProps> = ({
       )}
 
       {/* Official Financial Statement Document Container */}
-      <div className="bg-white text-black p-8 sm:p-14 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug print:p-0">
+      <div className="bg-white text-black p-4 sm:p-8 lg:p-12 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug print:p-0">
         {/* Document Header */}
         <div className="text-center mb-8">
           <div className="text-base font-bold">Department of Education</div>

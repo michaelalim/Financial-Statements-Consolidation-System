@@ -7,6 +7,7 @@ import { LineItemManager } from './LineItemManager';
 import { TransferDivisionPanel } from './TransferDivisionModal';
 import { Database, Building2, Sliders, RotateCcw, Settings, Sun, Moon, Check, Sparkles, ArrowLeftRight, Palette, Type, MoveVertical } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
+import { TipsButton } from './TipsButton';
 import {
   useTheme,
   SECOND_NAV_MIN_HEIGHT,
@@ -96,17 +97,19 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
       {/* Options Header & Sub-Tab Bar */}
       <div className="bg-th-surface border border-th-border rounded-xl p-6 shadow-xs transition-colors">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-th-border">
-          <div className="flex items-center gap-3.5">
+          <div className="flex items-center gap-3.5 min-w-0">
             <div className="p-3 bg-th-primary text-th-primary-fg border border-th-border-strong rounded-xl shrink-0">
               <Settings className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-th-text">
-                System Options &amp; Administrative Tools
+            <div className="min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+                <span>System Options &amp; Administrative Tools</span>
+                <TipsButton>
+                  <p>
+                    Manage the financial data bank, schools division offices, chart of accounts, data transfers, and appearance themes.
+                  </p>
+                </TipsButton>
               </h2>
-              <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                Manage the financial data bank, schools division offices, chart of accounts, data transfers, and appearance themes.
-              </p>
             </div>
           </div>
 
@@ -123,7 +126,7 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
         </div>
 
         {/* Options Sub-Tabs */}
-        <div className="mt-5 flex items-center gap-2.5 overflow-x-auto scrollbar-none">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setSubTab('databank')}
@@ -239,26 +242,28 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
         {subTab === 'theme' && (
           <div className="bg-th-surface border border-th-border rounded-xl p-6 sm:p-8 shadow-xs space-y-6 transition-colors">
             <div>
-              <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
-                <Palette className="w-5 h-5 text-th-muted" />
+              <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
+                <Palette className="w-5 h-5 text-th-muted shrink-0" />
                 <span>Themes, Text Size &amp; Display Mode</span>
+                <TipsButton>
+                  <p>
+                    Adjust screen text size for comfortable reading, select a calm color theme, or switch between Light and Dark mode.
+                  </p>
+                </TipsButton>
               </h3>
-              <p className="text-sm sm:text-base text-th-muted mt-1 leading-relaxed">
-                Adjust screen text size for comfortable reading, select a calm color theme, or switch between Light and Dark mode.
-              </p>
             </div>
 
             {/* Text Size & Readability Comfort */}
             <div className="p-6 bg-th-subtle border-2 border-th-border-strong rounded-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2">
-                    <Type className="w-5 h-5 text-th-muted" />
+                <div className="min-w-0">
+                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2 flex-wrap">
+                    <Type className="w-5 h-5 text-th-muted shrink-0" />
                     <span>Screen Text Size &amp; Readability</span>
+                    <TipsButton>
+                      <p>Make labels, numbers, and buttons larger across the whole application.</p>
+                    </TipsButton>
                   </h4>
-                  <p className="text-sm sm:text-base text-th-muted mt-1">
-                    Make labels, numbers, and buttons larger across the whole application.
-                  </p>
                 </div>
               </div>
 
@@ -320,14 +325,16 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             {/* Second Navigation Bar Height */}
             <div className="p-6 bg-th-subtle border-2 border-th-border-strong rounded-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2">
-                    <MoveVertical className="w-5 h-5 text-th-muted" />
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-base sm:text-lg font-bold text-th-text flex items-center gap-2 flex-wrap">
+                    <MoveVertical className="w-5 h-5 text-th-muted shrink-0" />
                     <span>Office &amp; Year Bar Height</span>
+                    <TipsButton>
+                      <p>
+                        Adjust the height of the frozen second navigation bar (you can also drag its bottom border directly).
+                      </p>
+                    </TipsButton>
                   </h4>
-                  <p className="text-sm sm:text-base text-th-muted mt-1">
-                    Adjust the height of the frozen second navigation bar (you can also drag its bottom border directly).
-                  </p>
                 </div>
                 <span className="font-mono text-sm font-bold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong tabular-nums">
                   {secondNavHeight}px
@@ -496,12 +503,14 @@ export const OptionsView: React.FC<OptionsViewProps> = ({
             <div className="p-6 bg-th-subtle border border-th-border rounded-xl space-y-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
-                  <h4 className="text-base font-bold text-th-text">
-                    Accent Color Style
+                  <h4 className="text-base font-bold text-th-text flex items-center gap-2 flex-wrap">
+                    <span>Accent Color Style</span>
+                    <TipsButton>
+                      <p>
+                        Choose whether primary action buttons and focus indicators use the theme&apos;s contrasting 3rd color or a tonal shade of its 1st primary color.
+                      </p>
+                    </TipsButton>
                   </h4>
-                  <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                    Choose whether primary action buttons and focus indicators use the theme&apos;s contrasting 3rd color or a tonal shade of its 1st primary color.
-                  </p>
                 </div>
                 <span className="text-xs sm:text-sm font-mono font-semibold text-th-muted">
                   Active: {useContrastAccent ? activeTheme.colors.accent : activeTonalHex}

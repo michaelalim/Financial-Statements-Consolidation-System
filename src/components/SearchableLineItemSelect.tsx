@@ -530,7 +530,7 @@ const SearchableLineItemSelectInner: React.FC<SearchableLineItemSelectProps> = (
           internalInputRef.current?.focus();
         }}
         className={`w-full flex items-center transition-all cursor-text ${
-          compact ? 'gap-2 px-3 py-2 text-sm sm:text-base rounded-xl min-h-[42px]' : 'gap-3 px-4 py-3 text-base rounded-xl min-h-[48px]'
+          compact ? 'gap-2 px-3 py-2 text-sm sm:text-base rounded-xl min-h-[42px]' : 'gap-3 px-4 py-2.5 text-base rounded-xl min-h-[52px]'
         } ${
           isInvalid
             ? 'bg-red-50/90 dark:bg-red-950/50 border-2 border-red-500 dark:border-red-500 ring-2 ring-red-500/25'

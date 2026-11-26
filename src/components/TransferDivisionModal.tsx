@@ -3,6 +3,7 @@ import { Division, FinancialDataStore } from '../types/fs';
 import { YEAR_RANGE } from '../utils/yearUtils';
 import { formatAccounting } from '../utils/formatters';
 import { ArrowRight, ArrowLeftRight, Check, AlertCircle, Copy, MoveRight, CheckCircle2 } from 'lucide-react';
+import { TipsButton } from './TipsButton';
 
 interface TransferDivisionPanelProps {
   divisions: Division[];
@@ -76,10 +77,14 @@ export const TransferDivisionPanel: React.FC<TransferDivisionPanelProps> = ({
           <ArrowLeftRight className="w-5 h-5" />
         </div>
         <div>
-          <h3 className="text-lg sm:text-xl font-bold">Transfer &amp; Reassign Financial Details</h3>
-          <p className="text-sm text-th-table-head-fg mt-0.5 leading-relaxed">
-            Move or copy line items and recorded balances between division offices and fiscal years.
-          </p>
+          <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2.5 flex-wrap">
+            <span>Transfer &amp; Reassign Financial Details</span>
+            <TipsButton>
+              <p>
+                Move or copy line items and recorded balances between division offices and fiscal years.
+              </p>
+            </TipsButton>
+          </h3>
         </div>
       </div>
 
@@ -99,10 +104,10 @@ export const TransferDivisionPanel: React.FC<TransferDivisionPanelProps> = ({
           <button
             type="button"
             onClick={handleApplyPresetIloilo}
-            className="px-4 py-2 text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-lg border border-th-primary dark:border-th-border-strong shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-4 py-2 text-sm font-bold text-left text-th-primary-fg bg-th-primary hover:opacity-90 rounded-lg border border-th-primary dark:border-th-border-strong shadow-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
           >
             <span>Transfer Iloilo Division 2024 → Iloilo City Division 2024</span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 shrink-0" />
           </button>
         </div>
 

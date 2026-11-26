@@ -1,10 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
+  BudgetComparisonDraft,
   Division,
   LineItemDefinition,
   FinancialDataStore,
   DivisionAggregationRecord,
   AggregationMetadataStore,
+  StagedEntry,
+  TopEntryDraft,
 } from '../types/fs';
 import { formatAccounting, parseNumberInput } from '../utils/formatters';
 import { getComparativeYear } from '../utils/yearUtils';
@@ -29,20 +32,26 @@ import {
   FileSpreadsheet,
   Zap,
   ArrowDown,
-  Keyboard,
   AlertCircle,
   PenTool,
   Calculator,
   Upload,
   Info,
   X,
+  PanelRight, // [live_edit]
 } from 'lucide-react';
 import { ConfirmModal } from './ConfirmModal';
 import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
 import { BudgetComparisonEntryTable } from './BudgetComparisonEntryTable';
 import { ExcelPositionImportModal } from './ExcelPositionImportModal';
+import { TipsButton } from './TipsButton';
 import { calculateCashFlowsSummary } from '../utils/cashFlowCalculations';
 import { calculateNetAssetsSummary } from '../utils/netAssetsCalculations';
+import {
+  buildLiveEditOverlay,
+  LiveEditStatementPanel,
+  LiveEditWindowMode,
+} from '../live_edit'; // [live_edit]
 
 export type { FinancialStatementType };
 
@@ -97,7 +106,6 @@ interface StatementEncodingMeta {
   rowPlaceholder: string;
   batchExampleTyped: string;
   batchExampleMatched: string;
-  frequentAccounts: { id: string; label: string }[];
 }
 
 const STATEMENT_ENCODING_META: Record<FinancialStatementType, StatementEncodingMeta> = {
@@ -106,79 +114,32 @@ const STATEMENT_ENCODING_META: Record<FinancialStatementType, StatementEncodingM
     rowPlaceholder: 'Enter account (e.g. Cash, Office Equip)...',
     batchExampleTyped: 'cash collecting',
     batchExampleMatched: 'Cash - Collecting Officer',
-    frequentAccounts: [
-      { id: 'cash_collecting_officer', label: 'Cash - Collecting Officer' },
-      { id: 'petty_cash_fund', label: 'Petty Cash' },
-      { id: 'cash_bank_current_acct', label: 'Cash in Bank' },
-      { id: 'school_buildings', label: 'School Buildings' },
-      { id: 'office_equipment', label: 'Office Equipment' },
-      { id: 'accounts_payable', label: 'Accounts Payable' },
-      { id: 'due_to_bir', label: 'Due to BIR' },
-      { id: 'accumulated_surplus_deficit', label: 'Govt Equity' },
-    ],
   },
   performance: {
     topPlaceholder: 'Type or click to choose line item (e.g. Salaries, Office Supplies)...',
     rowPlaceholder: 'Enter line item (e.g. Salaries, Office Supplies)...',
     batchExampleTyped: 'salaries regular',
     batchExampleMatched: 'Salaries and Wages - Regular',
-    frequentAccounts: [
-      { id: 'perf-ps-salaries-reg', label: 'Salaries - Regular' },
-      { id: 'perf-ps-pera', label: 'PERA' },
-      { id: 'perf-mooe-office-sup', label: 'Office Supplies' },
-      { id: 'perf-mooe-travel-local', label: 'Travel - Local' },
-      { id: 'perf-mooe-electricity', label: 'Electricity Expenses' },
-      { id: 'perf-mooe-repairs-bldg', label: 'Repairs - Buildings' },
-      { id: 'perf-nc-depr-bldg', label: 'Depreciation - Buildings' },
-      { id: 'perf-tr-sub-ng', label: 'Subsidy from NG' },
-    ],
   },
   cash_flows: {
     topPlaceholder: 'Type or click to choose line item (e.g. Notice of Cash Allocation, Personnel Services)...',
     rowPlaceholder: 'Enter line item (e.g. Receipt of NCA, Personnel Services)...',
     batchExampleTyped: 'payment personnel',
     batchExampleMatched: 'Payment of personnel services',
-    frequentAccounts: [
-      { id: 'cf-op-in-nca-1', label: 'Receipt of NCA' },
-      { id: 'cf-op-in-rev-2', label: 'Service & Business Income' },
-      { id: 'cf-op-in-sub-1', label: 'Subsidy from NGAs' },
-      { id: 'cf-op-out-exp-1', label: 'Payment of Personnel Services' },
-      { id: 'cf-op-out-exp-2', label: 'Payment of MOOE' },
-      { id: 'cf-op-out-ap-1', label: 'Payment of Accounts Payables' },
-      { id: 'cf-op-out-ded-1', label: 'Remittance of Taxes (TRA)' },
-      { id: 'cf-inv-out-ppe-4', label: 'Construction of Buildings' },
-    ],
   },
   net_assets: {
     topPlaceholder: 'Type or click to choose line item (e.g. Surplus/(Deficit), Prior period errors)...',
     rowPlaceholder: 'Enter line item (e.g. Surplus/(Deficit), Accounting Policy)...',
     batchExampleTyped: 'surplus deficit',
     batchExampleMatched: 'Surplus/(Deficit) for the Period',
-    frequentAccounts: [
-      { id: 'na-adj-accounting-policy', label: 'Changes in Accounting Policy' },
-      { id: 'na-adj-prior-period-errors', label: 'Prior period errors' },
-      { id: 'na-adj-other-adjustments', label: 'Other Adjustments' },
-      { id: 'na-cy-surplus-deficit', label: 'Surplus/(Deficit) for the Period' },
-      { id: 'na-cy-net-revenue-adj', label: 'Net Revenue Recognized Directly' },
-      { id: 'na-cy-others', label: 'Others' },
-    ],
   },
   budget_comparison: {
     topPlaceholder: 'Use the table form below to encode budget & actual amounts...',
     rowPlaceholder: 'Use the table form...',
     batchExampleTyped: 'tax revenue',
     batchExampleMatched: 'Tax Revenue',
-    frequentAccounts: [],
   },
 };
-
-interface StagedEntry {
-  id: string;
-  lineItemId: string;
-  rawText?: string;
-  amount: string;
-  aggregationRecord?: DivisionAggregationRecord;
-}
 
 interface DataEntryFormProps {
   divisions: Division[];
@@ -200,7 +161,19 @@ interface DataEntryFormProps {
   onDeleteLineItemPrompt: (item: LineItemDefinition) => void;
   selectedStatement?: FinancialStatementType;
   onSelectStatement?: (stmt: FinancialStatementType) => void;
+  stagedBatchesByKey?: Record<string, StagedEntry[]>;
+  onStagedBatchesChange?: React.Dispatch<React.SetStateAction<Record<string, StagedEntry[]>>>;
+  topDraftsByKey?: Record<string, TopEntryDraft>;
+  onTopDraftsChange?: React.Dispatch<React.SetStateAction<Record<string, TopEntryDraft>>>;
+  budgetDraftsByKey?: Record<string, BudgetComparisonDraft>;
+  onBudgetDraftChange?: (draftKey: string, draft: BudgetComparisonDraft | null) => void;
 }
+
+const EMPTY_TOP_DRAFT: TopEntryDraft = {
+  selectedItemId: '',
+  rawText: '',
+  amountInput: '',
+};
 
 export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   divisions,
@@ -217,11 +190,18 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   onDeleteLineItemPrompt,
   selectedStatement: controlledStatement,
   onSelectStatement,
+  stagedBatchesByKey: controlledStagedBatchesByKey,
+  onStagedBatchesChange,
+  topDraftsByKey: controlledTopDraftsByKey,
+  onTopDraftsChange,
+  budgetDraftsByKey,
+  onBudgetDraftChange,
 }) => {
   // Financial Statement selection (synced across views when controlled)
   const [internalStatement, setInternalStatement] = useState<FinancialStatementType>('position');
   const selectedStatement = controlledStatement ?? internalStatement;
   const setSelectedStatement = onSelectStatement ?? setInternalStatement;
+  const batchKey = `${selectedYear}::${selectedDivisionId}::${selectedStatement}`;
   const [lockedStatementModal, setLockedStatementModal] = useState<{ title: string; message: string } | null>(null);
   
   // Default: Remove balances that are zero balance as requested!
@@ -254,10 +234,41 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     setPendingConfirmJan1_2024(null);
   }, [selectedYear, selectedDivisionId, selectedStatement]);
 
-  // Top Quick Account Selector state (allows freely picking or typing on top)
-  const [topSelectedItemId, setTopSelectedItemId] = useState<string>('');
-  const [topRawText, setTopRawText] = useState<string>('');
-  const [topAmountInput, setTopAmountInput] = useState<string>('');
+  // Top Quick Account Selector state (isolated per financial statement / division / year in memory)
+  const [internalTopDraftsByKey, setInternalTopDraftsByKey] = useState<Record<string, TopEntryDraft>>({});
+  const activeTopDraftsByKey = controlledTopDraftsByKey ?? internalTopDraftsByKey;
+  const setTopDraftsMap = onTopDraftsChange ?? setInternalTopDraftsByKey;
+  const currentTopDraft = activeTopDraftsByKey[batchKey] ?? EMPTY_TOP_DRAFT;
+  const topSelectedItemId = currentTopDraft.selectedItemId;
+  const topRawText = currentTopDraft.rawText;
+  const topAmountInput = currentTopDraft.amountInput;
+
+  const updateCurrentTopDraft = (
+    updater: (prev: TopEntryDraft) => TopEntryDraft
+  ) => {
+    setTopDraftsMap((prevMap) => {
+      const curr = prevMap[batchKey] ?? EMPTY_TOP_DRAFT;
+      const next = updater(curr);
+      if (!next.selectedItemId && !next.rawText && !next.amountInput) {
+        if (!(batchKey in prevMap)) return prevMap;
+        const copy = { ...prevMap };
+        delete copy[batchKey];
+        return copy;
+      }
+      return {
+        ...prevMap,
+        [batchKey]: next,
+      };
+    });
+  };
+
+  const setTopSelectedItemId = (value: string) =>
+    updateCurrentTopDraft((prev) => ({ ...prev, selectedItemId: value }));
+  const setTopRawText = (value: string) =>
+    updateCurrentTopDraft((prev) => ({ ...prev, rawText: value }));
+  const setTopAmountInput = (value: string) =>
+    updateCurrentTopDraft((prev) => ({ ...prev, amountInput: value }));
+
   const [topFeedbackMsg, setTopFeedbackMsg] = useState<string | null>(null);
   const topLineItemInputRef = useRef<HTMLInputElement>(null);
   const topAmountInputRef = useRef<HTMLInputElement>(null);
@@ -274,11 +285,8 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
   });
 
   useEffect(() => {
-    setTopSelectedItemId('');
-    setTopRawText('');
-    setTopAmountInput('');
     setTopFeedbackMsg(null);
-  }, [selectedStatement]);
+  }, [batchKey]);
 
   const activeEncodingMeta = STATEMENT_ENCODING_META[selectedStatement];
 
@@ -458,13 +466,46 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       )
   );
 
-  // Staged rows for batch multiple entries (starts blank with 0 items on startup as requested)
-  const [stagedEntries, setStagedEntries] = useState<StagedEntry[]>([]);
+  // Staged rows for batch multiple entries (isolated per statement/division/year in memory)
+  const [internalStagedBatchesByKey, setInternalStagedBatchesByKey] = useState<
+    Record<string, StagedEntry[]>
+  >({});
+  const activeStagedBatchesByKey = controlledStagedBatchesByKey ?? internalStagedBatchesByKey;
+  const setStagedBatchesMap = onStagedBatchesChange ?? setInternalStagedBatchesByKey;
+  const stagedEntries = activeStagedBatchesByKey[batchKey] ?? [];
+  const setStagedEntries = (updater: React.SetStateAction<StagedEntry[]>) => {
+    setStagedBatchesMap((prevMap) => {
+      const currRows = prevMap[batchKey] ?? [];
+      const nextRows = typeof updater === 'function' ? updater(currRows) : updater;
+      if (nextRows.length === 0) {
+        if (!(batchKey in prevMap)) return prevMap;
+        const copy = { ...prevMap };
+        delete copy[batchKey];
+        return copy;
+      }
+      return {
+        ...prevMap,
+        [batchKey]: nextRows,
+      };
+    });
+  };
 
   // Track which row dropdown is currently open to elevate its stacking context
   const [activeDropdownRowId, setActiveDropdownRowId] = useState<string | null>(null);
 
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  // Confirmation for discarding staged entries
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+
+  // Confirmation for Delete All Records function (Reset all to zero)
+  const [isDeleteAllConfirmOpen, setIsDeleteAllConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    setActiveDropdownRowId(null);
+    setSaveSuccessMsg(null);
+    setIsDiscardConfirmOpen(false);
+  }, [batchKey]);
 
   // Automatically focus newly added row after render
   useEffect(() => {
@@ -477,12 +518,6 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
       setRowToFocusAfterRender(null);
     }
   }, [rowToFocusAfterRender, stagedEntries]);
-
-  // Confirmation for discarding staged entries
-  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
-
-  // Confirmation for Delete All Records function (Reset all to zero)
-  const [isDeleteAllConfirmOpen, setIsDeleteAllConfirmOpen] = useState(false);
 
   const currentDivision = divisions.find((d) => d.id === selectedDivisionId) || divisions[0];
   const comparativeYear = getComparativeYear(selectedYear);
@@ -750,9 +785,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     }
 
     setTimeout(() => setTopFeedbackMsg(null), 3000);
-    setTopSelectedItemId('');
-    setTopRawText('');
-    setTopAmountInput('');
+    updateCurrentTopDraft(() => EMPTY_TOP_DRAFT);
     setTimeout(() => {
       topLineItemInputRef.current?.focus();
     }, 40);
@@ -915,6 +948,67 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
     return encodableStatementLineItems.find((i) => i.id === topSelectedItemId);
   }, [encodableStatementLineItems, topSelectedItemId]);
 
+  // [live_edit] Side-by-side / floating Live FS preview state & virtual store overlay
+  const [isLiveEditOpen, setIsLiveEditOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('deped_ro6_live_edit_enabled_v1');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const [liveEditWindowMode, setLiveEditWindowMode] = useState<LiveEditWindowMode>(() => {
+    try {
+      const saved = localStorage.getItem('deped_ro6_live_edit_window_mode_v1');
+      return saved === 'floating' ? 'floating' : 'docked';
+    } catch {
+      return 'docked';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('deped_ro6_live_edit_enabled_v1', String(isLiveEditOpen));
+    } catch {
+      // ignore storage errors
+    }
+  }, [isLiveEditOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('deped_ro6_live_edit_window_mode_v1', liveEditWindowMode);
+    } catch {
+      // ignore storage errors
+    }
+  }, [liveEditWindowMode]);
+
+  const liveEditOverlay = useMemo(
+    () =>
+      buildLiveEditOverlay(
+        dataStore,
+        selectedYear,
+        selectedDivisionId,
+        encodableStatementLineItems,
+        stagedEntries,
+        {
+          itemId: topSelectedItemId,
+          rawText: topRawText,
+          amount: topAmountInput,
+        }
+      ),
+    [
+      dataStore,
+      selectedYear,
+      selectedDivisionId,
+      encodableStatementLineItems,
+      stagedEntries,
+      topSelectedItemId,
+      topRawText,
+      topAmountInput,
+    ]
+  );
+
   const handleClearEmptyStagedRows = () => {
     setStagedEntries((prev) => prev.filter((r) => (r.lineItemId || r.rawText?.trim()) && r.amount?.trim()));
   };
@@ -930,6 +1024,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         <div className="flex-1 min-w-0 w-full space-y-6">
       {selectedStatement === 'budget_comparison' ? (
         <BudgetComparisonEntryTable
+          key={`${selectedYear}::${selectedDivisionId}`}
           divisionId={selectedDivisionId}
           divisionName={currentDivision?.name || ''}
           selectedYear={selectedYear}
@@ -937,13 +1032,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           onSaveBatchAmounts={(yr, divId, entries) => onSaveBatchAmounts(yr, divId, entries)}
           onDeleteAmount={onDeleteAmount}
           onNavigateToViewFS={onNavigateToViewFS}
+          savedDraft={budgetDraftsByKey?.[`${selectedYear}::${selectedDivisionId}`]}
+          onDraftStateChange={onBudgetDraftChange}
         />
       ) : (
-      <>
+      /* [live_edit] Side-by-side wrapper around Data Entry column + LiveEditStatementPanel */
+      <div className="flex flex-col xl:flex-row gap-5 items-start">
+      <div className="@container flex-1 min-w-0 w-full space-y-6">
       {/* Batch Multiple Entries Form */}
-      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-6 shadow-xs transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-4 sm:p-6 shadow-xs transition-colors">
         {/* Header with Title and Presets */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between pb-4 border-b border-th-border gap-4 mb-5">
+        <div className="flex flex-col @3xl:flex-row @3xl:items-center justify-between pb-4 border-b border-th-border gap-4 mb-5">
           <div className="min-w-0 flex-1">
             <h3 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
               <Layers className="w-5 h-5 text-th-muted shrink-0" />
@@ -953,13 +1052,39 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   {validStagedCount} ready to save
                 </span>
               )}
+              <TipsButton>
+                <p>
+                  Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing{' '}
+                  <strong className="text-th-text font-bold">
+                    &quot;{activeEncodingMeta.batchExampleTyped}&quot;
+                  </strong>{' '}
+                  suggests{' '}
+                  <strong className="text-th-text font-bold">
+                    &quot;{activeEncodingMeta.batchExampleMatched}&quot;
+                  </strong>
+                  ).
+                </p>
+                <p className="pt-2 border-t border-th-border">
+                  Select or type the official line item, enter the monetary balance, then click{' '}
+                  <strong className="text-th-text font-bold">&quot;Add to Batch&quot;</strong>{' '}
+                  or press <strong className="text-th-text font-bold">Enter</strong>.
+                </p>
+                <div className="pt-2 border-t border-th-border space-y-1">
+                  <div className="font-bold text-th-text">Fast Entry Keyboard Shortcuts:</div>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>Use ↑ and ↓ arrow keys to highlight an option</li>
+                    <li>Press Tab or Enter to select &amp; enter amount</li>
+                    <li>Enter on amount advances to next line</li>
+                    <li>
+                      <strong className="text-th-text font-bold">Shift + Enter</strong> to Save All
+                    </li>
+                  </ul>
+                </div>
+              </TipsButton>
             </h3>
-            <p className="text-sm text-th-muted mt-1 leading-relaxed">
-              Select or type any line item from the official list. Missing hyphens and spaces are automatically matched (for example, typing <strong className="text-th-text font-bold">&quot;{activeEncodingMeta.batchExampleTyped}&quot;</strong> suggests <strong className="text-th-text font-bold">&quot;{activeEncodingMeta.batchExampleMatched}&quot;</strong>).
-            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -970,7 +1095,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="min-h-[42px] text-sm font-bold text-th-excel-fg bg-th-excel hover:bg-th-excel-hover px-4 py-2 rounded-xl border-2 border-th-excel-border transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+              className="min-h-[40px] text-sm font-bold text-th-excel-fg bg-th-excel hover:bg-th-excel-hover px-3.5 py-2 rounded-xl border-2 border-th-excel-border transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
               title="Upload any financial statement Excel (.xlsx, .xls) file with Year headers (e.g. 2025, 2024) and line items before amounts"
             >
               <Upload className="w-4 h-4 shrink-0" />
@@ -979,7 +1104,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={handleAddStagedRow}
-              className="min-h-[42px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-4 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              className="min-h-[40px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-3.5 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-th-muted shrink-0" />
               <span>Add 1 Row</span>
@@ -987,10 +1112,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             <button
               type="button"
               onClick={handleAdd5StagedRows}
-              className="min-h-[42px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-4 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              className="min-h-[40px] text-sm font-bold text-th-text bg-th-subtle hover:bg-th-subtle-hover border-2 border-th-border-strong px-3.5 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-th-muted shrink-0" />
               <span>Add 5 Rows</span>
+            </button>
+            {/* [live_edit] Toggle button for Live Financial Statement side preview */}
+            <button
+              type="button"
+              onClick={() => setIsLiveEditOpen((prev) => !prev)}
+              className={`min-h-[40px] text-sm font-bold px-3.5 py-2 rounded-xl border-2 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                isLiveEditOpen
+                  ? 'bg-th-accent text-th-accent-fg border-th-accent'
+                  : 'bg-th-subtle text-th-text border-th-border-strong hover:bg-th-subtle-hover'
+              }`}
+              title="Toggle Live Financial Statement side preview"
+            >
+              <PanelRight className="w-4 h-4 shrink-0" />
+              <span>Live FS</span>
             </button>
           </div>
         </div>
@@ -1013,11 +1152,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         )}
 
         {/* PRIMARY DATA ENTRY & ENCODING STATION */}
-        <div className="mb-7 p-6 sm:p-7 bg-th-subtle border-2 border-th-border-strong rounded-2xl shadow-sm transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-th-border">
-            <div className="flex items-center gap-2.5">
+        <div className="mb-7 p-4 sm:p-6 bg-th-subtle border-2 border-th-border-strong rounded-2xl shadow-sm transition-all">
+          <div className="flex flex-col @lg:flex-row @lg:items-center justify-between gap-2.5 mb-4 pb-3 border-b border-th-border">
+            <div className="flex items-center gap-2.5 min-w-0">
               <PenTool className="w-5 h-5 text-th-muted shrink-0" />
-              <h3 className="text-xl font-extrabold text-th-text">
+              <h3 className="text-lg sm:text-xl font-extrabold text-th-text">
                 Enter Line Item &amp; Balance Here
               </h3>
             </div>
@@ -1027,194 +1166,169 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             </div>
           </div>
 
-          <p className="text-sm sm:text-base text-th-muted font-medium mb-5 leading-relaxed">
-            Select or type the official line item on the left, enter the monetary balance in the middle, then click <strong className="text-th-text font-bold">&quot;Add to Batch&quot;</strong> or press <strong className="text-th-text font-bold">Enter</strong>.
-          </p>
-
-          <form onSubmit={handleAddTopItemToBatch} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-            {/* Step 1: Searchable Combobox */}
-            <div className="lg:col-span-6">
-              <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">1</span>
-                <span>Select or Type Line Item Account</span>
-              </label>
-              <SearchableLineItemSelect
-                inputRef={topLineItemInputRef}
-                lineItems={encodableStatementLineItems}
-                selectedItemId={topSelectedItemId}
-                rawText={topRawText}
-                onChangeRawText={setTopRawText}
-                isInvalid={isTopInvalid}
-                onSelectItem={(itemId, itemName) => {
-                  setTopSelectedItemId(itemId);
-                  if (itemName) setTopRawText(itemName);
-                }}
-                onSelectAndNext={() => {
-                  topAmountInputRef.current?.focus();
-                  topAmountInputRef.current?.select();
-                }}
-                placement="bottom"
-                placeholder={activeEncodingMeta.topPlaceholder}
-              />
-              {topSameNameVariants.length > 1 ? (
-                <div className="mt-2 p-3 rounded-xl bg-th-surface border-2 border-th-border-strong space-y-2 animate-in fade-in shadow-2xs">
-                  <div className="text-xs sm:text-sm font-bold text-th-text flex items-center justify-between gap-2">
-                    <span>
-                      Choose which &quot;{topSameNameVariants[0].name}&quot; line item to add to:
-                    </span>
-                    {!topSelectedItemDetail && (
-                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                        Select 1 option
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {topSameNameVariants.map((variant, vIdx) => {
-                      const isChosen = topSelectedItemId === variant.id;
-                      return (
-                        <button
-                          key={variant.id}
-                          type="button"
-                          onClick={() => {
-                            setTopSelectedItemId(variant.id);
-                            setTopRawText(variant.name);
-                            setTopFeedbackMsg(null);
-                            topAmountInputRef.current?.focus();
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                            isChosen
-                              ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
-                              : 'bg-th-subtle/60 border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
-                          }`}
-                        >
-                          <span className="min-w-0 truncate">
-                            <span className="font-bold text-th-text mr-1.5">
-                              Option {vIdx + 1}
-                              {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
-                            </span>
-                            <span>{formatItemPlacementPath(variant)}</span>
-                            <span className="text-th-muted"> → {variant.name}</span>
-                          </span>
-                          {isChosen ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-th-accent-text shrink-0">
-                              <Check className="w-3.5 h-3.5" />
-                              Selected
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold text-th-muted shrink-0">
-                              Choose
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                topSelectedItemDetail && (
-                  <div className="mt-2 flex items-center gap-2 text-xs sm:text-sm font-semibold text-th-text bg-th-surface px-3 py-1.5 rounded-lg border border-th-border-strong shadow-2xs animate-in fade-in flex-wrap">
-                    <span className="font-bold text-th-text">Selected:</span>
-                    <span className="font-bold">{topSelectedItemDetail.name}</span>
-                    <span>·</span>
-                    <span className="text-th-muted">{formatItemPlacementPath(topSelectedItemDetail)}</span>
-                    {topSelectedItemDetail.isContra && (
-                      <span className="px-1.5 py-0.5 rounded bg-th-subtle text-th-text text-xs font-bold border border-th-border-strong">Contra Account</span>
-                    )}
-                  </div>
-                )
-              )}
-            </div>
-
-            {/* Step 2: Amount Input */}
-            <div className="lg:col-span-3">
-              <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">2</span>
-                <span>Enter Amount (₱ Balance)</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-th-muted font-mono text-lg font-bold">
-                  ₱
-                </span>
-                <input
-                  ref={topAmountInputRef}
-                  type="text"
-                  value={topAmountInput}
-                  onChange={(e) => setTopAmountInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.shiftKey) {
-                      e.preventDefault();
-                      handleSaveAllStagedToDatabase(e);
-                      return;
-                    }
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddTopItemToBatch();
-                    }
+          <form onSubmit={handleAddTopItemToBatch} className="space-y-3">
+            <div className="flex flex-col @xl:flex-row @xl:items-end gap-3">
+              {/* Step 1: Searchable Combobox */}
+              <div className="flex-1 min-w-0">
+                <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2 whitespace-nowrap">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">1</span>
+                  <span>Line Item Account</span>
+                </label>
+                <SearchableLineItemSelect
+                  inputRef={topLineItemInputRef}
+                  lineItems={encodableStatementLineItems}
+                  selectedItemId={topSelectedItemId}
+                  rawText={topRawText}
+                  onChangeRawText={setTopRawText}
+                  isInvalid={isTopInvalid}
+                  onSelectItem={(itemId, itemName) => {
+                    setTopSelectedItemId(itemId);
+                    if (itemName) setTopRawText(itemName);
                   }}
-                  placeholder="0.00"
-                  className="w-full min-h-[48px] pl-9 pr-4 py-3 text-lg font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong rounded-xl text-th-text focus:outline-hidden focus:border-th-accent focus:ring-4 focus:ring-th-accent/20 shadow-xs"
+                  onSelectAndNext={() => {
+                    topAmountInputRef.current?.focus();
+                    topAmountInputRef.current?.select();
+                  }}
+                  placement="bottom"
+                  placeholder={activeEncodingMeta.topPlaceholder}
                 />
               </div>
-              {topAmountInput.trim() !== '' && (
-                <div className="mt-2 flex items-center justify-between text-xs px-1">
-                  <span className="font-mono font-semibold text-th-muted">
-                    ₱ {formatAccounting(parseNumberInput(topAmountInput))}
+
+              {/* Step 2: Amount Input */}
+              <div className="w-full @xl:w-44 @2xl:w-52 shrink-0">
+                <label className="block text-sm font-bold text-th-text mb-1.5 flex items-center gap-2 whitespace-nowrap">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-th-primary text-th-primary-fg text-xs font-bold shrink-0">2</span>
+                  <span>Amount (₱)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-th-muted font-mono text-base sm:text-lg font-bold">
+                    ₱
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setTopAmountInput('')}
-                    className="text-xs text-th-muted hover:text-red-600 dark:hover:text-red-400 font-semibold cursor-pointer underline"
-                  >
-                    Clear
-                  </button>
+                  <input
+                    ref={topAmountInputRef}
+                    type="text"
+                    value={topAmountInput}
+                    onChange={(e) => setTopAmountInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.shiftKey) {
+                        e.preventDefault();
+                        handleSaveAllStagedToDatabase(e);
+                        return;
+                      }
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTopItemToBatch();
+                      }
+                    }}
+                    placeholder="0.00"
+                    className="w-full h-[52px] pl-9 pr-4 py-2.5 text-base sm:text-lg font-mono font-bold tabular-nums text-right bg-th-input border-2 border-th-border-strong rounded-xl text-th-text focus:outline-hidden focus:border-th-accent focus:ring-4 focus:ring-th-accent/20 shadow-xs"
+                  />
                 </div>
-              )}
+              </div>
+
+              {/* Step 3: Add to Batch Button */}
+              <div className="w-full @xl:w-auto shrink-0">
+                <button
+                  type="submit"
+                  disabled={!topSelectedItemId && !topRawText.trim()}
+                  className="w-full @xl:w-auto h-[52px] py-2.5 px-5 text-sm sm:text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-th-accent whitespace-nowrap cursor-pointer"
+                >
+                  <Plus className="w-5 h-5 stroke-[2.5] shrink-0" />
+                  <span>Add to Batch</span>
+                </button>
+              </div>
             </div>
 
-            {/* Step 3: Add to Batch Button */}
-            <div className="lg:col-span-3">
-              <button
-                type="submit"
-                disabled={!topSelectedItemId && !topRawText.trim()}
-                className="w-full min-h-[48px] py-3 px-5 text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2 border-2 border-th-accent whitespace-nowrap cursor-pointer"
-              >
-                <Plus className="w-5 h-5 stroke-[2.5] shrink-0" />
-                <span>Add to Batch</span>
-              </button>
-            </div>
+            {topSameNameVariants.length > 1 ? (
+              <div className="p-3 rounded-xl bg-th-surface border-2 border-th-border-strong space-y-2 animate-in fade-in shadow-2xs">
+                <div className="text-xs sm:text-sm font-bold text-th-text flex items-center justify-between gap-2">
+                  <span>
+                    Choose which &quot;{topSameNameVariants[0].name}&quot; line item to add to:
+                  </span>
+                  {!topSelectedItemDetail && (
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300">
+                      Select 1 option
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {topSameNameVariants.map((variant, vIdx) => {
+                    const isChosen = topSelectedItemId === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => {
+                          setTopSelectedItemId(variant.id);
+                          setTopRawText(variant.name);
+                          setTopFeedbackMsg(null);
+                          topAmountInputRef.current?.focus();
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                          isChosen
+                            ? 'bg-th-accent/15 border-th-accent text-th-text font-bold ring-1 ring-th-accent/30'
+                            : 'bg-th-subtle/60 border-th-border hover:border-th-border-strong text-th-muted hover:text-th-text'
+                        }`}
+                      >
+                        <span className="min-w-0 truncate">
+                          <span className="font-bold text-th-text mr-1.5">
+                            Option {vIdx + 1}
+                            {variant.section === 'NON_OPERATING' ? ' (Default)' : ''}:
+                          </span>
+                          <span>{formatItemPlacementPath(variant)}</span>
+                          <span className="text-th-muted"> → {variant.name}</span>
+                        </span>
+                        {isChosen ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-th-accent-text shrink-0">
+                            <Check className="w-3.5 h-3.5" />
+                            Selected
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-th-muted shrink-0">
+                            Choose
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              (topSelectedItemDetail || topAmountInput.trim() !== '') && (
+                <div className="px-3.5 py-2 rounded-xl bg-th-surface border border-th-border-strong shadow-2xs animate-in fade-in flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs sm:text-sm">
+                  <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                    {topSelectedItemDetail && (
+                      <>
+                        <span className="font-bold text-th-text">Selected:</span>
+                        <span className="font-bold text-th-text">{topSelectedItemDetail.name}</span>
+                        <span className="text-th-muted" aria-hidden="true">·</span>
+                        <span className="text-th-muted font-medium">{formatItemPlacementPath(topSelectedItemDetail)}</span>
+                        {topSelectedItemDetail.isContra && (
+                          <span className="px-1.5 py-0.5 rounded bg-th-subtle text-th-text text-xs font-bold border border-th-border-strong">
+                            Contra Account
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {topAmountInput.trim() !== '' && (
+                    <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+                      <span className="font-mono font-semibold text-th-muted tabular-nums">
+                        ₱ {formatAccounting(parseNumberInput(topAmountInput))}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setTopAmountInput('')}
+                        className="text-xs text-th-muted hover:text-red-600 dark:hover:text-red-400 font-semibold cursor-pointer underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
           </form>
-
-          {/* Quick preset chips underneath top bar */}
-          <div className="mt-5 pt-3.5 border-t border-th-border flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-bold text-th-text mr-1 whitespace-nowrap">
-              Frequent Accounts:
-            </span>
-            {(selectedStatement === 'cash_flows' && selectedYear === '2024'
-              ? [
-                  { id: 'cf-sum-beg-cash', label: 'Cash & Eq., Jan 1 (2024)' },
-                  ...activeEncodingMeta.frequentAccounts,
-                ]
-              : activeEncodingMeta.frequentAccounts
-            ).map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => {
-                  const matched = encodableStatementLineItems.find((i) => i.id === preset.id);
-                  setTopSelectedItemId(preset.id);
-                  setTopRawText(matched ? matched.name : preset.label);
-                  topAmountInputRef.current?.focus();
-                }}
-                className={`text-sm font-semibold px-3 py-1.5 min-h-[36px] rounded-xl transition-colors border whitespace-nowrap cursor-pointer ${
-                  topSelectedItemId === preset.id
-                    ? 'bg-th-primary text-th-primary-fg border-th-primary dark:border-th-border-strong font-bold'
-                    : 'bg-th-surface text-th-text border-th-border-strong hover:bg-th-subtle-hover'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
 
           {topFeedbackMsg && (
             <div className="mt-3.5 p-3 bg-th-surface text-base text-th-text font-bold rounded-xl border-2 border-th-border-strong flex items-center gap-2.5 animate-in fade-in shadow-xs">
@@ -1234,43 +1348,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
             }
           }}
         >
-          {/* Clean, Senior-Friendly Keyboard Tips Callout */}
-          <div className="mb-4 px-5 py-3.5 bg-th-subtle border border-th-border-strong rounded-xl flex flex-wrap items-center justify-between text-sm text-th-text gap-4 shadow-2xs">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="font-bold text-th-text flex items-center gap-2">
-                <Keyboard className="w-5 h-5 text-th-muted" />
-                <span>Tips for fast entry:</span>
-              </span>
-              <span className="text-th-muted font-medium">Use ↑ and ↓ arrow keys to highlight an option</span>
-              <span className="text-th-muted font-bold">·</span>
-              <span className="text-th-muted font-medium">Press Tab or Enter to select &amp; enter amount</span>
-              <span className="text-th-muted font-bold">·</span>
-              <span className="text-th-muted font-medium">Enter on amount advances to next line</span>
-            </div>
-
-            <div className="text-sm font-bold text-th-text bg-th-surface px-3.5 py-1.5 rounded-lg border border-th-border-strong">
-              Shortcut: Shift + Enter to Save All
-            </div>
-          </div>
-
           {/* If there are invalid/unrecognized items highlighted in red, display clear notice */}
           {invalidStagedCount > 0 && (
-            <div className="mb-4 px-5 py-3.5 bg-red-50 dark:bg-red-950/60 border-2 border-red-300 dark:border-red-800 rounded-xl flex items-center justify-between gap-3 text-base animate-in fade-in">
-              <div className="flex items-center gap-3 text-red-950 dark:text-red-100">
+            <div className="mb-4 px-4 sm:px-5 py-3.5 bg-red-50 dark:bg-red-950/60 border-2 border-red-300 dark:border-red-800 rounded-xl flex flex-wrap items-center justify-between gap-3 text-sm sm:text-base animate-in fade-in">
+              <div className="flex items-center gap-3 text-red-950 dark:text-red-100 min-w-0">
                 <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
                 <span>
                   <strong>{invalidStagedCount} line item{invalidStagedCount > 1 ? 's are' : ' is'} highlighted in red</strong> because {invalidStagedCount > 1 ? 'they do' : 'it does'} not exist in the official line items database.
                 </span>
               </div>
-              <span className="text-sm text-red-800 dark:text-red-300 font-bold whitespace-nowrap shrink-0">
+              <span className="text-sm text-red-800 dark:text-red-300 font-bold">
                 Saving will offer to save valid items only.
               </span>
             </div>
           )}
 
           {/* Live Batch Tape Summary & Running Total Bar */}
-          <div className="mb-4 px-5 py-3.5 bg-th-subtle border border-th-border-strong rounded-xl flex flex-wrap items-center justify-between gap-4 text-base shadow-2xs">
-            <div className="flex items-center gap-4 flex-wrap">
+          <div className="mb-4 px-4 sm:px-5 py-3.5 bg-th-subtle border border-th-border-strong rounded-xl flex flex-wrap items-center justify-between gap-3 text-base shadow-2xs">
+            <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
               <div className="flex items-center gap-2 font-bold text-th-text">
                 <Calculator className="w-5 h-5 text-th-muted" />
                 <span>Batch Tape Summary:</span>
@@ -1287,9 +1382,9 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                   {validStagedCount}
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
                 <span className="text-th-text font-bold">Total Batch Balance:</span>
-                <span className="font-extrabold font-mono text-lg text-th-text bg-th-surface px-3.5 py-1 rounded-lg border-2 border-th-border-strong shadow-2xs">
+                <span className="font-extrabold font-mono text-base sm:text-lg text-th-text bg-th-surface px-3 py-1 rounded-lg border-2 border-th-border-strong shadow-2xs">
                   ₱ {formatAccounting(stagedBatchTotal)}
                 </span>
               </div>
@@ -1310,11 +1405,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
 
           <div className="border-2 border-th-border rounded-xl mb-5 shadow-xs overflow-visible bg-th-surface">
-            <div className="bg-th-table-head px-5 py-3.5 border-b-2 border-th-border rounded-t-xl grid grid-cols-12 gap-3 text-sm font-bold text-th-table-head-fg uppercase tracking-wider">
+            <div className="bg-th-table-head px-4 py-2.5 border-b-2 border-th-border rounded-t-xl flex @lg:hidden items-center justify-between text-xs font-bold text-th-table-head-fg uppercase tracking-wider">
+              <span>Staged Entries</span>
+              <span>Line Item &amp; Balance</span>
+            </div>
+            <div className="bg-th-table-head px-5 py-3.5 border-b-2 border-th-border rounded-t-xl hidden @lg:grid @lg:grid-cols-12 gap-3 text-xs sm:text-sm font-bold text-th-table-head-fg uppercase tracking-wider">
               <div className="col-span-1 text-center">#</div>
-              <div className="col-span-7">Line Item (Type to Search)</div>
-              <div className="col-span-3 text-right">Amount (₱ Balance)</div>
-              <div className="col-span-1 text-center">Remove</div>
+              <div className="col-span-6 @2xl:col-span-7">Line Item (Type to Search)</div>
+              <div className="col-span-4 @2xl:col-span-3 text-right">Amount (₱ Balance)</div>
+              <div className="col-span-1" aria-hidden="true" />
             </div>
 
             <div className="divide-y-2 divide-th-border overflow-visible rounded-b-xl">
@@ -1351,16 +1450,17 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 return (
                   <div
                     key={row.id}
-                    className={`px-4 py-3 grid grid-cols-12 gap-3.5 items-start hover:bg-th-subtle transition-colors ${
+                    className={`px-3.5 sm:px-4 py-3 grid grid-cols-12 gap-2.5 @lg:gap-3.5 items-start hover:bg-th-subtle transition-colors ${
                       isThisRowDropdownOpen ? 'relative z-50 bg-th-subtle' : 'relative z-auto'
                     }`}
                   >
-                    <div className="col-span-1 text-center font-mono text-base font-bold text-th-text pt-2.5">
+                    <div className="col-span-6 @lg:col-span-1 @lg:order-1 flex items-center @lg:justify-center font-mono text-sm @lg:text-base font-bold text-th-text pt-1 @lg:pt-2.5">
+                      <span className="@lg:hidden mr-1.5 text-xs uppercase font-sans text-th-muted">Row</span>
                       {idx + 1}
                     </div>
 
                     {/* Searchable Combobox with Arrow Navigation, Tab/Enter Selection & Red Highlight when not in database */}
-                    <div className="col-span-7 space-y-2">
+                    <div className="col-span-12 @lg:col-span-6 @2xl:col-span-7 @lg:order-2 space-y-2">
                       <SearchableLineItemSelect
                         inputRef={(el) => {
                           lineItemInputRefs.current[row.id] = el;
@@ -1473,7 +1573,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     </div>
 
                     {/* Amount Input with Auto-Advance to Next Line Item & Shift+Enter Save */}
-                    <div className="col-span-3">
+                    <div className="col-span-12 @lg:col-span-4 @2xl:col-span-3 @lg:order-3">
                       <div className="relative">
                         <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-th-muted font-mono text-base font-bold">
                           ₱
@@ -1521,11 +1621,11 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                     </div>
 
                     {/* Delete row */}
-                    <div className="col-span-1 text-center flex justify-center">
+                    <div className="col-span-6 col-start-7 row-start-1 @lg:col-span-1 @lg:col-start-auto @lg:row-start-auto @lg:order-4 flex justify-end @lg:justify-center">
                       <button
                         type="button"
                         onClick={() => handleRemoveStagedRow(row.id)}
-                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors cursor-pointer"
+                        className="min-w-[40px] min-h-[40px] @lg:min-w-[44px] @lg:min-h-[44px] flex items-center justify-center text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/50 border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors cursor-pointer"
                         title="Remove row"
                         aria-label={`Remove row ${idx + 1}`}
                       >
@@ -1539,12 +1639,12 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
 
           {/* Form Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3">
+          <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-4 pt-3">
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 type="button"
                 onClick={handleAddStagedRow}
-                className="px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-4 sm:px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-bold text-th-text bg-th-subtle border-2 border-th-border-strong hover:bg-th-subtle-hover rounded-xl transition-colors inline-flex items-center gap-2 shadow-2xs whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <Plus className="w-5 h-5 text-th-muted shrink-0" />
                 <span>Add Row</span>
@@ -1552,16 +1652,16 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDiscardConfirmOpen(true)}
-                className="px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-semibold text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-4 sm:px-5 py-2.5 min-h-[44px] text-sm sm:text-base font-semibold text-th-muted hover:text-red-700 dark:hover:text-red-400 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <RotateCcw className="w-5 h-5 shrink-0" />
                 <span>Clear Form</span>
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <div className="flex flex-col @sm:flex-row items-stretch @sm:items-center gap-3 w-full @2xl:w-auto">
               {invalidStagedCount > 0 && (
-                <span className="text-sm sm:text-base text-red-800 dark:text-red-300 font-bold flex items-center gap-2 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 rounded-xl border border-red-300 dark:border-red-800 whitespace-nowrap">
+                <span className="text-sm sm:text-base text-red-800 dark:text-red-300 font-bold flex items-center gap-2 bg-red-50 dark:bg-red-950/60 px-4 py-2.5 rounded-xl border border-red-300 dark:border-red-800">
                   <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
                   <span>{invalidStagedCount} unrecognized line item{invalidStagedCount > 1 ? 's' : ''}</span>
                 </span>
@@ -1570,7 +1670,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
               <button
                 type="submit"
                 disabled={validStagedCount === 0 && invalidStagedCount === 0}
-                className="w-full sm:w-auto px-7 py-3 min-h-[48px] text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-th-accent whitespace-nowrap shrink-0 cursor-pointer"
+                className="w-full @sm:w-auto px-5 sm:px-7 py-3 min-h-[48px] text-sm sm:text-base font-bold text-th-accent-fg bg-th-accent hover:bg-th-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 border-2 border-th-accent text-center cursor-pointer"
               >
                 <Check className="w-5 h-5 shrink-0" />
                 <span>
@@ -1591,25 +1691,27 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
 
       {/* 4. Encoded Items for this Division & Fiscal Year (Zero balances removed by default) */}
       <div className="bg-th-surface border-2 border-th-border rounded-2xl shadow-sm overflow-hidden transition-colors">
-        <div className="px-6 py-5 border-b-2 border-th-border bg-th-subtle space-y-4">
+        <div className="px-4 sm:px-6 py-5 border-b-2 border-th-border bg-th-subtle space-y-4">
           {/* Row 1: Title on Left, Primary Report Navigation CTA on Right */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-col @2xl:flex-row @2xl:items-center justify-between gap-3">
             <div className="min-w-0">
-              <h4 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5">
+              <h4 className="text-lg sm:text-xl font-bold text-th-text flex items-center gap-2.5 flex-wrap">
                 <FileText className="w-5 h-5 text-th-muted shrink-0" />
                 <span>Recorded Balances: {currentDivision?.name} (FY {selectedYear})</span>
+                <TipsButton>
+                  <p>
+                    {showZeroBalancesInLedger
+                      ? 'Currently showing all accounts including zero balances. Click "Hide Zero Balances" to hide empty lines.'
+                      : 'Zero-balance items are hidden by default. Line items appear automatically here as amounts are saved.'}
+                  </p>
+                </TipsButton>
               </h4>
-              <p className="text-sm text-th-muted mt-1 leading-relaxed">
-                {showZeroBalancesInLedger
-                  ? 'Showing all accounts including zero balances.'
-                  : 'Zero balance items hidden. Items appear automatically as amounts are saved.'}
-              </p>
             </div>
 
             <button
               type="button"
               onClick={onNavigateToViewFS}
-              className="self-start lg:self-auto inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+              className="self-start @2xl:self-auto inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] text-sm font-bold text-th-primary-fg bg-th-primary hover:opacity-90 rounded-xl transition-colors border-2 border-th-primary dark:border-th-border-strong text-left cursor-pointer shadow-xs"
             >
               <span>
                 {selectedStatement === 'performance'
@@ -1790,7 +1892,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 Comparative Prior: FY {comparativeYear}
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+            <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-3 gap-3 text-sm">
               <div className="p-3.5 bg-th-surface rounded-lg border border-th-border">
                 <div className="text-sm text-th-muted font-semibold">Net Operating Activities</div>
                 <div className={`text-lg font-bold font-mono mt-1 ${cashFlowsSummary.netOperating < 0 ? 'text-red-600 dark:text-red-400' : 'text-th-text'}`}>
@@ -1905,7 +2007,7 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
                 Comparative Prior: FY {comparativeYear}
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
+            <div className="grid grid-cols-1 @md:grid-cols-2 @2xl:grid-cols-5 gap-3 text-sm">
               <div className="p-3.5 bg-th-surface rounded-lg border border-th-border-strong">
                 <div className="text-sm text-th-text font-bold flex items-center justify-between gap-2">
                   <span>Balance at Jan 1</span>
@@ -2008,15 +2110,15 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
         )}
 
         {/* Ledger Search Filter */}
-        <div className="px-6 py-4 bg-th-subtle border-b-2 border-th-border flex items-center gap-4">
+        <div className="px-4 sm:px-6 py-4 bg-th-subtle border-b-2 border-th-border flex flex-col @lg:flex-row items-stretch @lg:items-center gap-3">
           <input
             type="text"
             value={ledgerSearch}
             onChange={(e) => setLedgerSearch(e.target.value)}
             placeholder="Search within recorded accounts..."
-            className="flex-1 px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-medium placeholder:text-th-muted focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 shadow-xs"
+            className="flex-1 min-w-0 px-4 py-3 text-base bg-th-input border-2 border-th-border-strong rounded-xl text-th-text font-medium placeholder:text-th-muted focus:outline-hidden focus:border-th-accent focus:ring-2 focus:ring-th-accent/20 shadow-xs"
           />
-          <span className="text-sm font-bold text-th-text whitespace-nowrap bg-th-surface px-3.5 py-2.5 rounded-xl border border-th-border-strong">
+          <span className="self-start @lg:self-auto text-sm font-bold text-th-text whitespace-nowrap bg-th-surface px-3.5 py-2.5 rounded-xl border border-th-border-strong">
             {ledgerAccountsList.length} {showZeroBalancesInLedger ? 'accounts listed' : 'recorded items'}
           </span>
         </div>
@@ -2386,7 +2488,24 @@ export const DataEntryForm: React.FC<DataEntryFormProps> = ({
           </div>
         )}
       </div>
-      </>
+      </div>
+      {isLiveEditOpen && (
+        /* [live_edit] Resizeable docked side panel or movable floating Live FS window */
+        <LiveEditStatementPanel
+          divisionId={selectedDivisionId}
+          divisionName={currentDivision?.name || ''}
+          selectedYear={selectedYear}
+          selectedStatement={selectedStatement}
+          lineItems={lineItems}
+          liveDataStore={liveEditOverlay.liveDataStore}
+          modifiedItemIds={liveEditOverlay.modifiedItemIds}
+          pendingCount={liveEditOverlay.pendingCount}
+          windowMode={liveEditWindowMode}
+          onWindowModeChange={setLiveEditWindowMode}
+          onClose={() => setIsLiveEditOpen(false)}
+        />
+      )}
+      </div>
       )}
 
       {/* Confirmation Modal: Delete All / Reset to Zero */}

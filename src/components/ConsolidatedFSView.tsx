@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Division, LineItemDefinition, FinancialDataStore } from '../types/fs';
 import { calculateReport, getExcludedAggregatedDepDivisionIds } from '../utils/calculations';
 import { calculateCashFlowsSummary, CashFlowsSummary } from '../utils/cashFlowCalculations';
@@ -7,12 +7,14 @@ import {
   calculateBudgetComparisonSummary,
   formatBudgetComparisonNumber,
   loadConsolidatedBudgetComparisonNotes,
+  saveConsolidatedBudgetComparisonNote,
 } from '../utils/budgetComparisonCalculations';
 import { formatAccounting } from '../utils/formatters';
 import { YEAR_RANGE, getComparativeYear } from '../utils/yearUtils';
 import { AGGREGATED_ACCUMULATED_DEPRECIATION_ID } from '../data/defaultLineItems';
 import { AccountingBalanceCheck } from './AccountingBalanceCheck';
 import { FinancialStatementSidebar, FinancialStatementType } from './FinancialStatementSidebar';
+import { TipsButton } from './TipsButton';
 import { Printer, Download, Building2, Eye, EyeOff, Search, X, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 
 interface ConsolidatedFSViewProps {
@@ -111,9 +113,18 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
     return calculateBudgetComparisonSummary(dataStore, selectedYear);
   }, [dataStore, selectedYear]);
 
-  const budgetComparisonNotes = useMemo(() => {
-    return loadConsolidatedBudgetComparisonNotes(selectedYear);
+  const [budgetComparisonNotes, setBudgetComparisonNotes] = useState<Record<string, string>>(() =>
+    loadConsolidatedBudgetComparisonNotes(selectedYear)
+  );
+
+  useEffect(() => {
+    setBudgetComparisonNotes(loadConsolidatedBudgetComparisonNotes(selectedYear));
   }, [selectedYear, dataStore]);
+
+  const handleBudgetComparisonNoteChange = (rowId: string, value: string) => {
+    setBudgetComparisonNotes((prev) => ({ ...prev, [rowId]: value }));
+    saveConsolidatedBudgetComparisonNote(selectedYear, rowId, value);
+  };
 
   const excludedDivisionIdsCurr = useMemo(
     () => new Set(getExcludedAggregatedDepDivisionIds(dataStore, selectedYear)),
@@ -587,13 +598,13 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
           selectedStatement={selectedStatement}
           onSelectStatement={setSelectedStatement}
         />
-        <div className="flex-1 min-w-0 w-full space-y-6">
+        <div className="@container flex-1 min-w-0 w-full space-y-6">
       {/* Control Toolbar (No-Print) */}
-      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-5 shadow-sm space-y-4 no-print transition-colors">
+      <div className="bg-th-surface border-2 border-th-border rounded-2xl p-4 sm:p-5 shadow-sm space-y-4 no-print transition-colors">
         {/* Row 1: Consolidation Count, Year & Primary Actions */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5 min-h-[42px] px-4 py-2 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-base font-bold shadow-xs whitespace-nowrap">
+        <div className="flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 min-h-[42px] px-3.5 sm:px-4 py-2 bg-th-subtle text-th-text border-2 border-th-border-strong rounded-xl text-sm sm:text-base font-bold shadow-xs max-w-full">
               <Building2 className="w-5 h-5 text-th-muted shrink-0" />
               <span>Consolidating {divisionsReportingCount} of {divisions.length} Divisions</span>
             </div>
@@ -646,7 +657,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={handleExportCSV}
@@ -667,9 +678,9 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
         </div>
 
         {/* Row 2: Search, View Options & Section Jumps */}
-        <div className="pt-3.5 border-t border-th-border flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            <div className="relative min-w-[220px] flex-1 max-w-sm">
+        <div className="pt-3.5 border-t border-th-border flex flex-col @3xl:flex-row @3xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+            <div className="relative min-w-0 w-full sm:min-w-[200px] sm:flex-1 max-w-sm">
               <Search className="w-4 h-4 text-th-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
@@ -770,6 +781,15 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                 <a href="#con-bc-payments" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Payments</a>
                 <span className="text-th-muted" aria-hidden="true">·</span>
                 <a href="#con-bc-net" className="hover:text-th-accent-text underline px-1 whitespace-nowrap">Net Receipts/Payment</a>
+                <span className="text-th-muted" aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1.5 text-th-muted whitespace-nowrap">
+                  <span>Editable Notes</span>
+                  <TipsButton>
+                    <p>
+                      Click directly on any cell in the <strong className="text-th-text font-semibold">Notes</strong> column on the statement below to add or edit consolidated note references.
+                    </p>
+                  </TipsButton>
+                </span>
               </>
             )}
           </div>
@@ -815,7 +835,7 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
       )}
 
       {/* Official Financial Statement Document Container */}
-      <div className="bg-white text-black p-8 sm:p-14 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug print:p-0">
+      <div className="bg-white text-black p-4 sm:p-8 lg:p-12 font-['Times_New_Roman',Times,serif] text-[12pt] leading-snug print:p-0">
         {/* Document Header */}
         <div className="text-center mb-8">
           <div className="text-base font-bold">Department of Education</div>
@@ -1891,8 +1911,21 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                     {receiptRows.map((row) => (
                       <tr key={row.id}>
                         <td className="py-0.5 pl-6 pr-2">{row.name}</td>
-                        <td className="py-0.5 px-2 text-center">
-                          {budgetComparisonNotes[row.id] || ''}
+                        <td className="py-0.5 px-1.5 text-center">
+                          <input
+                            type="text"
+                            value={budgetComparisonNotes[row.id] ?? ''}
+                            onChange={(e) =>
+                              handleBudgetComparisonNoteChange(row.id, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            placeholder="—"
+                            title="Click to edit note"
+                            aria-label={`Consolidated note for ${row.name}`}
+                            className="w-14 text-center text-[11pt] text-black bg-transparent border border-dashed border-slate-300 hover:border-slate-500 focus:border-solid focus:border-black focus:bg-amber-50/40 focus:outline-hidden rounded-xs px-1 py-0 placeholder:text-slate-300 transition-colors print:border-none print:bg-transparent print:placeholder:text-transparent"
+                          />
                         </td>
                         <td className="py-0.5 px-3 text-right tabular-nums">
                           {formatBudgetComparisonNumber(row.original)}
@@ -1936,8 +1969,21 @@ export const ConsolidatedFSView: React.FC<ConsolidatedFSViewProps> = ({
                     {paymentRows.map((row) => (
                       <tr key={row.id}>
                         <td className="py-0.5 pl-6 pr-2">{row.name}</td>
-                        <td className="py-0.5 px-2 text-center">
-                          {budgetComparisonNotes[row.id] || ''}
+                        <td className="py-0.5 px-1.5 text-center">
+                          <input
+                            type="text"
+                            value={budgetComparisonNotes[row.id] ?? ''}
+                            onChange={(e) =>
+                              handleBudgetComparisonNoteChange(row.id, e.target.value)
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                            }}
+                            placeholder="—"
+                            title="Click to edit note"
+                            aria-label={`Consolidated note for ${row.name}`}
+                            className="w-14 text-center text-[11pt] text-black bg-transparent border border-dashed border-slate-300 hover:border-slate-500 focus:border-solid focus:border-black focus:bg-amber-50/40 focus:outline-hidden rounded-xs px-1 py-0 placeholder:text-slate-300 transition-colors print:border-none print:bg-transparent print:placeholder:text-transparent"
+                          />
                         </td>
                         <td className="py-0.5 px-3 text-right tabular-nums">
                           {formatBudgetComparisonNumber(row.original)}

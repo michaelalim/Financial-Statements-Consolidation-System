@@ -165,11 +165,33 @@ export function saveBudgetComparisonNotes(
   }
 }
 
+const SCBAA_CONSOLIDATED_NOTES_STORAGE_KEY = 'deped_ro6_scbaa_consolidated_notes_v1';
+
+type ScbaaConsolidatedNotesStore = Record<string, Record<string, string>>;
+
+function readConsolidatedNotesStore(): ScbaaConsolidatedNotesStore {
+  try {
+    const raw = localStorage.getItem(SCBAA_CONSOLIDATED_NOTES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export function loadConsolidatedBudgetComparisonNotes(year: string): Record<string, string> {
   const store = readAllNotesStore();
   const yr = store[year] || {};
+  const consolidatedOverrides = readConsolidatedNotesStore()[year] || {};
   const result: Record<string, string> = {};
+
   BUDGET_COMPARISON_ROWS.forEach((row) => {
+    if (Object.prototype.hasOwnProperty.call(consolidatedOverrides, row.id)) {
+      result[row.id] = consolidatedOverrides[row.id];
+      return;
+    }
+
     const uniqueNotes = new Set<string>();
     Object.values(yr).forEach((divNotes) => {
       const val = divNotes?.[row.id]?.trim();
@@ -180,4 +202,20 @@ export function loadConsolidatedBudgetComparisonNotes(year: string): Record<stri
     }
   });
   return result;
+}
+
+export function saveConsolidatedBudgetComparisonNote(
+  year: string,
+  rowId: string,
+  value: string
+): void {
+  try {
+    const store = readConsolidatedNotesStore();
+    const yearCopy = { ...(store[year] || {}) };
+    yearCopy[rowId] = value;
+    const next = { ...store, [year]: yearCopy };
+    localStorage.setItem(SCBAA_CONSOLIDATED_NOTES_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage write error
+  }
 }
